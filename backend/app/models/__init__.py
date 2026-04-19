@@ -1,0 +1,35 @@
+from app.models.base import Base
+from app.models.community import Comment, Post, Tag, User, UserRole, Vote, VoteTarget
+from app.models.vulnerability import (
+    AffectedProduct,
+    IngestionLog,
+    OsFamily,
+    RefType,
+    Severity,
+    Source,
+    Vulnerability,
+    VulnerabilityReference,
+    VulnerabilityType,
+    vulnerability_type_map,
+)
+
+__all__ = [
+    "Base",
+    "AffectedProduct",
+    "Comment",
+    "IngestionLog",
+    "OsFamily",
+    "Post",
+    "RefType",
+    "Severity",
+    "Source",
+    "Tag",
+    "User",
+    "UserRole",
+    "Vote",
+    "VoteTarget",
+    "Vulnerability",
+    "VulnerabilityReference",
+    "VulnerabilityType",
+    "vulnerability_type_map",
+]

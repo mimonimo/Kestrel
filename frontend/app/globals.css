@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  background-color: #0a0a0b;
+}
+
+html.light {
+  color-scheme: light;
+  background-color: #fafafa;
+}
+
+body {
+  @apply bg-surface-0 text-neutral-100 antialiased;
+  font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+*:focus-visible {
+  outline: 2px solid rgb(115 115 115);
+  outline-offset: 2px;
+}
+
+::selection {
+  background-color: rgba(239, 68, 68, 0.3);
+}
+
+/* Scrollbar - dark theme */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0a0b;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a2f;
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a40;
+}
+
+/* ───────────────────────── Light mode overrides ─────────────────────────
+   The codebase uses absolute Tailwind colors (text-neutral-100, bg-surface-1
+   …) without `dark:` prefixes, so we remap the most common ones when the
+   `light` class is on <html>. */
+html.light body {
+  background-color: #fafafa;
+  color: #18181b;
+}
+
+html.light .bg-surface-0 { background-color: #ffffff; }
+html.light .bg-surface-1 { background-color: #f5f5f5; }
+html.light .bg-surface-2 { background-color: #ebebeb; }
+html.light .bg-surface-3 { background-color: #e0e0e0; }
+html.light .bg-surface-0\/80 { background-color: rgba(255, 255, 255, 0.85); }
+
+html.light .text-neutral-100 { color: #18181b; }
+html.light .text-neutral-200 { color: #27272a; }
+html.light .text-neutral-300 { color: #3f3f46; }
+html.light .text-neutral-400 { color: #52525b; }
+html.light .text-neutral-500 { color: #71717a; }
+html.light .text-neutral-600 { color: #a1a1aa; }
+
+html.light .border-neutral-800 { border-color: #e4e4e7; }
+html.light .border-neutral-700 { border-color: #d4d4d8; }
+html.light .border-neutral-600 { border-color: #a1a1aa; }
+
+html.light .hover\:bg-neutral-800:hover { background-color: #f1f5f9; }
+html.light .hover\:border-neutral-500:hover { border-color: #71717a; }
+html.light .hover\:border-neutral-700:hover { border-color: #a1a1aa; }
+html.light .hover\:text-neutral-100:hover { color: #000; }
+html.light .hover\:text-neutral-200:hover { color: #18181b; }
+
+html.light ::-webkit-scrollbar-track { background: #fafafa; }
+html.light ::-webkit-scrollbar-thumb { background: #d4d4d8; }
+html.light ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+
+/* Active chip — readable in both themes */
+html.light .bg-neutral-100 { background-color: #18181b; }
+html.light .bg-neutral-100.text-neutral-900 { color: #fafafa; }
+
+/* Dark surface utilities used by tags, chips, inputs — need lightened
+   equivalents in light mode so vulnerability type badges and friends don't
+   render as near-black rectangles. */
+html.light .bg-neutral-700 { background-color: #d4d4d8; }
+html.light .bg-neutral-800 { background-color: #e4e4e7; }
+html.light .bg-neutral-900 { background-color: #f4f4f5; }
+html.light .bg-neutral-700\/30 { background-color: rgba(161, 161, 170, 0.25); }
+html.light .bg-neutral-700\/50 { background-color: rgba(161, 161, 170, 0.35); }
+html.light .bg-neutral-800\/60 { background-color: rgba(228, 228, 231, 0.75); }
+html.light .divide-neutral-800 > :not([hidden]) ~ :not([hidden]) { border-color: #e4e4e7; }
+html.light .hover\:bg-neutral-700:hover { background-color: #d4d4d8; }
+html.light .hover\:bg-neutral-900:hover { background-color: #ececef; }
