@@ -50,9 +50,11 @@ class Post(Base, TimestampMixin):
         nullable=True,
         index=True,
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    client_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    author_name: Mapped[str] = mapped_column(String(64), nullable=False, default="익명")
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     view_count: Mapped[int] = mapped_column(default=0)
@@ -73,9 +75,11 @@ class Comment(Base, TimestampMixin):
         nullable=True,
         index=True,
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+    client_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    author_name: Mapped[str] = mapped_column(String(64), nullable=False, default="익명")
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("comments.id", ondelete="CASCADE"))
     content: Mapped[str] = mapped_column(Text, nullable=False)
 
