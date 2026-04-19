@@ -24,7 +24,7 @@
 
 ---
 
-> 진행 상황: Step 1 ✅ · Step 2 ✅ · Step 3 ✅ · Step 4 ✅ · Step 5 ✅
+> 진행 상황: Step 1 ✅ · Step 2 ✅ · Step 3 ✅ · Step 4 ✅ · Step 5 ✅ · Step 6 ✅
 
 ---
 
@@ -224,6 +224,50 @@ frontend/
 - [ ] `.env`에 `NVD_API_KEY`, `GITHUB_TOKEN` 설정 시 배너에서 자동 사라짐
 - [ ] Sentry/OTel 사용 시 Dockerfile에 `pip install -e ".[sentry,otel]"` 한 줄 추가
 - [ ] Playwright 첫 실행: `cd frontend && npx playwright install chromium`
+
+---
+
+## Step 6 — 자산 매칭 · 즐겨찾기 · 커뮤니티 ✅
+
+**완료일:** 2026-04-20
+
+### 1. 즐겨찾기 (Bookmarks)
+
+- **DB 스키마**: `bookmarks (id, client_id varchar(64), cve_id varchar(32), created_at)` + `UNIQUE(client_id, cve_id)` + `INDEX(client_id)` (alembic `0003_bookmarks.py`)
+- **익명 소유권**: 브라우저가 localStorage(`cvewatch:client-id`)에 UUID를 발급/보관 → 모든 요청에 `X-Client-Id` 헤더로 전달. 로그인 없이 디바이스 단위 즐겨찾기 가능.
+- **API**: `GET /bookmarks`, `POST /bookmarks` (idempotent), `DELETE /bookmarks/{cveId}`. POST는 UNIQUE 위반을 무시해 중복 토글 안전.
+- **Frontend**: `lib/clientId.ts`(UUID 발급) + `lib/api.ts`(헤더 자동 첨부) + `lib/bookmarks.ts` 훅이 localStorage 캐시 + 백엔드 동기화 (옵티미스틱 업데이트, 실패 시 자동 롤백).
+- **UI**: 리스트/상세의 `BookmarkButton`(Star 아이콘) + 대시보드의 `[즐겨찾기만 (n)]` 토글. 토글 시 `/cves/batch?ids=...`로 한 번에 조회.
+
+### 2. 자산 매칭 (CPE)
+
+- **저장 위치**: 자산 목록은 localStorage(`cvewatch:assets`)에 vendor/product/version으로 보관. 서버에 영구 저장하지 않음.
+- **API**: `POST /assets/match` — 등록한 vendor/product 페어를 ILIKE로 OR-clause 조합하여 `affected_products` 매칭, 관련 CVE를 최신순으로 반환. version_range는 자유 텍스트라 서버 측 strict 검증은 하지 않음.
+- **Frontend**:
+  - `components/settings/AssetsManager.tsx` — 설정 페이지에서 vendor/product/version 등록·삭제
+  - `components/dashboard/MyAssetsPanel.tsx` — 대시보드 상단에 자산 매칭 결과 8건 노출, 비어 있으면 설정으로 안내 CTA
+
+### 3. 커뮤니티 (익명 게시판 + 댓글)
+
+- **DB 마이그레이션** (alembic `0004_community_anon.py`): `posts.user_id` / `comments.user_id` → nullable + FK ondelete=SET NULL. 양쪽에 `client_id varchar(64)` + `author_name varchar(64) DEFAULT '익명'` 컬럼 추가 + `client_id` 인덱스.
+- **API** (`/community`):
+  - `GET /community/posts?page=&pageSize=&vulnerabilityId=` — 페이지네이션 + CVE별 필터, `commentCount` 집계 동봉
+  - `POST /community/posts`, `GET/PATCH/DELETE /community/posts/{id}` — 작성자 본인(`X-Client-Id` 일치)만 수정/삭제. 상세 조회 시 `viewCount` 자동 증가.
+  - `GET /community/comments?postId=|vulnerabilityId=` · `POST /community/comments` · `DELETE /community/comments/{id}`
+  - 응답에 `isOwner` 플래그 포함 → UI가 본인 글에만 삭제 버튼 노출
+- **Frontend 페이지**:
+  - `/community` — 게시글 리스트 + `NewPostModal`(제목·이름(선택)·본문) + 페이지네이션
+  - `/community/[id]` — 게시글 상세 + 본인 글 삭제 + 하단 `CommentThread`
+  - `/cve/[id]` 상세에도 동일한 `CommentThread`를 mount → CVE 단위 토론 가능 (게시글 없이도 댓글만 달 수 있음)
+- **컴포넌트**:
+  - `components/community/NewPostModal.tsx` — 모달 폼, TanStack Mutation로 작성 후 `community-posts` 쿼리 무효화
+  - `components/community/CommentThread.tsx` — `postId` 또는 `vulnerabilityId` 둘 다 지원. 옵티미스틱 작성·삭제, 본인 글에는 휴지통 아이콘.
+
+### 4. 보안·UX 메모
+
+- 로그인 없이 동작하므로 `X-Client-Id`는 “디바이스 단위 의사 소유권”에 불과. 실제 인증이 필요해지는 시점에 `users` 연결을 복구하면 됨 (`user_id` 컬럼은 그대로 보존).
+- `client_id`가 손상/초기화되면 본인 글에 대한 삭제 권한이 사라지지만, 데이터는 그대로 남음 (다른 사람이 임의 삭제 불가).
+- Header에 `대시보드` ↔ `커뮤니티` 링크 노출, 기존 “커뮤니티 준비 중” 안내 제거.
 
 ---
 
