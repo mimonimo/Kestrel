@@ -24,7 +24,7 @@
 전체 스택을 한 번에 띄울 수 있습니다. 다른 기기에서 그대로 실행 가능합니다.
 
 ```bash
-git clone <this-repo>
+git clone <Kestrel>
 cd cve-watch
 cp .env.example .env
 docker compose up --build
