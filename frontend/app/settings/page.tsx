@@ -4,7 +4,7 @@ import { AssetsManager } from "@/components/settings/AssetsManager";
 import { ThemeSwitcher } from "@/components/settings/ThemeSwitcher";
 
 export const metadata: Metadata = {
-  title: "설정 — CVE Watch",
+  title: "설정 — Kestrel",
   description: "테마와 API 키를 관리합니다.",
 };
 

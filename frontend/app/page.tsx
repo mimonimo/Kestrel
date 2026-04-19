@@ -81,8 +81,8 @@ function Dashboard() {
     <div className="mx-auto max-w-7xl px-6">
       <section className="pt-16 pb-10 text-center">
         <h1 className="text-4xl sm:text-5xl font-bold tracking-tight mb-3">
-          <span className="bg-gradient-to-r from-red-400 via-orange-300 to-yellow-300 bg-clip-text text-transparent">
-            CVE Watch
+          <span className="bg-gradient-to-r from-blue-400 via-sky-300 to-cyan-300 bg-clip-text text-transparent">
+            Kestrel
           </span>
         </h1>
         <p className="text-neutral-400 text-sm sm:text-base mb-8">
