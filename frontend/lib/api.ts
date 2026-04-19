@@ -92,6 +92,95 @@ export const api = {
       method: "DELETE",
       headers: clientHeaders(),
     }),
+
+  listPosts: (page = 1, pageSize = 20, vulnerabilityId?: string) => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (vulnerabilityId) params.set("vulnerabilityId", vulnerabilityId);
+    return request<PostListResponse>(`/community/posts?${params.toString()}`, {
+      headers: clientHeaders(),
+    });
+  },
+  getPost: (id: number) =>
+    request<CommunityPost>(`/community/posts/${id}`, { headers: clientHeaders() }),
+  createPost: (body: { title: string; content: string; authorName?: string; vulnerabilityId?: string }) =>
+    request<CommunityPost>(`/community/posts`, {
+      method: "POST",
+      headers: clientHeaders(),
+      body: JSON.stringify(body),
+    }),
+  updatePost: (id: number, body: { title?: string; content?: string }) =>
+    request<CommunityPost>(`/community/posts/${id}`, {
+      method: "PATCH",
+      headers: clientHeaders(),
+      body: JSON.stringify(body),
+    }),
+  deletePost: (id: number) =>
+    request<void>(`/community/posts/${id}`, {
+      method: "DELETE",
+      headers: clientHeaders(),
+    }),
+
+  listComments: (params: { postId?: number; vulnerabilityId?: string }) => {
+    const sp = new URLSearchParams();
+    if (params.postId !== undefined) sp.set("postId", String(params.postId));
+    if (params.vulnerabilityId) sp.set("vulnerabilityId", params.vulnerabilityId);
+    return request<CommentListResponse>(`/community/comments?${sp.toString()}`, {
+      headers: clientHeaders(),
+    });
+  },
+  createComment: (body: {
+    content: string;
+    authorName?: string;
+    postId?: number;
+    vulnerabilityId?: string;
+    parentId?: number;
+  }) =>
+    request<CommunityComment>(`/community/comments`, {
+      method: "POST",
+      headers: clientHeaders(),
+      body: JSON.stringify(body),
+    }),
+  deleteComment: (id: number) =>
+    request<void>(`/community/comments/${id}`, {
+      method: "DELETE",
+      headers: clientHeaders(),
+    }),
 };
+
+export interface CommunityPost {
+  id: number;
+  title: string;
+  content: string;
+  authorName: string;
+  vulnerabilityId: string | null;
+  viewCount: number;
+  commentCount: number;
+  isOwner: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PostListResponse {
+  items: CommunityPost[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface CommunityComment {
+  id: number;
+  content: string;
+  authorName: string;
+  postId: number | null;
+  vulnerabilityId: string | null;
+  parentId: number | null;
+  isOwner: boolean;
+  createdAt: string;
+}
+
+export interface CommentListResponse {
+  items: CommunityComment[];
+  total: number;
+}
 
 export { ApiError };

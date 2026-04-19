@@ -13,15 +13,17 @@ export function Header() {
           <Link href="/" className="hover:text-neutral-100">
             대시보드
           </Link>
+          <Link href="/community" className="hover:text-neutral-100">
+            커뮤니티
+          </Link>
           <a
             href="https://nvd.nist.gov/"
             target="_blank"
             rel="noopener noreferrer"
-            className="hover:text-neutral-100"
+            className="hidden hover:text-neutral-100 sm:inline"
           >
             NVD
           </a>
-          <span className="hidden text-xs text-neutral-600 sm:inline">커뮤니티 준비 중</span>
           <Link
             href="/settings"
             className="flex items-center gap-1 rounded-md border border-neutral-800 px-2 py-1 hover:border-neutral-700 hover:text-neutral-100"
