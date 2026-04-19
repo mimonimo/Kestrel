@@ -1,4 +1,5 @@
 import type { Asset } from "./assets";
+import { getClientId } from "./clientId";
 import type { SearchFilters, SearchResponse, StatusReport, Vulnerability } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -26,7 +27,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(res.status, message);
   }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+function clientHeaders(): Record<string, string> {
+  const id = getClientId();
+  return id ? { "X-Client-Id": id } : {};
+}
+
+export interface BookmarkListResponse {
+  items: { cveId: string }[];
+  total: number;
 }
 
 export const api = {
@@ -67,6 +79,19 @@ export const api = {
       { method: "POST", headers },
     );
   },
+  getBookmarks: () =>
+    request<BookmarkListResponse>(`/bookmarks`, { headers: clientHeaders() }),
+  addBookmark: (cveId: string) =>
+    request<{ cveId: string }>(`/bookmarks`, {
+      method: "POST",
+      headers: clientHeaders(),
+      body: JSON.stringify({ cveId }),
+    }),
+  removeBookmark: (cveId: string) =>
+    request<void>(`/bookmarks/${encodeURIComponent(cveId)}`, {
+      method: "DELETE",
+      headers: clientHeaders(),
+    }),
 };
 
 export { ApiError };
