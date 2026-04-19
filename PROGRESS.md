@@ -1,7 +1,5 @@
 # Kestrel — Work Progress Log
 
-프로젝트 진행 내역을 단계별로 기록합니다. 다른 기기에서 이어받거나 GitHub에 올린 뒤에도 컨텍스트를 잃지 않도록 작업 결정 사항을 남깁니다.
-
 ---
 
 ## Step 1 — Architecture & Schema Design ✅
