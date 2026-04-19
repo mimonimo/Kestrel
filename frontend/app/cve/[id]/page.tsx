@@ -12,13 +12,13 @@ export async function generateMetadata({ params }: Props) {
   const { id } = await params;
   try {
     const vuln = await fetchCveServer(decodeURIComponent(id));
-    if (!vuln) return { title: "CVE Not Found — CVE Watch" };
+    if (!vuln) return { title: "CVE Not Found — Kestrel" };
     return {
       title: `${vuln.cveId} — ${vuln.title}`,
       description: vuln.summary ?? vuln.title,
     };
   } catch {
-    return { title: "CVE Watch" };
+    return { title: "Kestrel" };
   }
 }
 
