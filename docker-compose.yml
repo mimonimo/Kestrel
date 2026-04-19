@@ -3,7 +3,6 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    platform: linux/amd64
     ports:
       - "3000:3000"
     environment:
@@ -17,7 +16,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    platform: linux/amd64
     ports:
       - "8000:8000"
     environment:

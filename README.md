@@ -143,8 +143,54 @@ docker compose up --build
 
 첫 실행 시 NVD에서 최근 30일 치 CVE를 자동 수집합니다(몇 분 소요). 이후 스케줄러가 증분 수집을 유지합니다.
 
-### Ubuntu x86_64 서버 배포
-`docker-compose.yml`에 `platform: linux/amd64`가 고정되어 있어 Mac(arm64)에서 빌드해도 Ubuntu 서버에서 그대로 실행됩니다. 리모트 서버에서는 `docker compose up -d --build`로 띄우세요.
+### 플랫폼별 실행 방법
+
+기본 `docker-compose.yml`에는 **플랫폼 핀이 없습니다**. 호스트 아키텍처를 그대로 따라가므로 Apple Silicon(arm64) Mac, Intel/AMD Linux(amd64), x86_64 Windows(WSL2) 모두 별도 설정 없이 동작합니다.
+
+#### 로컬 개발 (Apple Silicon Mac · arm64)
+
+```bash
+docker compose up -d --build       # 또는 docker-compose
+docker compose ps                  # 5개 컨테이너 모두 healthy 확인
+docker compose logs -f backend     # 마이그레이션·스케줄러 로그
+```
+
+> 일부 macOS 환경에는 `docker compose`(공백) 대신 `docker-compose`(하이픈)만 깔려 있습니다. 둘 중 동작하는 쪽을 사용하세요. 동작 차이는 없습니다.
+
+#### Ubuntu x86_64 서버 배포
+
+amd64 Ubuntu 서버에서는 위 명령을 그대로 실행하면 호스트가 amd64이므로 자연스럽게 amd64 이미지가 빌드됩니다.
+
+#### Apple Silicon에서 amd64 이미지를 강제로 빌드해야 할 때
+
+(다른 amd64 서버로 이미지를 통째로 복사·푸시할 때만 필요합니다.)
+
+옵션 A — 일회성 환경변수 + buildx:
+
+```bash
+DOCKER_DEFAULT_PLATFORM=linux/amd64 docker buildx build \
+  --platform linux/amd64 -t cve-watch-backend:latest ./backend --load
+DOCKER_DEFAULT_PLATFORM=linux/amd64 docker buildx build \
+  --platform linux/amd64 -t cve-watch-frontend:latest ./frontend --load
+```
+
+옵션 B — `docker-compose.prod.yml` override 파일 작성:
+
+```yaml
+services:
+  backend:
+    platform: linux/amd64
+  frontend:
+    platform: linux/amd64
+```
+
+배포 시:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+> compose 파일 본체에 `platform: linux/amd64`를 직접 박아두면 Apple Silicon 로컬 실행이 막힙니다(클래식 빌더가 platform 메타데이터를 박지 않으면 “image was found but does not provide the specified platform” 에러 발생). 배포 전용 override로 분리해두는 편이 안전합니다.
 
 ---
 
