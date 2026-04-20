@@ -137,12 +137,13 @@ async def _call_openai(settings: AppSettings, vuln: Vulnerability) -> AiAnalysis
         "Authorization": f"Bearer {settings.ai_api_key}",
         "Content-Type": "application/json",
     }
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        res = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers=headers,
-            json=payload,
-        )
+    base = (settings.ai_base_url or "https://api.openai.com/v1").rstrip("/")
+    url = f"{base}/chat/completions"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            res = await client.post(url, headers=headers, json=payload)
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"OpenAI 호출 실패 ({url}): {e}") from e
     if res.status_code >= 400:
         detail = _extract_error(res, "OpenAI")
         raise HTTPException(status_code=502, detail=detail)
