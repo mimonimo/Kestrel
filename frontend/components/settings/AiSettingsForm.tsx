@@ -93,6 +93,15 @@ function CredentialList({
     },
   });
 
+  const updateModel = useMutation({
+    mutationFn: ({ id, model }: { id: number; model: string }) =>
+      api.updateAiCredential(id, { model }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ai-credentials"] });
+      qc.invalidateQueries({ queryKey: ["app-settings"] });
+    },
+  });
+
   if (items.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-neutral-700 bg-surface-1 p-6 text-center text-sm text-neutral-400">
@@ -120,7 +129,7 @@ function CredentialList({
                   : "border-neutral-800 bg-surface-1",
               )}
             >
-              <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
                 <input
                   type="radio"
                   name="active-credential"
@@ -129,7 +138,7 @@ function CredentialList({
                   onChange={() => {
                     if (!isActive) activate.mutate(c.id);
                   }}
-                  className="h-4 w-4 accent-emerald-500"
+                  className="h-4 w-4 cursor-pointer accent-emerald-500"
                   aria-label={`${c.label} 활성화`}
                 />
                 <div className="min-w-0 flex-1">
@@ -144,17 +153,30 @@ function CredentialList({
                       </span>
                     )}
                   </div>
-                  <div className="mt-0.5 truncate text-[11px] text-neutral-400">
-                    {providerLabel(c.provider)} · <span className="font-mono">{c.model}</span>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-1 text-[11px] text-neutral-400">
+                    <span>{providerLabel(c.provider)}</span>
+                    <span>·</span>
+                    <ModelSelect
+                      credential={c}
+                      disabled={updateModel.isPending && updateModel.variables?.id === c.id}
+                      onChange={(nextModel) => {
+                        if (nextModel !== c.model) {
+                          updateModel.mutate({ id: c.id, model: nextModel });
+                        }
+                      }}
+                    />
+                    {updateModel.isPending && updateModel.variables?.id === c.id && (
+                      <Loader2 className="h-3 w-3 animate-spin text-neutral-400" />
+                    )}
                     {c.baseUrl && (
                       <>
-                        {" · "}
+                        <span>·</span>
                         <span className="font-mono text-neutral-500">{c.baseUrl}</span>
                       </>
                     )}
                   </div>
                 </div>
-              </label>
+              </div>
               <Button
                 type="button"
                 variant="outline"
@@ -186,7 +208,46 @@ function CredentialList({
           {remove.error instanceof ApiError ? remove.error.message : "알 수 없는 오류"}
         </p>
       )}
+      {updateModel.isError && (
+        <p className="text-xs text-red-400">
+          모델 변경에 실패했습니다:{" "}
+          {updateModel.error instanceof ApiError
+            ? updateModel.error.message
+            : "알 수 없는 오류"}
+        </p>
+      )}
     </div>
+  );
+}
+
+function ModelSelect({
+  credential,
+  disabled,
+  onChange,
+}: {
+  credential: AiCredential;
+  disabled: boolean;
+  onChange: (nextModel: string) => void;
+}) {
+  const meta = PROVIDERS.find((p) => p.value === credential.provider);
+  const known = meta?.models ?? [];
+  const options = known.includes(credential.model)
+    ? known
+    : [credential.model, ...known];
+  return (
+    <select
+      value={credential.model}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      aria-label={`${credential.label} 모델 변경`}
+      className="cursor-pointer rounded border border-neutral-800 bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-neutral-200 hover:border-neutral-600 focus:border-neutral-500 focus:outline-none disabled:cursor-wait"
+    >
+      {options.map((m) => (
+        <option key={m} value={m}>
+          {m}
+        </option>
+      ))}
+    </select>
   );
 }
 
