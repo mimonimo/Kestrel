@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ExternalLink, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { AiAnalysisPanel } from "./AiAnalysisPanel";
 import { BookmarkButton } from "./BookmarkButton";
 import { SeverityBadge } from "./SeverityBadge";
 import { TicketControl } from "./TicketControl";
@@ -74,6 +75,8 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
           </p>
         </CardContent>
       </Card>
+
+      <AiAnalysisPanel cveId={vuln.cveId} />
 
       {vuln.affectedProducts.length > 0 && (
         <Card>
