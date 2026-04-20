@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AiSettingsForm } from "@/components/settings/AiSettingsForm";
 import { ApiKeyField } from "@/components/settings/ApiKeyField";
 import { AssetsManager } from "@/components/settings/AssetsManager";
 import { ThemeSwitcher } from "@/components/settings/ThemeSwitcher";
@@ -31,6 +32,13 @@ export default function SettingsPage() {
           <ApiKeyField settingKey="nvdApiKey" />
           <ApiKeyField settingKey="githubToken" />
         </div>
+      </Section>
+
+      <Section
+        title="AI 분석 설정"
+        description="CVE 상세 페이지의 'AI 심층 분석'에 사용할 LLM 제공자·모델·API 키를 설정합니다. 키는 서버 DB에 저장되며 응답에서는 가려집니다."
+      >
+        <AiSettingsForm />
       </Section>
 
       <Section

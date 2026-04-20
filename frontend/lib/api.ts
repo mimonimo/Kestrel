@@ -188,7 +188,37 @@ export const api = {
       method: "DELETE",
       headers: clientHeaders(),
     }),
+
+  getAppSettings: () => request<AppSettingsResponse>(`/settings`),
+  updateAppSettings: (body: AppSettingsUpdate) =>
+    request<AppSettingsResponse>(`/settings`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  analyzeCve: (cveId: string) =>
+    request<AiAnalysisResponse>(`/cves/${encodeURIComponent(cveId)}/analyze`, {
+      method: "POST",
+    }),
 };
+
+export interface AppSettingsResponse {
+  aiProvider: string | null;
+  aiModel: string | null;
+  hasApiKey: boolean;
+}
+
+export interface AppSettingsUpdate {
+  aiProvider?: string | null;
+  aiModel?: string | null;
+  aiApiKey?: string | null;
+}
+
+export interface AiAnalysisResponse {
+  attackMethod: string;
+  payloadExample: string;
+  mitigation: string[];
+}
 
 export interface CommunityPost {
   id: number;
