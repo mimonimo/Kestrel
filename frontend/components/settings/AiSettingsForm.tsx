@@ -14,7 +14,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-const PROVIDERS: { value: string; label: string; models: string[] }[] = [
+interface ProviderMeta {
+  value: string;
+  label: string;
+  models: string[];
+  defaultBaseUrl?: string;
+  note?: string;
+}
+
+const PROVIDERS: ProviderMeta[] = [
   {
     value: "openai",
     label: "OpenAI",
@@ -41,6 +49,54 @@ const PROVIDERS: { value: string; label: string; models: string[] }[] = [
       "claude-sonnet-4-6",
       "claude-opus-4-7",
     ],
+  },
+  {
+    value: "gemini",
+    label: "Google Gemini (무료 티어)",
+    defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    models: [
+      "gemini-2.5-flash",
+      "gemini-2.5-pro",
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-lite",
+      "gemini-1.5-flash",
+      "gemini-1.5-pro",
+    ],
+    note: "aistudio.google.com에서 무료 키 발급, 일 1,500 요청(Flash) 제한",
+  },
+  {
+    value: "groq",
+    label: "Groq (무료 티어)",
+    defaultBaseUrl: "https://api.groq.com/openai/v1",
+    models: [
+      "llama-3.3-70b-versatile",
+      "llama-3.1-8b-instant",
+      "mixtral-8x7b-32768",
+      "gemma2-9b-it",
+    ],
+    note: "console.groq.com에서 키 발급, 분당 30 · 일 14,400 요청 제한",
+  },
+  {
+    value: "openrouter",
+    label: "OpenRouter (:free 모델)",
+    defaultBaseUrl: "https://openrouter.ai/api/v1",
+    models: [
+      "deepseek/deepseek-chat-v3-0324:free",
+      "google/gemini-2.0-flash-exp:free",
+      "meta-llama/llama-3.3-70b-instruct:free",
+      "qwen/qwen-2.5-72b-instruct:free",
+    ],
+    note: "openrouter.ai/keys에서 키 발급, :free 모델만 무료",
+  },
+  {
+    value: "cerebras",
+    label: "Cerebras (무료 티어)",
+    defaultBaseUrl: "https://api.cerebras.ai/v1",
+    models: [
+      "llama-3.3-70b",
+      "llama3.1-8b",
+    ],
+    note: "cloud.cerebras.ai에서 키 발급, 일 1M 토큰 무료",
   },
 ];
 
@@ -277,7 +333,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
     onSuccess: () => {
       setLabel("");
       setApiKey("");
-      setBaseUrl("");
+      setBaseUrl(providerMeta.defaultBaseUrl ?? "");
       setShowKey(false);
       setErrorMsg(null);
       qc.invalidateQueries({ queryKey: ["ai-credentials"] });
@@ -329,6 +385,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
               setProvider(next);
               const meta = PROVIDERS.find((p) => p.value === next) ?? PROVIDERS[0];
               setModel(meta.models[0]);
+              setBaseUrl(meta.defaultBaseUrl ?? "");
             }}
             className="w-full rounded-md border border-neutral-800 bg-surface-2 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-600 focus:outline-none"
           >
@@ -356,22 +413,31 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
         </label>
       </div>
 
+      {providerMeta.note && (
+        <div className="rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] text-sky-300">
+          {providerMeta.note}
+        </div>
+      )}
+
       <div>
         <label className="block text-xs">
           <span className="mb-1 block font-medium text-neutral-300">
-            Base URL <span className="text-neutral-500">(선택사항)</span>
+            Base URL{" "}
+            <span className="text-neutral-500">
+              {providerMeta.defaultBaseUrl ? "(자동 채움, 필요 시 수정)" : "(선택사항)"}
+            </span>
           </span>
           <Input
             type="url"
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="https://api.openai.com/v1"
+            placeholder={providerMeta.defaultBaseUrl ?? "https://api.openai.com/v1"}
             autoComplete="off"
             spellCheck={false}
             className="font-mono"
           />
           <span className="mt-1 block text-[11px] text-neutral-500">
-            OpenAI 호환 프록시나 자체 호스팅 엔드포인트를 사용할 때만 입력하세요.
+            OpenAI 호환 프록시나 자체 호스팅 엔드포인트를 사용할 때 입력하세요.
           </span>
         </label>
       </div>

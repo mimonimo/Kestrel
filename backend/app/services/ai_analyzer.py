@@ -56,6 +56,30 @@ _JSON_SCHEMA = {
     },
 }
 
+# Providers that speak the OpenAI Chat Completions wire format. Any
+# credential with one of these provider values goes through ``_call_openai``;
+# the only thing that differs is the base URL (stored on the credential).
+_OPENAI_COMPATIBLE = {"openai", "gemini", "groq", "openrouter", "cerebras"}
+
+# Providers whose OpenAI-compatible endpoint is known to accept the full
+# ``json_schema`` strict response_format. Others fall back to ``json_object``
+# which is far more widely supported; the prompt already tells the model
+# exactly which fields to emit.
+_SUPPORTS_JSON_SCHEMA = {"openai", "gemini"}
+
+
+def _build_response_format(provider: str) -> dict:
+    if provider in _SUPPORTS_JSON_SCHEMA:
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "cve_analysis",
+                "strict": True,
+                "schema": _JSON_SCHEMA,
+            },
+        }
+    return {"type": "json_object"}
+
 
 @dataclass
 class AiAnalysis:
@@ -135,14 +159,7 @@ async def _call_openai(cred: AiCredential, vuln: Vulnerability) -> AiAnalysis:
                 ),
             },
         ],
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "cve_analysis",
-                "strict": True,
-                "schema": _JSON_SCHEMA,
-            },
-        },
+        "response_format": _build_response_format(cred.provider),
     }
     headers = {
         "Authorization": f"Bearer {cred.api_key}",
@@ -150,19 +167,25 @@ async def _call_openai(cred: AiCredential, vuln: Vulnerability) -> AiAnalysis:
     }
     base = (cred.base_url or "https://api.openai.com/v1").rstrip("/")
     url = f"{base}/chat/completions"
+    provider_label = cred.provider.capitalize()
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             res = await client.post(url, headers=headers, json=payload)
     except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"OpenAI 호출 실패 ({url}): {e}") from e
+        raise HTTPException(
+            status_code=502,
+            detail=f"{provider_label} 호출 실패 ({url}): {e}",
+        ) from e
     if res.status_code >= 400:
-        detail = _extract_error(res, "OpenAI")
+        detail = _extract_error(res, provider_label)
         raise HTTPException(status_code=502, detail=detail)
     body = res.json()
     try:
         content = body["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as e:
-        raise HTTPException(status_code=502, detail=f"OpenAI 응답 구조 오류: {e}") from e
+        raise HTTPException(
+            status_code=502, detail=f"{provider_label} 응답 구조 오류: {e}"
+        ) from e
     return _parse_payload(content)
 
 
@@ -220,7 +243,7 @@ def _extract_error(res: httpx.Response, provider: str) -> str:
 async def analyze_vulnerability(db: AsyncSession, vuln: Vulnerability) -> AiAnalysis:
     cred = await _load_active_credential(db)
     provider = (cred.provider or "").lower()
-    if provider == "openai":
+    if provider in _OPENAI_COMPATIBLE:
         return await _call_openai(cred, vuln)
     if provider == "anthropic":
         return await _call_anthropic(cred, vuln)
