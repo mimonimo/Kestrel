@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models import Vulnerability
-from app.schemas.vulnerability import VulnerabilityDetail, VulnerabilityListItem
+from app.schemas.vulnerability import CamelModel, VulnerabilityDetail, VulnerabilityListItem
+from app.services.ai_analyzer import analyze_vulnerability
 
 router = APIRouter(prefix="/cves", tags=["cves"])
 
@@ -54,3 +55,30 @@ async def get_cve(cve_id: str, db: AsyncSession = Depends(get_db)) -> Vulnerabil
     if vuln is None:
         raise HTTPException(status_code=404, detail=f"{cve_id} not found")
     return vuln
+
+
+class AiAnalysisResponse(CamelModel):
+    attack_method: str
+    payload_example: str
+    mitigation: list[str]
+
+
+@router.post(
+    "/{cve_id}/analyze",
+    response_model=AiAnalysisResponse,
+    response_model_by_alias=True,
+)
+async def analyze_cve(cve_id: str, db: AsyncSession = Depends(get_db)) -> AiAnalysisResponse:
+    """Run the configured LLM over a CVE and return structured analysis.
+
+    Returns 400 when the settings row has no API key / provider / model
+    configured (raised from the service layer)."""
+    vuln = await db.scalar(select(Vulnerability).where(Vulnerability.cve_id == cve_id))
+    if vuln is None:
+        raise HTTPException(status_code=404, detail=f"{cve_id} not found")
+    result = await analyze_vulnerability(db, vuln)
+    return AiAnalysisResponse(
+        attack_method=result.attack_method,
+        payload_example=result.payload_example,
+        mitigation=result.mitigation,
+    )
