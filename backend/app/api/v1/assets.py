@@ -8,14 +8,14 @@ strict semver range checks server-side (CPE version_range is free-form text).
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import Field
-from sqlalchemy import or_, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.models import AffectedProduct, Vulnerability
+from app.models import AffectedProduct, OsFamily, Vulnerability
 from app.schemas.search import SearchResponse
 from app.schemas.vulnerability import CamelModel, VulnerabilityListItem
 
@@ -31,6 +31,98 @@ class AssetInput(CamelModel):
 class MatchRequest(CamelModel):
     assets: list[AssetInput] = Field(default_factory=list, max_length=50)
     limit: int = Field(default=100, ge=1, le=500)
+
+
+class CatalogEntry(CamelModel):
+    vendor: str
+    product: str
+    os_family: OsFamily
+    cve_count: int
+    sample_versions: list[str] = []
+
+
+class CatalogResponse(CamelModel):
+    items: list[CatalogEntry]
+
+
+@router.get("/catalog", response_model=CatalogResponse, response_model_by_alias=True)
+async def asset_catalog(
+    q: str | None = Query(default=None, max_length=120),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+) -> CatalogResponse:
+    """Browse the parsed (vendor, product, os_family) catalog.
+
+    Used by the settings UI as an autocomplete source so user-entered
+    asset rows match what the ingestor actually stored.
+    """
+    cve_count = func.count(func.distinct(AffectedProduct.vulnerability_id)).label("cve_count")
+    base = select(
+        AffectedProduct.vendor,
+        AffectedProduct.product,
+        AffectedProduct.os_family,
+        cve_count,
+    )
+    if q:
+        like = f"%{q.strip().lower()}%"
+        base = base.where(
+            or_(
+                func.lower(AffectedProduct.vendor).like(like),
+                func.lower(AffectedProduct.product).like(like),
+                func.lower(AffectedProduct.cpe_string).like(like),
+            )
+        )
+    base = (
+        base.group_by(AffectedProduct.vendor, AffectedProduct.product, AffectedProduct.os_family)
+        .order_by(desc(cve_count))
+        .limit(limit)
+    )
+    rows = (await db.execute(base)).all()
+    if not rows:
+        return CatalogResponse(items=[])
+
+    pairs = [(r.vendor, r.product) for r in rows]
+    ver_stmt = (
+        select(
+            AffectedProduct.vendor,
+            AffectedProduct.product,
+            AffectedProduct.version_range,
+            func.count().label("n"),
+        )
+        .where(
+            AffectedProduct.version_range.isnot(None),
+            or_(
+                *[
+                    (AffectedProduct.vendor == v) & (AffectedProduct.product == p)
+                    for v, p in pairs
+                ]
+            ),
+        )
+        .group_by(
+            AffectedProduct.vendor, AffectedProduct.product, AffectedProduct.version_range
+        )
+        .order_by(desc("n"))
+    )
+    by_pair: dict[tuple[str, str], list[str]] = {}
+    for v, p, ver, _ in (await db.execute(ver_stmt)).all():
+        if not ver:
+            continue
+        by_pair.setdefault((v, p), [])
+        if len(by_pair[(v, p)]) < 5 and ver not in by_pair[(v, p)]:
+            by_pair[(v, p)].append(ver)
+
+    return CatalogResponse(
+        items=[
+            CatalogEntry(
+                vendor=r.vendor,
+                product=r.product,
+                os_family=r.os_family,
+                cve_count=r.cve_count,
+                sample_versions=by_pair.get((r.vendor, r.product), []),
+            )
+            for r in rows
+        ]
+    )
 
 
 @router.post("/match", response_model=SearchResponse, response_model_by_alias=True)

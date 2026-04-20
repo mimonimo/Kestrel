@@ -41,6 +41,18 @@ export interface BookmarkListResponse {
   total: number;
 }
 
+export interface AssetCatalogEntry {
+  vendor: string;
+  product: string;
+  osFamily: string;
+  cveCount: number;
+  sampleVersions: string[];
+}
+
+export interface AssetCatalogResponse {
+  items: AssetCatalogEntry[];
+}
+
 export const api = {
   searchVulnerabilities: (filters: SearchFilters, page = 1, pageSize = 20) => {
     const params = new URLSearchParams();
@@ -70,6 +82,11 @@ export const api = {
         limit,
       }),
     }),
+  searchAssetCatalog: (q: string, limit = 20) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (q) params.set("q", q);
+    return request<AssetCatalogResponse>(`/assets/catalog?${params.toString()}`);
+  },
   refreshIngestion: (keys: { nvdApiKey?: string; githubToken?: string }) => {
     const headers: Record<string, string> = {};
     if (keys.nvdApiKey) headers["X-NVD-API-Key"] = keys.nvdApiKey;
