@@ -89,8 +89,8 @@ export function CommentThread({ postId, vulnerabilityId }: Props) {
       {list.isPending ? (
         <p className="text-xs text-neutral-500">불러오는 중…</p>
       ) : list.data && list.data.items.length === 0 ? (
-        <p className="rounded border border-dashed border-neutral-800 bg-surface-1/50 py-6 text-center text-xs text-neutral-500">
-          아직 댓글이 없습니다.
+        <p className="rounded-md border border-sky-500/30 bg-sky-500/10 py-6 text-center text-xs font-medium text-sky-700 dark:text-sky-200">
+          아직 댓글이 없습니다. 첫 의견을 남겨보세요.
         </p>
       ) : (
         <ul className="space-y-3">
