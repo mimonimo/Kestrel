@@ -125,7 +125,7 @@ function CredentialList({
               className={cn(
                 "flex items-center justify-between gap-3 rounded-lg border p-3",
                 isActive
-                  ? "border-emerald-500/50 bg-emerald-500/10"
+                  ? "border-sky-500/50 bg-sky-500/10"
                   : "border-neutral-800 bg-surface-1",
               )}
             >
@@ -138,7 +138,7 @@ function CredentialList({
                   onChange={() => {
                     if (!isActive) activate.mutate(c.id);
                   }}
-                  className="h-4 w-4 cursor-pointer accent-emerald-500"
+                  className="h-4 w-4 cursor-pointer accent-sky-500"
                   aria-label={`${c.label} 활성화`}
                 />
                 <div className="min-w-0 flex-1">
@@ -147,7 +147,7 @@ function CredentialList({
                       {c.label}
                     </span>
                     {isActive && (
-                      <span className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300">
+                      <span className="inline-flex items-center gap-1 rounded border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-300">
                         <Check className="h-3 w-3" />
                         사용 중
                       </span>
@@ -411,7 +411,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
             type="checkbox"
             checked={activate}
             onChange={(e) => setActivate(e.target.checked)}
-            className="h-4 w-4 accent-emerald-500"
+            className="h-4 w-4 accent-sky-500"
           />
           저장 후 바로 사용하기
         </label>
