@@ -244,10 +244,10 @@ export function StatusBanner() {
         className={cn(
           "pointer-events-auto flex items-center gap-2 rounded-full border px-3.5 py-2 text-xs font-medium shadow-lg shadow-black/30 backdrop-blur transition-colors",
           warnCount > 0
-            ? "border-amber-500/40 bg-amber-500/15 text-amber-100 hover:bg-amber-500/25"
+            ? "border-amber-500/40 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25"
             : hasIssues
-              ? "border-sky-500/40 bg-sky-500/15 text-sky-100 hover:bg-sky-500/25"
-              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20",
+              ? "border-sky-500/40 bg-sky-500/15 text-sky-300 hover:bg-sky-500/25"
+              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20",
         )}
         aria-expanded={open}
         aria-haspopup="dialog"
