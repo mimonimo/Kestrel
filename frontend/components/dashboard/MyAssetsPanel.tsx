@@ -8,13 +8,16 @@ import { api } from "@/lib/api";
 import { useAssets } from "@/lib/assets";
 import { BookmarkButton } from "@/components/cve/BookmarkButton";
 import { SeverityBadge } from "@/components/cve/SeverityBadge";
+import { SortSelect } from "@/components/dashboard/SortSelect";
+import { sortVulnerabilities, type SortKey } from "@/lib/sort";
 import { timeAgo } from "@/lib/utils";
 
-const PAGE_SIZE = 1;
+const PAGE_SIZE = 5;
 
 export function MyAssetsPanel() {
   const { list, ready } = useAssets();
   const [page, setPage] = useState(0);
+  const [sort, setSort] = useState<SortKey>("newest");
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["assets-match", list.map((a) => `${a.vendor}:${a.product}:${a.version ?? ""}`).join("|")],
@@ -25,10 +28,10 @@ export function MyAssetsPanel() {
 
   const matchedCount = data?.items.length ?? 0;
   useEffect(() => {
-    // Reset when the result set changes (e.g. assets edited) so we never show
-    // an out-of-range page.
+    // Reset when the result set or sort changes so we never show an
+    // out-of-range page.
     setPage(0);
-  }, [matchedCount]);
+  }, [matchedCount, sort]);
 
   if (!ready) return null;
 
@@ -56,11 +59,15 @@ export function MyAssetsPanel() {
     );
   }
 
-  const items = data?.items ?? [];
+  const rawItems = data?.items ?? [];
   const total = data?.total ?? 0;
-  const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const sortedItems = sortVulnerabilities(rawItems, sort);
+  const pageCount = Math.max(1, Math.ceil(sortedItems.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
-  const visibleItems = items.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+  const visibleItems = sortedItems.slice(
+    safePage * PAGE_SIZE,
+    safePage * PAGE_SIZE + PAGE_SIZE,
+  );
 
   return (
     <section className="mb-8 rounded-xl border border-sky-500/20 bg-gradient-to-br from-sky-500/5 to-transparent p-5 shadow-[0_0_0_1px_rgba(56,189,248,0.05)]">
@@ -74,19 +81,22 @@ export function MyAssetsPanel() {
             자산 {list.length} · 매칭 {total}
           </span>
         </div>
-        <Link
-          href="/settings"
-          className="inline-flex items-center gap-1 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-300 hover:border-sky-400/50 hover:text-neutral-100"
-        >
-          <Settings2 className="h-3.5 w-3.5" /> 자산 관리
-        </Link>
+        <div className="flex items-center gap-2">
+          <SortSelect value={sort} onChange={setSort} />
+          <Link
+            href="/settings"
+            className="inline-flex items-center gap-1 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-300 hover:border-sky-400/50 hover:text-neutral-100"
+          >
+            <Settings2 className="h-3.5 w-3.5" /> 자산 관리
+          </Link>
+        </div>
       </header>
 
       {isLoading ? (
         <p className="text-xs text-neutral-500">매칭 중…</p>
       ) : isError ? (
         <p className="text-xs text-red-400">매칭 API 호출에 실패했습니다.</p>
-      ) : items.length === 0 ? (
+      ) : sortedItems.length === 0 ? (
         <p className="text-xs text-neutral-500">
           등록된 자산과 일치하는 CVE가 아직 수집되지 않았습니다.
         </p>
