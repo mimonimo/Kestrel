@@ -23,6 +23,13 @@ export function MyAssetsPanel() {
     staleTime: 60_000,
   });
 
+  const matchedCount = data?.items.length ?? 0;
+  useEffect(() => {
+    // Reset when the result set changes (e.g. assets edited) so we never show
+    // an out-of-range page.
+    setPage(0);
+  }, [matchedCount]);
+
   if (!ready) return null;
 
   if (list.length === 0) {
@@ -54,12 +61,6 @@ export function MyAssetsPanel() {
   const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const visibleItems = items.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
-
-  useEffect(() => {
-    // Reset when the result set changes (e.g. assets edited) so we never show
-    // an out-of-range page.
-    setPage(0);
-  }, [items.length]);
 
   return (
     <section className="mb-8 rounded-xl border border-sky-500/20 bg-gradient-to-br from-sky-500/5 to-transparent p-5 shadow-[0_0_0_1px_rgba(56,189,248,0.05)]">
