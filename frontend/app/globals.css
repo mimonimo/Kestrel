@@ -60,12 +60,14 @@ html.light .bg-surface-2 { background-color: #ebebeb; }
 html.light .bg-surface-3 { background-color: #e0e0e0; }
 html.light .bg-surface-0\/80 { background-color: rgba(255, 255, 255, 0.85); }
 
-html.light .text-neutral-100 { color: #18181b; }
-html.light .text-neutral-200 { color: #27272a; }
-html.light .text-neutral-300 { color: #3f3f46; }
-html.light .text-neutral-400 { color: #52525b; }
-html.light .text-neutral-500 { color: #71717a; }
-html.light .text-neutral-600 { color: #a1a1aa; }
+html.light .text-neutral-100 { color: #0a0a0b; }
+html.light .text-neutral-200 { color: #18181b; }
+html.light .text-neutral-300 { color: #27272a; }
+html.light .text-neutral-400 { color: #3f3f46; }
+html.light .text-neutral-500 { color: #52525b; }
+html.light .text-neutral-600 { color: #71717a; }
+html.light .text-neutral-700 { color: #3f3f46; }
+html.light .placeholder\:text-neutral-500::placeholder { color: #52525b; }
 
 html.light .border-neutral-800 { border-color: #e4e4e7; }
 html.light .border-neutral-700 { border-color: #d4d4d8; }
@@ -76,6 +78,23 @@ html.light .hover\:border-neutral-500:hover { border-color: #71717a; }
 html.light .hover\:border-neutral-700:hover { border-color: #a1a1aa; }
 html.light .hover\:text-neutral-100:hover { color: #000; }
 html.light .hover\:text-neutral-200:hover { color: #18181b; }
+
+/* Accent colors used inside tinted badges/pills (sky/emerald/amber/red/violet).
+   Tailwind 200/300 shades become illegible on a white background, so remap
+   them to 600/700-range shades that still match the brand hue. */
+html.light .text-sky-200 { color: #0369a1; }
+html.light .text-sky-300 { color: #0369a1; }
+html.light .text-emerald-200 { color: #047857; }
+html.light .text-emerald-300 { color: #047857; }
+html.light .text-amber-200 { color: #b45309; }
+html.light .text-amber-300 { color: #b45309; }
+html.light .text-red-200 { color: #b91c1c; }
+html.light .text-red-200\/90 { color: rgba(185, 28, 28, 0.92); }
+html.light .text-red-300 { color: #b91c1c; }
+html.light .text-red-400 { color: #dc2626; }
+html.light .text-violet-400 { color: #6d28d9; }
+html.light .hover\:text-red-300:hover { color: #991b1b; }
+html.light .hover\:text-amber-200:hover { color: #b45309; }
 
 html.light ::-webkit-scrollbar-track { background: #fafafa; }
 html.light ::-webkit-scrollbar-thumb { background: #d4d4d8; }
