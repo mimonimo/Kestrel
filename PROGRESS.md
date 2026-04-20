@@ -24,7 +24,7 @@
 
 ---
 
-> 진행 상황: Step 1 ✅ · Step 2 ✅ · Step 3 ✅ · Step 4 ✅ · Step 5 ✅ · Step 6 ✅
+> 진행 상황: Step 1 ✅ · Step 2 ✅ · Step 3 ✅ · Step 4 ✅ · Step 5 ✅ · Step 6 ✅ · Step 7 ✅
 
 ---
 
@@ -268,6 +268,64 @@ frontend/
 - 로그인 없이 동작하므로 `X-Client-Id`는 “디바이스 단위 의사 소유권”에 불과. 실제 인증이 필요해지는 시점에 `users` 연결을 복구하면 됨 (`user_id` 컬럼은 그대로 보존).
 - `client_id`가 손상/초기화되면 본인 글에 대한 삭제 권한이 사라지지만, 데이터는 그대로 남음 (다른 사람이 임의 삭제 불가).
 - Header에 `대시보드` ↔ `커뮤니티` 링크 노출, 기존 “커뮤니티 준비 중” 안내 제거.
+
+---
+
+## Step 7 — 리브랜드 & AI 심층 분석 고도화 ✅
+
+**완료일:** 2026-04-21
+
+### 1. 리브랜드 (cvewatch → kestrel)
+
+- DB 사용자/비밀번호/DB 이름, localStorage 키(`kestrel:*`), `COMPOSE_PROJECT_NAME`, OTEL 서비스명, Sentry release 등 식별자 전역 교체.
+- 공개 저장소 URL: `github.com/mimonimo/Kestrel` (신규 레포로 재구성).
+- 데이터베이스 리셋 후 재빌드 → 정상 기동 확인.
+
+### 2. 다중 AI 자격 증명 & 활성 키 스위처
+
+- **DB 마이그레이션** (alembic `0008_ai_credentials.py`):
+  - `ai_credentials` 테이블 신설 (id, label, provider, model, api_key, base_url, created_at, updated_at)
+  - `app_settings` 의 기존 `ai_provider/ai_model/ai_api_key/ai_base_url` 컬럼 제거
+  - `app_settings.active_credential_id` FK(`ai_credentials.id`, ON DELETE SET NULL) 추가
+- **API**: `GET/POST /settings/credentials`, `PATCH /settings/credentials/{id}`(필드별 수정), `DELETE /settings/credentials/{id}`, `POST /settings/credentials/{id}/activate`.
+- **CORS**: `PATCH` preflight 400 이슈 수정 — `allow_methods` 에 `PATCH` 명시 추가.
+- **Frontend**: `components/settings/AiSettingsForm.tsx`
+  - 저장된 키 목록 + 라디오로 활성 전환 + 삭제 버튼
+  - 저장된 키에서 모델만 즉석 변경 (PATCH 기반 `ModelSelect` inline select)
+  - 활성 상태 UI를 sky 계열로 통일 (`accent-sky-500`, `border-sky-500/50 bg-sky-500/10`, "사용 중" 뱃지 `text-sky-300`)
+  - `Input` / `Button` 버튼 `whitespace-nowrap shrink-0` 으로 줄바꿈 방지
+
+### 3. 무료 티어 제공자 확장 + Claude Code CLI 연동
+
+- **OpenAI 호환군 확장**: `_OPENAI_COMPATIBLE = {openai, gemini, groq, openrouter, cerebras}`, 공통 wire 포맷으로 dispatch. `base_url` 만 자격 증명별로 다름.
+- **JSON 응답 포맷 분기**: `_SUPPORTS_JSON_SCHEMA = {openai, gemini}` 은 `response_format: json_schema strict`, 그 외는 widely-supported 한 `json_object`.
+- **프론트 PROVIDERS 메타 확장**: `defaultBaseUrl`, `note`, `requiresApiKey` 필드 추가. 제공자 선택 시 base URL 자동 채움 + 무료 티어 안내 배너.
+- **Claude Code CLI 제공자** (`claude_cli`):
+  - `_call_claude_cli` — `asyncio.create_subprocess_exec("claude", "-p", prompt, "--model", model, "--output-format", "text")`. 타임아웃 180초, stderr 400자까지 사용자에게 노출.
+  - `_load_active_credential` 에서 `claude_cli` 만 api_key 빈 값 허용.
+  - Dockerfile ARG `INSTALL_CLAUDE_CLI=0` (기본 오프) — 1일 때 Node.js 20 + `@anthropic-ai/claude-code` 글로벌 설치.
+  - `docker-compose.claude-cli.yml` 오버레이에서 `${HOME}/.claude` 와 `${HOME}/.claude.json` 을 읽기 전용으로 마운트.
+  - Frontend: `requiresApiKey: false` 인 프로바이더는 API 키·Base URL 입력을 숨기고 백엔드엔 `apiKey: "local"` 센티넬을 전송.
+
+### 4. AI 심층 분석 프롬프트 실무 지향 개편
+
+- **공격 기법**: (1) 취약 컴포넌트/버전 범위 (2) 전제조건(인증·네트워크·설정) (3) 트리거 경로(엔드포인트·파라미터·함수) (4) 영향(RCE/SSRF 등) 4단 강제. "악성 페이로드 전송" 같은 추상적 표현 금지.
+- **페이로드**: 취약점 유형별 최소 형식 강제. XSS/SQLi/명령인젝션/경로순회/SSRF/템플릿 인젝션 → 주입 문자열 본체. HTTP 로 직접 트리거되는 RCE/인증우회만 curl/HTTP 원문 여러 줄. `# 용도 / # 핵심 / # 확인 포인트` 주석으로 내부 구조 설명.
+- **영향 회수 메커니즘 필수화**: XSS → 쿠키/토큰 exfil fetch, SQLi → UNION/blind 로 실제 값 추출, 명령 인젝션 → `curl .../?d=$(명령 | base64)`, SSRF → 클라우드 메타데이터, RCE → 결과 회수까지 한 세트.
+- **대응 방안 1:1 매핑**: mitigation 배열의 각 항목이 "위에서 작성한 payload 자체"를 어떻게 막는지 구체적 코드/설정/필터로 지목하도록 강제. `코드패치 / 설정변경 / 입력검증 / WAF·네트워크 / 버전업그레이드` 분류 태그 + payload 인용.
+
+### 5. Notion 스타일 코드 블록 UI
+
+- `components/cve/AiAnalysisPanel.tsx` 의 `<pre>` 한 덩어리를 `CodeBlock` 컴포넌트로 교체.
+- `detectLanguage` 휴리스틱이 payload 본문을 보고 `http / bash / python / nuclei / msf / text` 중 하나를 추정 → 상단 언어 라벨 표기.
+- `CopyButton` — 클립보드 복사 + 1.5초 후 초록색 체크 피드백.
+- 좌측 gutter 에 줄번호 표시, 본문은 `whitespace-pre` + 수평 스크롤 유지.
+- 대응 방안 체크리스트는 기존 옵티미스틱 토글 유지.
+
+### 6. Docker 재빌드 패턴 주의
+
+- `docker-compose.yml` 에 소스 볼륨 마운트가 없어, 코드 수정 후 `docker compose restart` 만으로는 반영되지 않음. 프롬프트/백엔드/프론트 변경 시엔 반드시 `docker compose build <service>` 후 `up -d --build`.
+- 볼륨 마운트를 dev 전용으로 분리하려면 별도 `docker-compose.dev.yml` 오버레이 방식 추천(현재는 미도입).
 
 ---
 

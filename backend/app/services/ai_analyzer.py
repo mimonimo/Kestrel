@@ -9,7 +9,9 @@ Both OpenAI and Anthropic are supported. Each provider call returns the same
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import shutil
 from dataclasses import dataclass
 
 import httpx
@@ -151,9 +153,14 @@ async def _load_active_credential(db: AsyncSession) -> AiCredential:
             select(AiCredential).where(AiCredential.id == settings_row.active_credential_id)
         )
     ).scalar_one_or_none()
-    if cred is None or not cred.api_key:
+    if cred is None:
         raise AiAnalyzerNotConfigured(
             "선택한 AI 키를 찾을 수 없습니다. 설정 페이지에서 다시 선택해주세요.",
+        )
+    # claude_cli uses the host's Claude Code login, not an API key.
+    if (cred.provider or "").lower() != "claude_cli" and not cred.api_key:
+        raise AiAnalyzerNotConfigured(
+            "선택한 자격 증명에 API 키가 비어 있습니다. 설정 페이지에서 확인해주세요.",
         )
     if not cred.provider:
         raise AiAnalyzerNotConfigured("AI 제공자가 설정되지 않았습니다.")
@@ -276,6 +283,72 @@ async def _call_anthropic(cred: AiCredential, vuln: Vulnerability) -> AiAnalysis
     return _parse_payload(content)
 
 
+async def _call_claude_cli(cred: AiCredential, vuln: Vulnerability) -> AiAnalysis:
+    """Invoke the local Claude Code CLI in headless mode.
+
+    Uses the host's Claude Code authentication (mounted via ``~/.claude``),
+    so the user's existing subscription is used instead of a separate
+    Anthropic API key / billing. The CLI binary must be on PATH inside the
+    backend container — see README section "AI 심층 분석 — Claude Code CLI".
+    """
+    if shutil.which("claude") is None:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "claude CLI를 찾을 수 없습니다. 백엔드 이미지에 Claude Code CLI가 "
+                "설치되어 있어야 합니다. README의 'Claude Code CLI' 섹션을 참고하세요."
+            ),
+        )
+    prompt = _SYSTEM_PROMPT + "\n\n" + _USER_TEMPLATE.format(
+        cve_id=vuln.cve_id,
+        title=vuln.title,
+        description=vuln.description,
+    ) + "\n\nRespond with a single JSON object, no surrounding prose or code fences."
+    args = [
+        "claude",
+        "-p",
+        prompt,
+        "--model",
+        cred.model,
+        "--output-format",
+        "text",
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=502,
+            detail="claude CLI 실행 실패: 바이너리를 찾을 수 없습니다.",
+        ) from e
+    try:
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            proc.communicate(), timeout=180
+        )
+    except asyncio.TimeoutError as e:
+        proc.kill()
+        raise HTTPException(
+            status_code=504,
+            detail="claude CLI 응답이 제한 시간(180초) 내에 돌아오지 않았습니다.",
+        ) from e
+    if proc.returncode != 0:
+        stderr = stderr_bytes.decode("utf-8", errors="replace").strip()[:400]
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"claude CLI 실행 실패 (exit={proc.returncode}). "
+                f"로그인 상태/모델 ID를 확인하세요. 오류: {stderr or '(stderr 없음)'}"
+            ),
+        )
+    content = stdout_bytes.decode("utf-8", errors="replace").strip()
+    if not content:
+        raise HTTPException(status_code=502, detail="claude CLI 응답이 비어 있습니다.")
+    return _parse_payload(content)
+
+
 def _extract_error(res: httpx.Response, provider: str) -> str:
     try:
         body = res.json()
@@ -292,4 +365,6 @@ async def analyze_vulnerability(db: AsyncSession, vuln: Vulnerability) -> AiAnal
         return await _call_openai(cred, vuln)
     if provider == "anthropic":
         return await _call_anthropic(cred, vuln)
+    if provider == "claude_cli":
+        return await _call_claude_cli(cred, vuln)
     raise AiAnalyzerNotConfigured(f"지원하지 않는 AI 제공자입니다: {cred.provider}")

@@ -16,6 +16,10 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        # Set INSTALL_CLAUDE_CLI=1 in your shell or .env to install Claude
+        # Code CLI for the "claude_cli" AI analysis provider.
+        INSTALL_CLAUDE_CLI: ${INSTALL_CLAUDE_CLI:-0}
     ports:
       - "8000:8000"
     environment:

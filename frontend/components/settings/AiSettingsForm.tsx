@@ -20,6 +20,7 @@ interface ProviderMeta {
   models: string[];
   defaultBaseUrl?: string;
   note?: string;
+  requiresApiKey?: boolean;
 }
 
 const PROVIDERS: ProviderMeta[] = [
@@ -49,6 +50,18 @@ const PROVIDERS: ProviderMeta[] = [
       "claude-sonnet-4-6",
       "claude-opus-4-7",
     ],
+  },
+  {
+    value: "claude_cli",
+    label: "Claude Code CLI (로컬 구독)",
+    models: [
+      "claude-opus-4-7",
+      "claude-sonnet-4-6",
+      "claude-haiku-4-5-20251001",
+    ],
+    requiresApiKey: false,
+    note:
+      "별도 API 키 없이 본인 Claude Code 구독을 사용합니다. 백엔드 이미지에 claude CLI가 설치되어 있고 ~/.claude 가 마운트되어 있어야 합니다. README의 'Claude Code CLI' 섹션 참고.",
   },
   {
     value: "gemini",
@@ -320,13 +333,17 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
   const [activate, setActivate] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const keyRequired = providerMeta.requiresApiKey !== false;
   const create = useMutation({
     mutationFn: () =>
       api.createAiCredential({
         label: label.trim() || `${providerLabel(provider)} · ${model}`,
         provider,
         model,
-        apiKey,
+        // Backend requires a non-empty api_key column; for CLI-auth providers
+        // we send a harmless sentinel since the real credential lives in
+        // the mounted ~/.claude directory on the server.
+        apiKey: keyRequired ? apiKey : "local",
         baseUrl: baseUrl.trim() || null,
         activate: activate || !hasExisting,
       }),
@@ -344,7 +361,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
     },
   });
 
-  const canSubmit = apiKey.trim().length > 0 && !create.isPending;
+  const canSubmit = (!keyRequired || apiKey.trim().length > 0) && !create.isPending;
 
   return (
     <form
@@ -419,57 +436,65 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
         </div>
       )}
 
-      <div>
-        <label className="block text-xs">
-          <span className="mb-1 block font-medium text-neutral-300">
-            Base URL{" "}
-            <span className="text-neutral-500">
-              {providerMeta.defaultBaseUrl ? "(자동 채움, 필요 시 수정)" : "(선택사항)"}
+      {keyRequired && (
+        <div>
+          <label className="block text-xs">
+            <span className="mb-1 block font-medium text-neutral-300">
+              Base URL{" "}
+              <span className="text-neutral-500">
+                {providerMeta.defaultBaseUrl ? "(자동 채움, 필요 시 수정)" : "(선택사항)"}
+              </span>
             </span>
-          </span>
-          <Input
-            type="url"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder={providerMeta.defaultBaseUrl ?? "https://api.openai.com/v1"}
-            autoComplete="off"
-            spellCheck={false}
-            className="font-mono"
-          />
-          <span className="mt-1 block text-[11px] text-neutral-500">
-            OpenAI 호환 프록시나 자체 호스팅 엔드포인트를 사용할 때 입력하세요.
-          </span>
-        </label>
-      </div>
+            <Input
+              type="url"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder={providerMeta.defaultBaseUrl ?? "https://api.openai.com/v1"}
+              autoComplete="off"
+              spellCheck={false}
+              className="font-mono"
+            />
+            <span className="mt-1 block text-[11px] text-neutral-500">
+              OpenAI 호환 프록시나 자체 호스팅 엔드포인트를 사용할 때 입력하세요.
+            </span>
+          </label>
+        </div>
+      )}
 
-      <div>
-        <div className="mb-1 flex items-center justify-between">
-          <span className="text-xs font-medium text-neutral-300">API 키</span>
+      {keyRequired ? (
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-xs font-medium text-neutral-300">API 키</span>
+          </div>
+          <div className="relative">
+            <Input
+              type={showKey ? "text" : "password"}
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-..."
+              autoComplete="off"
+              spellCheck={false}
+              className="pr-10 font-mono"
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowKey((s) => !s)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700 dark:hover:bg-surface-3 dark:hover:text-neutral-200"
+              aria-label={showKey ? "값 숨기기" : "값 보기"}
+            >
+              {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          <p className="mt-1.5 text-[11px] text-neutral-500">
+            서버 DB에 저장됩니다. 응답에는 다시 표시되지 않으므로 보관에 주의하세요.
+          </p>
         </div>
-        <div className="relative">
-          <Input
-            type={showKey ? "text" : "password"}
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="sk-..."
-            autoComplete="off"
-            spellCheck={false}
-            className="pr-10 font-mono"
-            required
-          />
-          <button
-            type="button"
-            onClick={() => setShowKey((s) => !s)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700 dark:hover:bg-surface-3 dark:hover:text-neutral-200"
-            aria-label={showKey ? "값 숨기기" : "값 보기"}
-          >
-            {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
+      ) : (
+        <div className="rounded-md border border-neutral-800 bg-surface-2 px-3 py-2 text-[11px] text-neutral-400">
+          이 제공자는 API 키가 필요 없습니다. 백엔드 컨테이너의 <span className="font-mono">claude</span> CLI 로그인 정보를 사용합니다.
         </div>
-        <p className="mt-1.5 text-[11px] text-neutral-500">
-          서버 DB에 저장됩니다. 응답에는 다시 표시되지 않으므로 보관에 주의하세요.
-        </p>
-      </div>
+      )}
 
       {hasExisting && (
         <label className="flex items-center gap-2 text-xs text-neutral-300">

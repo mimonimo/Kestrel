@@ -23,6 +23,7 @@ Kestrel은 공개 취약점 정보를 한 곳으로 모아 보안 엔지니어, 
 - [Quick Start (Docker)](#quick-start-docker)
 - [Ubuntu 22.04 원클릭 셋업](#ubuntu-2204-원클릭-셋업)
 - [설정 (환경변수)](#설정-환경변수)
+- [AI 심층 분석](#ai-심층-분석)
 - [로컬 개발 (Docker 없이)](#로컬-개발-docker-없이)
 - [실행 & 사용법](#실행--사용법)
 - [API 요약](#api-요약)
@@ -315,6 +316,71 @@ docker compose down -v   # ⚠️ DB · 수집 이력 전부 삭제
 
 ---
 
+## AI 심층 분석
+
+CVE 상세 페이지에서 **"AI 심층 분석 요청"** 버튼을 누르면 LLM이 해당 CVE만의 구체적 공격 기법·PoC 페이로드·패치 방안을 한국어로 생성합니다. 페이로드는 취약점 유형(XSS·SQLi·RCE·SSRF·경로 순회 등)에 맞춰 실제 테스트 환경에서 재현할 수 있는 형태로 작성되며, 대응 방안은 그 페이로드가 어떤 검사·패치로 무력화되는지 1:1로 매핑해 제시합니다.
+
+제공자·모델·키는 설정 페이지(`/settings`)에서 여러 개 등록하고 활성 키를 스위치할 수 있습니다. 저장된 키에서 모델만 즉석 변경도 가능합니다.
+
+### 지원 제공자
+
+| 제공자 | 등록 방식 | 비고 |
+| --- | --- | --- |
+| **OpenAI** | API 키 | `gpt-5`, `gpt-5-mini`, `gpt-4.1` 계열. `json_schema` strict 응답 형식 사용. |
+| **Anthropic** | API 키 | `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`. Anthropic Messages API 직접 호출. |
+| **Google Gemini (무료 티어)** | API 키 | [aistudio.google.com](https://aistudio.google.com/apikey)에서 발급. Flash 일 1,500 요청 무료. OpenAI 호환 엔드포인트 사용. |
+| **Groq (무료 티어)** | API 키 | [console.groq.com](https://console.groq.com/keys) 발급. Llama 3.3 70B / 3.1 8B / Mixtral / Gemma2, 분당 30·일 14,400 요청 무료. |
+| **OpenRouter (:free 모델)** | API 키 | [openrouter.ai/keys](https://openrouter.ai/keys) 발급. `:free` 접미사 모델만 무료 (DeepSeek, Llama 3.3, Qwen 등). |
+| **Cerebras (무료 티어)** | API 키 | [cloud.cerebras.ai](https://cloud.cerebras.ai)에서 발급. Llama 3.3 70B 일 100만 토큰 무료, 추론 속도 최고 수준. |
+| **Claude Code CLI** | 키 불필요 | 호스트에 설치된 `claude` CLI(본인 구독)로 분석 수행. 아래 섹션 참고. |
+
+### Claude Code CLI 연동
+
+별도 Anthropic API 결제 없이 본인이 이미 쓰고 있는 Claude Code 구독으로 분석을 돌리고 싶을 때 사용합니다. 백엔드 컨테이너에 `claude` CLI를 설치하고, 호스트의 `~/.claude` 로그인 정보를 읽기 전용으로 마운트합니다.
+
+**1. 호스트에서 claude CLI에 먼저 로그인** (아직 안 돼 있다면)
+
+```bash
+npm install -g @anthropic-ai/claude-code
+claude login
+```
+
+**2. `.env` 에 플래그 설정**
+
+```env
+INSTALL_CLAUDE_CLI=1
+# 기본은 ~/.claude 를 사용합니다. 다른 경로에 저장한다면:
+# CLAUDE_HOME=/custom/path/.claude
+# CLAUDE_CONFIG=/custom/path/.claude.json
+```
+
+**3. Claude CLI 오버레이와 함께 기동**
+
+```bash
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.claude-cli.yml \
+  up -d --build
+```
+
+**4. 설정 페이지에서 키 추가**
+
+- 제공자: `Claude Code CLI (로컬 구독)` 선택
+- 모델: `claude-opus-4-7` 등
+- API 키 입력란 없음 — 바로 저장
+
+이후 CVE 상세 페이지의 **AI 심층 분석 요청** 이 호스트의 Claude 구독을 통해 동작합니다.
+
+> ⚠️ `~/.claude` 에는 세션 토큰이 있으므로 마운트는 읽기 전용입니다. 컨테이너 외부에 노출되지 않도록 주의하세요. 공용/공유 서버에서 이 방식을 쓰는 것은 권장하지 않습니다.
+
+### 무료·저비용 시작 팁
+
+- **아무 키도 없을 때**: Groq → Cerebras → Gemini 순서로 시도해보세요. 등록이 가장 간단하고 속도도 빠른 건 Groq, 출력 품질은 Gemini가 가장 좋은 경향입니다.
+- **Anthropic API 크레딧 부족 오류가 뜰 때**: `console.anthropic.com` 에서 결제 수단을 등록하거나, Claude Code CLI 방식으로 전환하세요.
+- **Gemini 403 `PERMISSION_DENIED`**: 지역 제한 또는 프로젝트 플래그로 차단된 경우입니다. AI Studio에서 **새 프로젝트**로 키를 다시 발급하면 대부분 해결됩니다.
+
+---
+
 ## 로컬 개발 (Docker 없이)
 
 > **사전 요구사항** — Python 3.12+, Node.js 20+, 그리고 호스트에서 접근 가능한 PostgreSQL 16, Redis 7, Meilisearch v1.10 인스턴스가 필요합니다.
@@ -532,6 +598,7 @@ npm run test:e2e
 - [x] 익명 커뮤니티 (게시글 · 댓글 · CVE 단위 토론 스레드)
 - [x] 사용자 자산 등록 + CPE 매칭
 - [x] 즐겨찾기 (백엔드 영속화)
+- [x] AI 심층 분석 — 다중 제공자(OpenAI · Anthropic · Gemini · Groq · OpenRouter · Cerebras · Claude Code CLI) + 활성 키 스위치
 - [ ] 티켓 시스템 (미확인 / 조치완료 상태 + 주의 / 경고 / 심각 뱃지)
 - [ ] CVSS 게이지 시각화 및 다양한 정렬 옵션
 - [ ] Slack · Discord · Webhook 알림

@@ -12,6 +12,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# --- Optional: Claude Code CLI for the "claude_cli" AI analysis provider ---
+# Enable with: docker compose build --build-arg INSTALL_CLAUDE_CLI=1
+# See README "AI 심층 분석 — Claude Code CLI".
+ARG INSTALL_CLAUDE_CLI=0
+RUN if [ "$INSTALL_CLAUDE_CLI" = "1" ]; then \
+      apt-get update \
+      && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+      && apt-get install -y --no-install-recommends nodejs \
+      && npm install -g @anthropic-ai/claude-code \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+
 # Install dependencies
 COPY pyproject.toml ./
 RUN pip install --upgrade pip && pip install -e .

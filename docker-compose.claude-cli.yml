@@ -1,0 +1,26 @@
+# Override to enable the "claude_cli" AI analysis provider.
+#
+# This provider lets Kestrel run CVE analysis through your local Claude Code
+# subscription (via the `claude` CLI on PATH inside the backend container),
+# instead of a separate Anthropic API key.
+#
+# Usage:
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose.claude-cli.yml \
+#     up -d --build
+#
+# Requires:
+#   - `claude login` already completed on the host (default ~/.claude directory).
+#   - Your host user's Claude Code data is mounted read-only into the container.
+
+services:
+  backend:
+    build:
+      args:
+        INSTALL_CLAUDE_CLI: "1"
+    volumes:
+      # Mount your host's Claude Code auth/config so the CLI in the container
+      # can use your existing login. Read-only — the container never modifies it.
+      - ${CLAUDE_HOME:-${HOME}/.claude}:/home/app/.claude:ro
+      - ${CLAUDE_CONFIG:-${HOME}/.claude.json}:/home/app/.claude.json:ro
