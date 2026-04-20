@@ -190,10 +190,22 @@ export const api = {
     }),
 
   getAppSettings: () => request<AppSettingsResponse>(`/settings`),
-  updateAppSettings: (body: AppSettingsUpdate) =>
-    request<AppSettingsResponse>(`/settings`, {
-      method: "PUT",
+  listAiCredentials: () => request<AiCredentialListResponse>(`/settings/credentials`),
+  createAiCredential: (body: AiCredentialCreate) =>
+    request<AiCredential>(`/settings/credentials`, {
+      method: "POST",
       body: JSON.stringify(body),
+    }),
+  updateAiCredential: (id: number, body: AiCredentialUpdate) =>
+    request<AiCredential>(`/settings/credentials/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteAiCredential: (id: number) =>
+    request<void>(`/settings/credentials/${id}`, { method: "DELETE" }),
+  activateAiCredential: (id: number) =>
+    request<AppSettingsResponse>(`/settings/credentials/${id}/activate`, {
+      method: "POST",
     }),
 
   analyzeCve: (cveId: string) =>
@@ -202,18 +214,41 @@ export const api = {
     }),
 };
 
-export interface AppSettingsResponse {
-  aiProvider: string | null;
-  aiModel: string | null;
-  aiBaseUrl: string | null;
+export interface AiCredential {
+  id: number;
+  label: string;
+  provider: string;
+  model: string;
+  baseUrl: string | null;
   hasApiKey: boolean;
+  isActive: boolean;
 }
 
-export interface AppSettingsUpdate {
-  aiProvider?: string | null;
-  aiModel?: string | null;
-  aiApiKey?: string | null;
-  aiBaseUrl?: string | null;
+export interface AiCredentialListResponse {
+  items: AiCredential[];
+  activeCredentialId: number | null;
+}
+
+export interface AppSettingsResponse {
+  activeCredentialId: number | null;
+  active: AiCredential | null;
+}
+
+export interface AiCredentialCreate {
+  label: string;
+  provider: string;
+  model: string;
+  apiKey: string;
+  baseUrl?: string | null;
+  activate?: boolean;
+}
+
+export interface AiCredentialUpdate {
+  label?: string;
+  provider?: string;
+  model?: string;
+  apiKey?: string;
+  baseUrl?: string | null;
 }
 
 export interface AiAnalysisResponse {

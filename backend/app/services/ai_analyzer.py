@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
-from app.models import AppSettings, Vulnerability
+from app.models import AiCredential, AppSettings, Vulnerability
 
 log = get_logger(__name__)
 
@@ -69,17 +69,28 @@ class AiAnalyzerNotConfigured(HTTPException):
         super().__init__(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
-async def _load_settings(db: AsyncSession) -> AppSettings:
-    row = (await db.execute(select(AppSettings).where(AppSettings.id == 1))).scalar_one_or_none()
-    if row is None or not row.ai_api_key:
+async def _load_active_credential(db: AsyncSession) -> AiCredential:
+    settings_row = (
+        await db.execute(select(AppSettings).where(AppSettings.id == 1))
+    ).scalar_one_or_none()
+    if settings_row is None or settings_row.active_credential_id is None:
         raise AiAnalyzerNotConfigured(
-            "AI API 키가 설정되지 않았습니다. 설정 페이지에서 제공자·모델·API 키를 먼저 등록하세요.",
+            "활성화된 AI 키가 없습니다. 설정 페이지에서 키를 등록하고 사용할 키를 선택하세요.",
         )
-    if not row.ai_provider:
-        raise AiAnalyzerNotConfigured("AI 제공자가 선택되지 않았습니다.")
-    if not row.ai_model:
-        raise AiAnalyzerNotConfigured("AI 모델이 선택되지 않았습니다.")
-    return row
+    cred = (
+        await db.execute(
+            select(AiCredential).where(AiCredential.id == settings_row.active_credential_id)
+        )
+    ).scalar_one_or_none()
+    if cred is None or not cred.api_key:
+        raise AiAnalyzerNotConfigured(
+            "선택한 AI 키를 찾을 수 없습니다. 설정 페이지에서 다시 선택해주세요.",
+        )
+    if not cred.provider:
+        raise AiAnalyzerNotConfigured("AI 제공자가 설정되지 않았습니다.")
+    if not cred.model:
+        raise AiAnalyzerNotConfigured("AI 모델이 설정되지 않았습니다.")
+    return cred
 
 
 def _parse_payload(raw: str) -> AiAnalysis:
@@ -110,9 +121,9 @@ def _parse_payload(raw: str) -> AiAnalysis:
         raise HTTPException(status_code=502, detail=f"AI 응답 스키마 불일치: {e}") from e
 
 
-async def _call_openai(settings: AppSettings, vuln: Vulnerability) -> AiAnalysis:
+async def _call_openai(cred: AiCredential, vuln: Vulnerability) -> AiAnalysis:
     payload = {
-        "model": settings.ai_model,
+        "model": cred.model,
         "messages": [
             {"role": "system", "content": _SYSTEM_PROMPT},
             {
@@ -134,10 +145,10 @@ async def _call_openai(settings: AppSettings, vuln: Vulnerability) -> AiAnalysis
         },
     }
     headers = {
-        "Authorization": f"Bearer {settings.ai_api_key}",
+        "Authorization": f"Bearer {cred.api_key}",
         "Content-Type": "application/json",
     }
-    base = (settings.ai_base_url or "https://api.openai.com/v1").rstrip("/")
+    base = (cred.base_url or "https://api.openai.com/v1").rstrip("/")
     url = f"{base}/chat/completions"
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
@@ -155,9 +166,9 @@ async def _call_openai(settings: AppSettings, vuln: Vulnerability) -> AiAnalysis
     return _parse_payload(content)
 
 
-async def _call_anthropic(settings: AppSettings, vuln: Vulnerability) -> AiAnalysis:
+async def _call_anthropic(cred: AiCredential, vuln: Vulnerability) -> AiAnalysis:
     payload = {
-        "model": settings.ai_model,
+        "model": cred.model,
         "max_tokens": 2048,
         "system": _SYSTEM_PROMPT,
         "messages": [
@@ -172,7 +183,7 @@ async def _call_anthropic(settings: AppSettings, vuln: Vulnerability) -> AiAnaly
         ],
     }
     headers = {
-        "x-api-key": settings.ai_api_key,
+        "x-api-key": cred.api_key,
         "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
     }
@@ -207,10 +218,10 @@ def _extract_error(res: httpx.Response, provider: str) -> str:
 
 
 async def analyze_vulnerability(db: AsyncSession, vuln: Vulnerability) -> AiAnalysis:
-    settings = await _load_settings(db)
-    provider = (settings.ai_provider or "").lower()
+    cred = await _load_active_credential(db)
+    provider = (cred.provider or "").lower()
     if provider == "openai":
-        return await _call_openai(settings, vuln)
+        return await _call_openai(cred, vuln)
     if provider == "anthropic":
-        return await _call_anthropic(settings, vuln)
-    raise AiAnalyzerNotConfigured(f"지원하지 않는 AI 제공자입니다: {settings.ai_provider}")
+        return await _call_anthropic(cred, vuln)
+    raise AiAnalyzerNotConfigured(f"지원하지 않는 AI 제공자입니다: {cred.provider}")

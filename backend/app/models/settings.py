@@ -1,14 +1,15 @@
 """Application settings — singleton row holding server-side configuration.
 
-Stores the AI analyzer credentials (provider / model / API key) so they can
-be configured at runtime via the settings page instead of via env vars.
-The table is constrained to a single row (id=1) and updated in-place.
+Currently holds only the currently-active AI credential (FK to ai_credentials).
+Individual AI credentials (label/provider/model/key/base_url) live in the
+``ai_credentials`` table so the user can register multiple keys and switch
+between them from the UI.
 """
 from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -18,10 +19,11 @@ class AppSettings(Base):
     __tablename__ = "app_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    ai_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    ai_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    ai_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
-    ai_base_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    active_credential_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("ai_credentials.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
