@@ -1,13 +1,82 @@
 "use client";
 
-import { AlertCircle, Loader2, RotateCcw, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { AlertCircle, Check, Copy, Loader2, RotateCcw, Sparkles } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import Link from "next/link";
 
 import { ApiError, api, type AiAnalysisResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+
+function detectLanguage(source: string): string {
+  const s = source.trim();
+  if (/^(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+\S+\s+HTTP\//m.test(s)) return "http";
+  if (/^\s*curl\b/m.test(s)) return "bash";
+  if (/^\s*(?:msf\d?|use\s+(?:exploit|auxiliary)\/)/m.test(s)) return "msf";
+  if (/^\s*(?:id|name):/m.test(s) && /\bmatchers\b|\brequests\b/.test(s)) return "nuclei";
+  if (/^\s*(?:import\s+\w+|from\s+\w+\s+import|def\s+\w+\()/m.test(s)) return "python";
+  if (/[#$]\s*\w+|(?:^|\n)(?:\$|#)\s/m.test(s) || /\|\s*sh\b/.test(s)) return "bash";
+  return "text";
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // ignore — clipboard may be unavailable in insecure contexts
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={onCopy}
+      className={cn(
+        "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors",
+        copied
+          ? "text-emerald-300"
+          : "text-neutral-400 hover:bg-surface-3 hover:text-neutral-100",
+      )}
+      aria-label="페이로드 복사"
+    >
+      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+      {copied ? "복사됨" : "복사"}
+    </button>
+  );
+}
+
+function CodeBlock({ source }: { source: string }) {
+  const language = useMemo(() => detectLanguage(source), [source]);
+  const lines = useMemo(() => source.replace(/\n$/, "").split("\n"), [source]);
+
+  return (
+    <div className="overflow-hidden rounded-md border border-neutral-800 bg-surface-2">
+      <div className="flex items-center justify-between border-b border-neutral-800 bg-surface-3 px-3 py-1.5">
+        <span className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">
+          {language}
+        </span>
+        <CopyButton text={source} />
+      </div>
+      <pre className="overflow-x-auto px-0 py-3 text-xs leading-relaxed text-neutral-100">
+        <code className="block font-mono">
+          {lines.map((line, i) => (
+            <div key={i} className="flex">
+              <span className="sticky left-0 select-none bg-surface-2 pl-3 pr-3 text-right font-mono text-[10px] text-neutral-600">
+                {String(i + 1).padStart(2, " ")}
+              </span>
+              <span className="whitespace-pre pr-4">{line || " "}</span>
+            </div>
+          ))}
+        </code>
+      </pre>
+    </div>
+  );
+}
 
 export function AiAnalysisPanel({ cveId }: { cveId: string }) {
   const [checked, setChecked] = useState<Record<number, boolean>>({});
@@ -109,9 +178,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
               <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
                 페이로드 예시
               </h3>
-              <pre className="overflow-x-auto rounded-md border border-neutral-800 bg-surface-2 p-3 text-xs leading-relaxed text-neutral-100">
-                <code className="font-mono whitespace-pre">{data.payloadExample}</code>
-              </pre>
+              <CodeBlock source={data.payloadExample} />
             </section>
 
             <section>
