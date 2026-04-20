@@ -1,7 +1,7 @@
 [project]
 name = "cve-watch-backend"
 version = "0.1.0"
-description = "FastAPI backend for CVE Watch — ingestion, search, and API"
+description = "FastAPI backend for Kestrel — ingestion, search, and API"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",

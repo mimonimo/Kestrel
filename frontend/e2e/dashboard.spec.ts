@@ -6,7 +6,7 @@ import { test, expect } from "@playwright/test";
 test("dashboard renders and search filter syncs to URL", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: /CVE Watch/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Kestrel/i })).toBeVisible();
 
   const searchBox = page.getByRole("searchbox").or(page.getByPlaceholder(/검색/));
   await searchBox.first().fill("openssl");
