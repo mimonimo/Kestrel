@@ -1,16 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Server, Settings2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Server, Settings2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAssets } from "@/lib/assets";
 import { BookmarkButton } from "@/components/cve/BookmarkButton";
 import { SeverityBadge } from "@/components/cve/SeverityBadge";
 import { timeAgo } from "@/lib/utils";
 
+const PAGE_SIZE = 1;
+
 export function MyAssetsPanel() {
   const { list, ready } = useAssets();
+  const [page, setPage] = useState(0);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["assets-match", list.map((a) => `${a.vendor}:${a.product}:${a.version ?? ""}`).join("|")],
@@ -47,6 +51,15 @@ export function MyAssetsPanel() {
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const visibleItems = items.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
+  useEffect(() => {
+    // Reset when the result set changes (e.g. assets edited) so we never show
+    // an out-of-range page.
+    setPage(0);
+  }, [items.length]);
 
   return (
     <section className="mb-8 rounded-xl border border-sky-500/20 bg-gradient-to-br from-sky-500/5 to-transparent p-5 shadow-[0_0_0_1px_rgba(56,189,248,0.05)]">
@@ -77,26 +90,55 @@ export function MyAssetsPanel() {
           등록된 자산과 일치하는 CVE가 아직 수집되지 않았습니다.
         </p>
       ) : (
-        <ul className="divide-y divide-neutral-800">
-          {items.slice(0, 8).map((v) => (
-            <li key={v.cveId} className="flex items-center gap-3 py-2">
-              <Link
-                href={`/cve/${v.cveId}`}
-                className="flex min-w-0 flex-1 items-center gap-3 hover:opacity-80"
+        <>
+          <ul className="divide-y divide-neutral-800">
+            {visibleItems.map((v) => (
+              <li key={v.cveId} className="flex items-center gap-3 py-2">
+                <Link
+                  href={`/cve/${v.cveId}`}
+                  className="flex min-w-0 flex-1 items-center gap-3 hover:opacity-80"
+                >
+                  <span className="font-mono text-xs text-neutral-500">{v.cveId}</span>
+                  {v.severity && (
+                    <SeverityBadge severity={v.severity} score={v.cvssScore ?? undefined} />
+                  )}
+                  <span className="min-w-0 flex-1 truncate text-sm text-neutral-200">{v.title}</span>
+                  {v.publishedAt && (
+                    <span className="shrink-0 text-xs text-neutral-500">{timeAgo(v.publishedAt)}</span>
+                  )}
+                </Link>
+                <BookmarkButton cveId={v.cveId} stopPropagation={false} />
+              </li>
+            ))}
+          </ul>
+          {pageCount > 1 && (
+            <div className="mt-3 flex items-center justify-center gap-3 border-t border-neutral-800 pt-3">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={safePage === 0}
+                aria-label="이전 취약점"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-neutral-700 text-neutral-300 hover:border-sky-400/50 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <span className="font-mono text-xs text-neutral-500">{v.cveId}</span>
-                {v.severity && (
-                  <SeverityBadge severity={v.severity} score={v.cvssScore ?? undefined} />
-                )}
-                <span className="min-w-0 flex-1 truncate text-sm text-neutral-200">{v.title}</span>
-                {v.publishedAt && (
-                  <span className="shrink-0 text-xs text-neutral-500">{timeAgo(v.publishedAt)}</span>
-                )}
-              </Link>
-              <BookmarkButton cveId={v.cveId} stopPropagation={false} />
-            </li>
-          ))}
-        </ul>
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="font-mono text-xs tabular-nums text-neutral-400">
+                <span className="text-neutral-100">{safePage + 1}</span>
+                <span className="mx-1 text-neutral-600">/</span>
+                <span>{pageCount}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                disabled={safePage >= pageCount - 1}
+                aria-label="다음 취약점"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-neutral-700 text-neutral-300 hover:border-sky-400/50 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+        </>
       )}
     </section>
   );
