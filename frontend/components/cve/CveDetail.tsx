@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { BookmarkButton } from "./BookmarkButton";
 import { SeverityBadge } from "./SeverityBadge";
+import { TicketControl } from "./TicketControl";
 import { CommentThread } from "@/components/community/CommentThread";
 import { formatDate } from "@/lib/utils";
 import type { Vulnerability } from "@/lib/types";
@@ -132,6 +133,8 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
           </CardContent>
         </Card>
       )}
+
+      <TicketControl cveId={vuln.cveId} />
 
       <CommentThread vulnerabilityId={vuln.id} />
 

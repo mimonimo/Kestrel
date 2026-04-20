@@ -1,6 +1,7 @@
 from app.models.base import Base
 from app.models.bookmark import Bookmark
 from app.models.community import Comment, Post, Tag, User, UserRole, Vote, VoteTarget
+from app.models.ticket import Ticket, TicketStatus
 from app.models.vulnerability import (
     AffectedProduct,
     IngestionLog,
@@ -26,6 +27,8 @@ __all__ = [
     "Severity",
     "Source",
     "Tag",
+    "Ticket",
+    "TicketStatus",
     "User",
     "UserRole",
     "Vote",

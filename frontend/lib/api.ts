@@ -87,6 +87,32 @@ export const api = {
     if (q) params.set("q", q);
     return request<AssetCatalogResponse>(`/assets/catalog?${params.toString()}`);
   },
+
+  listTickets: (status?: TicketStatus) => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    const qs = params.toString();
+    return request<TicketListResponse>(`/tickets${qs ? `?${qs}` : ""}`, {
+      headers: clientHeaders(),
+    });
+  },
+  upsertTicket: (body: { cveId: string; status: TicketStatus; note?: string | null }) =>
+    request<Ticket>(`/tickets`, {
+      method: "PUT",
+      headers: clientHeaders(),
+      body: JSON.stringify(body),
+    }),
+  patchTicket: (cveId: string, body: { status?: TicketStatus; note?: string | null }) =>
+    request<Ticket>(`/tickets/${encodeURIComponent(cveId)}`, {
+      method: "PATCH",
+      headers: clientHeaders(),
+      body: JSON.stringify(body),
+    }),
+  deleteTicket: (cveId: string) =>
+    request<void>(`/tickets/${encodeURIComponent(cveId)}`, {
+      method: "DELETE",
+      headers: clientHeaders(),
+    }),
   refreshIngestion: (keys: { nvdApiKey?: string; githubToken?: string }) => {
     const headers: Record<string, string> = {};
     if (keys.nvdApiKey) headers["X-NVD-API-Key"] = keys.nvdApiKey;
@@ -198,6 +224,23 @@ export interface CommunityComment {
 export interface CommentListResponse {
   items: CommunityComment[];
   total: number;
+}
+
+export type TicketStatus = "open" | "in_progress" | "resolved" | "ignored";
+
+export interface Ticket {
+  id: number;
+  cveId: string;
+  status: TicketStatus;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TicketListResponse {
+  items: Ticket[];
+  total: number;
+  counts: Record<TicketStatus, number>;
 }
 
 export { ApiError };
