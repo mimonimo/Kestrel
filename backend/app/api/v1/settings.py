@@ -23,6 +23,7 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 class SettingsOut(CamelModel):
     ai_provider: str | None = None
     ai_model: str | None = None
+    ai_base_url: str | None = None
     has_api_key: bool = False
 
 
@@ -30,6 +31,7 @@ class SettingsUpdate(CamelModel):
     ai_provider: str | None = Field(default=None, max_length=32)
     ai_model: str | None = Field(default=None, max_length=64)
     ai_api_key: str | None = Field(default=None)
+    ai_base_url: str | None = Field(default=None, max_length=256)
 
 
 async def _load(db: AsyncSession) -> AppSettings:
@@ -47,6 +49,7 @@ async def get_settings(db: AsyncSession = Depends(get_db)) -> SettingsOut:
     return SettingsOut(
         ai_provider=row.ai_provider,
         ai_model=row.ai_model,
+        ai_base_url=row.ai_base_url,
         has_api_key=bool(row.ai_api_key),
     )
 
@@ -66,10 +69,13 @@ async def update_settings(
         row.ai_model = body.ai_model or None
     if "ai_api_key" in fields or "aiApiKey" in fields:
         row.ai_api_key = body.ai_api_key or None
+    if "ai_base_url" in fields or "aiBaseUrl" in fields:
+        row.ai_base_url = body.ai_base_url or None
     await db.commit()
     await db.refresh(row)
     return SettingsOut(
         ai_provider=row.ai_provider,
         ai_model=row.ai_model,
+        ai_base_url=row.ai_base_url,
         has_api_key=bool(row.ai_api_key),
     )

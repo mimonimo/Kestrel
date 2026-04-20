@@ -21,6 +21,7 @@ class AppSettings(Base):
     ai_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
     ai_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
     ai_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_base_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

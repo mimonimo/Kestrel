@@ -205,6 +205,7 @@ export const api = {
 export interface AppSettingsResponse {
   aiProvider: string | null;
   aiModel: string | null;
+  aiBaseUrl: string | null;
   hasApiKey: boolean;
 }
 
@@ -212,6 +213,7 @@ export interface AppSettingsUpdate {
   aiProvider?: string | null;
   aiModel?: string | null;
   aiApiKey?: string | null;
+  aiBaseUrl?: string | null;
 }
 
 export interface AiAnalysisResponse {

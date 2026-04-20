@@ -79,7 +79,7 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
           <button
             type="button"
             onClick={() => setShow((s) => !s)}
-            className="rounded p-1 text-neutral-500 hover:bg-surface-3 hover:text-neutral-200"
+            className="rounded p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700 dark:hover:bg-surface-3 dark:hover:text-neutral-200"
             aria-label={show ? "값 숨기기" : "값 보기"}
           >
             {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

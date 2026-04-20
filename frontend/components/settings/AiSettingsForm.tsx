@@ -12,7 +12,7 @@ const PROVIDERS: { value: string; label: string; models: string[] }[] = [
   {
     value: "openai",
     label: "OpenAI",
-    models: ["gpt-4o-mini", "gpt-4o", "gpt-4.1", "gpt-4.1-mini"],
+    models: ["gpt-5o-nano", "gpt-4o-mini", "gpt-4o", "gpt-4.1", "gpt-4.1-mini"],
   },
   {
     value: "anthropic",
@@ -37,6 +37,7 @@ export function AiSettingsForm() {
 
   const [provider, setProvider] = useState<string>(DEFAULT_PROVIDER);
   const [model, setModel] = useState<string>("");
+  const [baseUrl, setBaseUrl] = useState<string>("");
   const [keyDraft, setKeyDraft] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
@@ -49,6 +50,7 @@ export function AiSettingsForm() {
     setProvider(p);
     const provMeta = PROVIDERS.find((x) => x.value === p) ?? PROVIDERS[0];
     setModel(data.aiModel ?? provMeta.models[0]);
+    setBaseUrl(data.aiBaseUrl ?? "");
   }, [settingsQuery.data]);
 
   useEffect(() => {
@@ -64,6 +66,7 @@ export function AiSettingsForm() {
       api.updateAppSettings({
         aiProvider: provider,
         aiModel: model || providerMeta.models[0],
+        aiBaseUrl: baseUrl.trim() ? baseUrl.trim() : null,
         ...(clearKey
           ? { aiApiKey: null }
           : keyDraft
@@ -124,6 +127,26 @@ export function AiSettingsForm() {
       </div>
 
       <div>
+        <label className="block text-xs">
+          <span className="mb-1 block font-medium text-neutral-300">
+            Base URL <span className="text-neutral-500">(선택사항)</span>
+          </span>
+          <Input
+            type="url"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="https://api.openai.com/v1"
+            autoComplete="off"
+            spellCheck={false}
+            className="font-mono"
+          />
+          <span className="mt-1 block text-[11px] text-neutral-500">
+            OpenAI 호환 프록시나 자체 호스팅 엔드포인트를 사용할 때만 입력하세요.
+          </span>
+        </label>
+      </div>
+
+      <div>
         <div className="mb-1 flex items-center justify-between">
           <span className="text-xs font-medium text-neutral-300">API 키</span>
           {hasKey && (
@@ -146,7 +169,7 @@ export function AiSettingsForm() {
             <button
               type="button"
               onClick={() => setShowKey((s) => !s)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-neutral-500 hover:bg-surface-3 hover:text-neutral-200"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700 dark:hover:bg-surface-3 dark:hover:text-neutral-200"
               aria-label={showKey ? "값 숨기기" : "값 보기"}
             >
               {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
