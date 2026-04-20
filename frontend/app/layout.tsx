@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 const themeBoot = `
 (function() {
   try {
-    var stored = localStorage.getItem('cvewatch:theme');
+    var stored = localStorage.getItem('kestrel:theme');
     var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     var resolved = stored === 'light' ? 'light' : (stored === 'dark' ? 'dark' : (prefersDark ? 'dark' : 'light'));
     var root = document.documentElement;

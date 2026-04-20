@@ -13,7 +13,7 @@ const SOURCE_LABEL: Record<Source, string> = {
   github_advisory: "GitHub Advisory",
 };
 
-const DISMISS_KEY = "cvewatch:status-dismissed";
+const DISMISS_KEY = "kestrel:status-dismissed";
 
 interface BannerLine {
   level: "warn" | "info";

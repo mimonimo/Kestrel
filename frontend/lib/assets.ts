@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-const KEY = "cvewatch:assets";
+const KEY = "kestrel:assets";
 
 export interface Asset {
   id: string;
@@ -24,7 +24,7 @@ function read(): Asset[] {
 function write(list: Asset[]) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(KEY, JSON.stringify(list));
-  window.dispatchEvent(new Event("cvewatch:assets"));
+  window.dispatchEvent(new Event("kestrel:assets"));
 }
 
 function uid(): string {
@@ -39,10 +39,10 @@ export function useAssets() {
     setList(read());
     setReady(true);
     const sync = () => setList(read());
-    window.addEventListener("cvewatch:assets", sync);
+    window.addEventListener("kestrel:assets", sync);
     window.addEventListener("storage", sync);
     return () => {
-      window.removeEventListener("cvewatch:assets", sync);
+      window.removeEventListener("kestrel:assets", sync);
       window.removeEventListener("storage", sync);
     };
   }, []);

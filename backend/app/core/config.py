@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     debug: bool = True
 
     database_url: str = Field(
-        default="postgresql+asyncpg://cvewatch:cvewatch@postgres:5432/cvewatch"
+        default="postgresql+asyncpg://kestrel:kestrel@postgres:5432/kestrel"
     )
     redis_url: str = Field(default="redis://redis:6379/0")
 
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     sentry_traces_sample_rate: float = 0.1
     otel_enabled: bool = False
     otel_exporter_otlp_endpoint: str | None = None
-    otel_service_name: str = "cve-watch-backend"
+    otel_service_name: str = "kestrel-backend"
 
 
 @lru_cache

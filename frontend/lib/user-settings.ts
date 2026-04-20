@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-const PREFIX = "cvewatch:setting:";
+const PREFIX = "kestrel:setting:";
 
 export type SettingKey = "nvdApiKey" | "githubToken";
 

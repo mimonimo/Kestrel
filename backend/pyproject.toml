@@ -1,5 +1,5 @@
 [project]
-name = "cve-watch-backend"
+name = "kestrel-backend"
 version = "0.1.0"
 description = "FastAPI backend for Kestrel — ingestion, search, and API"
 requires-python = ">=3.12"

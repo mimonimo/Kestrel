@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api } from "./api";
 
-const CACHE_KEY = "cvewatch:bookmarks";
-const SYNC_EVENT = "cvewatch:bookmarks";
+const CACHE_KEY = "kestrel:bookmarks";
+const SYNC_EVENT = "kestrel:bookmarks";
 
 function readCache(): Set<string> {
   if (typeof window === "undefined") return new Set();

@@ -234,14 +234,14 @@ frontend/
 ### 1. 즐겨찾기 (Bookmarks)
 
 - **DB 스키마**: `bookmarks (id, client_id varchar(64), cve_id varchar(32), created_at)` + `UNIQUE(client_id, cve_id)` + `INDEX(client_id)` (alembic `0003_bookmarks.py`)
-- **익명 소유권**: 브라우저가 localStorage(`cvewatch:client-id`)에 UUID를 발급/보관 → 모든 요청에 `X-Client-Id` 헤더로 전달. 로그인 없이 디바이스 단위 즐겨찾기 가능.
+- **익명 소유권**: 브라우저가 localStorage(`kestrel:client-id`)에 UUID를 발급/보관 → 모든 요청에 `X-Client-Id` 헤더로 전달. 로그인 없이 디바이스 단위 즐겨찾기 가능.
 - **API**: `GET /bookmarks`, `POST /bookmarks` (idempotent), `DELETE /bookmarks/{cveId}`. POST는 UNIQUE 위반을 무시해 중복 토글 안전.
 - **Frontend**: `lib/clientId.ts`(UUID 발급) + `lib/api.ts`(헤더 자동 첨부) + `lib/bookmarks.ts` 훅이 localStorage 캐시 + 백엔드 동기화 (옵티미스틱 업데이트, 실패 시 자동 롤백).
 - **UI**: 리스트/상세의 `BookmarkButton`(Star 아이콘) + 대시보드의 `[즐겨찾기만 (n)]` 토글. 토글 시 `/cves/batch?ids=...`로 한 번에 조회.
 
 ### 2. 자산 매칭 (CPE)
 
-- **저장 위치**: 자산 목록은 localStorage(`cvewatch:assets`)에 vendor/product/version으로 보관. 서버에 영구 저장하지 않음.
+- **저장 위치**: 자산 목록은 localStorage(`kestrel:assets`)에 vendor/product/version으로 보관. 서버에 영구 저장하지 않음.
 - **API**: `POST /assets/match` — 등록한 vendor/product 페어를 ILIKE로 OR-clause 조합하여 `affected_products` 매칭, 관련 CVE를 최신순으로 반환. version_range는 자유 텍스트라 서버 측 strict 검증은 하지 않음.
 - **Frontend**:
   - `components/settings/AssetsManager.tsx` — 설정 페이지에서 vendor/product/version 등록·삭제

@@ -1,5 +1,5 @@
 {
-  "name": "cve-watch-frontend",
+  "name": "kestrel-frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {

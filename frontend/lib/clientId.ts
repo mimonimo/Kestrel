@@ -1,6 +1,6 @@
 "use client";
 
-const KEY = "cvewatch:client-id";
+const KEY = "kestrel:client-id";
 
 export function getClientId(): string {
   if (typeof window === "undefined") return "";

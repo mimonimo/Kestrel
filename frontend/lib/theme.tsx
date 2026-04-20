@@ -5,7 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 export type Theme = "dark" | "light" | "system";
 export type ResolvedTheme = "dark" | "light";
 
-const STORAGE_KEY = "cvewatch:theme";
+const STORAGE_KEY = "kestrel:theme";
 
 interface ThemeContextValue {
   theme: Theme;

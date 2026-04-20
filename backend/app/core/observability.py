@@ -35,7 +35,7 @@ def init_sentry() -> None:
         dsn=settings.sentry_dsn,
         traces_sample_rate=settings.sentry_traces_sample_rate,
         environment=settings.env,
-        release=f"cve-watch@0.1.0",
+        release=f"kestrel@0.1.0",
     )
     log.info("sentry.initialized", env=settings.env)
 
