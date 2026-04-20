@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { MessageSquare, Plus, Eye, Hash } from "lucide-react";
+import { MessageSquare, Plus, Eye, Hash, Sparkles } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -49,8 +49,17 @@ export default function CommunityPage() {
           </button>
         </div>
       ) : data && data.items.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-neutral-800 bg-surface-1/50 py-16 text-center text-sm text-neutral-500">
-          아직 작성된 글이 없습니다. 첫 글을 작성해보세요.
+        <div className="overflow-hidden rounded-xl border border-sky-500/30 bg-gradient-to-br from-sky-500/10 via-blue-500/5 to-transparent px-6 py-12 text-center shadow-[0_0_0_1px_rgba(56,189,248,0.05)]">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-sky-500/15 ring-1 ring-sky-400/30">
+            <Sparkles className="h-6 w-6 text-sky-300" />
+          </div>
+          <h3 className="text-base font-semibold text-neutral-100">첫 번째 글의 주인공이 되어보세요</h3>
+          <p className="mt-1 text-sm text-neutral-300">
+            CVE 분석, 완화 방안, 실전 사례 — 어떤 주제든 공유해 주세요.
+          </p>
+          <Button onClick={() => setOpen(true)} className="mt-5 gap-2 bg-sky-500 text-white hover:bg-sky-400">
+            <Plus className="h-4 w-4" />첫 글 작성하기
+          </Button>
         </div>
       ) : (
         <ul className="space-y-3">

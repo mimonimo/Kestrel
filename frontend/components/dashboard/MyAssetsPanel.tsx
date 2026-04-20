@@ -23,20 +23,24 @@ export function MyAssetsPanel() {
 
   if (list.length === 0) {
     return (
-      <section className="mb-8 rounded-lg border border-dashed border-neutral-800 bg-surface-1/50 px-5 py-4 text-xs text-neutral-500">
-        <div className="flex items-center gap-2">
-          <Server className="h-4 w-4" />
-          <span className="text-sm font-medium text-neutral-300">내 시스템 취약점</span>
+      <section className="mb-8 overflow-hidden rounded-xl border border-sky-500/30 bg-gradient-to-br from-sky-500/10 via-blue-500/5 to-transparent p-5 shadow-[0_0_0_1px_rgba(56,189,248,0.05)]">
+        <div className="flex items-start gap-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-500/15 ring-1 ring-sky-400/30">
+            <Server className="h-5 w-5 text-sky-300" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold text-neutral-100">내 시스템 취약점</h2>
+            <p className="mt-1 text-sm text-neutral-300">
+              사용 중인 벤더 · 제품을 등록하면 CPE 매칭을 통해 관련 CVE만 별도로 모아볼 수 있습니다.
+            </p>
+          </div>
           <Link
             href="/settings"
-            className="ml-auto inline-flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-100"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-white shadow hover:bg-sky-400"
           >
-            <Settings2 className="h-3.5 w-3.5" /> 자산 등록
+            <Settings2 className="h-3.5 w-3.5" /> 자산 등록하기
           </Link>
         </div>
-        <p className="mt-1.5">
-          설정 페이지에서 벤더·제품을 등록하면 CPE 매칭으로 관련 CVE만 따로 볼 수 있습니다.
-        </p>
       </section>
     );
   }
@@ -45,18 +49,20 @@ export function MyAssetsPanel() {
   const total = data?.total ?? 0;
 
   return (
-    <section className="mb-8 rounded-lg border border-neutral-800 bg-surface-1 p-5">
-      <header className="mb-3 flex items-baseline justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Server className="h-4 w-4 text-sky-300" />
-          <h2 className="text-sm font-semibold text-neutral-100">내 시스템 취약점</h2>
-          <span className="text-xs text-neutral-500">
-            자산 {list.length}건 · 매칭 {total}건
+    <section className="mb-8 rounded-xl border border-sky-500/20 bg-gradient-to-br from-sky-500/5 to-transparent p-5 shadow-[0_0_0_1px_rgba(56,189,248,0.05)]">
+      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/15 ring-1 ring-sky-400/30">
+            <Server className="h-4 w-4 text-sky-300" />
+          </div>
+          <h2 className="text-base font-semibold text-neutral-100">내 시스템 취약점</h2>
+          <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-200">
+            자산 {list.length} · 매칭 {total}
           </span>
         </div>
         <Link
           href="/settings"
-          className="inline-flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-100"
+          className="inline-flex items-center gap-1 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-300 hover:border-sky-400/50 hover:text-neutral-100"
         >
           <Settings2 className="h-3.5 w-3.5" /> 자산 관리
         </Link>

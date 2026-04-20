@@ -21,6 +21,7 @@ export function CommentThread({ postId, vulnerabilityId }: Props) {
   const list = useQuery({
     queryKey,
     queryFn: () => api.listComments({ postId, vulnerabilityId }),
+    enabled: postId !== undefined || !!vulnerabilityId,
     staleTime: 5_000,
   });
 

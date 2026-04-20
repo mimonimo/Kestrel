@@ -11,11 +11,13 @@ import { EmptyState, ErrorState } from "@/components/cve/CveListStates";
 import { Pagination } from "@/components/search/Pagination";
 import { RefreshBar } from "@/components/dashboard/RefreshBar";
 import { MyAssetsPanel } from "@/components/dashboard/MyAssetsPanel";
+import { SortSelect } from "@/components/dashboard/SortSelect";
 import { useCveSearch } from "@/hooks/useCveSearch";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useUrlState } from "@/lib/url-state";
 import { useBookmarks } from "@/lib/bookmarks";
 import { api } from "@/lib/api";
+import { sortVulnerabilities, type SortKey } from "@/lib/sort";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 20;
@@ -25,6 +27,7 @@ function Dashboard() {
   const [queryInput, setQueryInput] = useState(url.query);
   const debouncedQuery = useDebounce(queryInput, 300);
   const [bookmarksOnly, setBookmarksOnly] = useState(false);
+  const [sort, setSort] = useState<SortKey>("newest");
   const bookmarks = useBookmarks();
 
   useEffect(() => {
@@ -133,7 +136,7 @@ function Dashboard() {
                 <Star className={cn("h-3.5 w-3.5", bookmarksOnly && "fill-amber-300")} />
                 즐겨찾기만 ({bookmarks.count})
               </button>
-              <span className="text-xs text-neutral-600">최신순</span>
+              <SortSelect value={sort} onChange={setSort} />
             </div>
           </div>
 
@@ -156,7 +159,7 @@ function Dashboard() {
                   !bookmarksOnly && search.isPlaceholderData ? "opacity-60" : ""
                 }`}
               >
-                {activeData.items.map((v) => (
+                {sortVulnerabilities(activeData.items, sort).map((v) => (
                   <CveListItem key={v.cveId} vuln={v} />
                 ))}
               </div>
