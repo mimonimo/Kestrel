@@ -345,7 +345,18 @@ npm install -g @anthropic-ai/claude-code
 claude login
 ```
 
-**2. `.env` 에 플래그 설정**
+**2. (macOS만) 키체인의 OAuth 토큰을 파일로 내보내기**
+
+macOS의 Claude Code CLI는 OAuth 토큰을 **Keychain**에 저장하므로, `~/.claude` 를 그냥 마운트해도 Linux 컨테이너 안의 CLI는 `Not logged in` 상태가 됩니다. 아래 한 줄로 키체인 값을 컨테이너가 읽을 수 있는 형식의 파일로 내보냅니다. (Linux 호스트는 이 단계를 건너뛰세요.)
+
+```bash
+security find-generic-password -s "Claude Code-credentials" -w > ~/.claude/.credentials.json
+chmod 600 ~/.claude/.credentials.json
+```
+
+> 이 파일은 호스트 전용입니다. `~/.claude` 는 이 저장소의 `.gitignore` 와 무관한 홈 디렉터리 경로이므로 커밋 대상이 아닙니다. 토큰이 만료/갱신되면 같은 명령을 다시 실행해 주세요.
+
+**3. `.env` 에 플래그 설정**
 
 ```env
 INSTALL_CLAUDE_CLI=1
@@ -354,7 +365,7 @@ INSTALL_CLAUDE_CLI=1
 # CLAUDE_CONFIG=/custom/path/.claude.json
 ```
 
-**3. Claude CLI 오버레이와 함께 기동**
+**4. Claude CLI 오버레이와 함께 기동**
 
 ```bash
 docker compose \
@@ -363,7 +374,7 @@ docker compose \
   up -d --build
 ```
 
-**4. 설정 페이지에서 키 추가**
+**5. 설정 페이지에서 키 추가**
 
 - 제공자: `Claude Code CLI (로컬 구독)` 선택
 - 모델: `claude-opus-4-7` 등
@@ -371,7 +382,7 @@ docker compose \
 
 이후 CVE 상세 페이지의 **AI 심층 분석 요청** 이 호스트의 Claude 구독을 통해 동작합니다.
 
-> ⚠️ `~/.claude` 에는 세션 토큰이 있으므로 마운트는 읽기 전용입니다. 컨테이너 외부에 노출되지 않도록 주의하세요. 공용/공유 서버에서 이 방식을 쓰는 것은 권장하지 않습니다.
+> ⚠️ `~/.claude/.credentials.json` 에는 세션 토큰이 있으므로 마운트는 읽기 전용입니다. 컨테이너 외부에 노출되지 않도록 주의하세요. 공용/공유 서버에서 이 방식을 쓰는 것은 권장하지 않습니다.
 
 ### 무료·저비용 시작 팁
 

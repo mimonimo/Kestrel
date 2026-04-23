@@ -197,22 +197,22 @@ def _parse_payload(raw: str) -> AiAnalysis:
         raise HTTPException(status_code=502, detail=f"AI 응답 스키마 불일치: {e}") from e
 
 
-async def _call_openai(cred: AiCredential, vuln: Vulnerability) -> AiAnalysis:
-    payload = {
+async def _call_openai_text(
+    cred: AiCredential,
+    system: str,
+    user: str,
+    *,
+    force_json: bool,
+) -> str:
+    payload: dict = {
         "model": cred.model,
         "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": _USER_TEMPLATE.format(
-                    cve_id=vuln.cve_id,
-                    title=vuln.title,
-                    description=vuln.description,
-                ),
-            },
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
         ],
-        "response_format": _build_response_format(cred.provider),
     }
+    if force_json:
+        payload["response_format"] = _build_response_format(cred.provider)
     headers = {
         "Authorization": f"Bearer {cred.api_key}",
         "Content-Type": "application/json",
@@ -233,29 +233,19 @@ async def _call_openai(cred: AiCredential, vuln: Vulnerability) -> AiAnalysis:
         raise HTTPException(status_code=502, detail=detail)
     body = res.json()
     try:
-        content = body["choices"][0]["message"]["content"]
+        return body["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as e:
         raise HTTPException(
             status_code=502, detail=f"{provider_label} 응답 구조 오류: {e}"
         ) from e
-    return _parse_payload(content)
 
 
-async def _call_anthropic(cred: AiCredential, vuln: Vulnerability) -> AiAnalysis:
+async def _call_anthropic_text(cred: AiCredential, system: str, user: str) -> str:
     payload = {
         "model": cred.model,
         "max_tokens": 2048,
-        "system": _SYSTEM_PROMPT,
-        "messages": [
-            {
-                "role": "user",
-                "content": _USER_TEMPLATE.format(
-                    cve_id=vuln.cve_id,
-                    title=vuln.title,
-                    description=vuln.description,
-                ),
-            },
-        ],
+        "system": system,
+        "messages": [{"role": "user", "content": user}],
     }
     headers = {
         "x-api-key": cred.api_key,
@@ -273,17 +263,16 @@ async def _call_anthropic(cred: AiCredential, vuln: Vulnerability) -> AiAnalysis
         raise HTTPException(status_code=502, detail=detail)
     body = res.json()
     try:
-        # Concatenate all text blocks — Anthropic may split its response.
         chunks = [b.get("text", "") for b in body.get("content", []) if b.get("type") == "text"]
         content = "".join(chunks)
     except (KeyError, TypeError) as e:
         raise HTTPException(status_code=502, detail=f"Anthropic 응답 구조 오류: {e}") from e
     if not content:
         raise HTTPException(status_code=502, detail="Anthropic 응답에 텍스트가 없습니다.")
-    return _parse_payload(content)
+    return content
 
 
-async def _call_claude_cli(cred: AiCredential, vuln: Vulnerability) -> AiAnalysis:
+async def _call_claude_cli_text(cred: AiCredential, system: str, user: str) -> str:
     """Invoke the local Claude Code CLI in headless mode.
 
     Uses the host's Claude Code authentication (mounted via ``~/.claude``),
@@ -299,11 +288,7 @@ async def _call_claude_cli(cred: AiCredential, vuln: Vulnerability) -> AiAnalysi
                 "설치되어 있어야 합니다. README의 'Claude Code CLI' 섹션을 참고하세요."
             ),
         )
-    prompt = _SYSTEM_PROMPT + "\n\n" + _USER_TEMPLATE.format(
-        cve_id=vuln.cve_id,
-        title=vuln.title,
-        description=vuln.description,
-    ) + "\n\nRespond with a single JSON object, no surrounding prose or code fences."
+    prompt = system + "\n\n" + user
     args = [
         "claude",
         "-p",
@@ -334,19 +319,30 @@ async def _call_claude_cli(cred: AiCredential, vuln: Vulnerability) -> AiAnalysi
             status_code=504,
             detail="claude CLI 응답이 제한 시간(180초) 내에 돌아오지 않았습니다.",
         ) from e
+    stdout_text = stdout_bytes.decode("utf-8", errors="replace").strip()
+    stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
     if proc.returncode != 0:
-        stderr = stderr_bytes.decode("utf-8", errors="replace").strip()[:400]
+        # claude CLI는 인증/모델 오류 같은 사용자 메시지를 stdout으로 내보내는
+        # 경우가 많아서, stdout과 stderr를 둘 다 합쳐 보여줘야 진단이 가능합니다.
+        diag = (stderr_text or stdout_text or "(출력 없음)")[:600]
+        hint = ""
+        lower = diag.lower()
+        if "not logged in" in lower or "/login" in lower:
+            hint = (
+                " — 컨테이너 안의 claude CLI가 호스트 로그인을 보지 못합니다. "
+                "docker compose에 `-f docker-compose.claude-cli.yml` 오버레이를 "
+                "포함해 다시 띄웠는지 확인하세요."
+            )
         raise HTTPException(
             status_code=502,
             detail=(
                 f"claude CLI 실행 실패 (exit={proc.returncode}). "
-                f"로그인 상태/모델 ID를 확인하세요. 오류: {stderr or '(stderr 없음)'}"
+                f"오류: {diag}{hint}"
             ),
         )
-    content = stdout_bytes.decode("utf-8", errors="replace").strip()
-    if not content:
+    if not stdout_text:
         raise HTTPException(status_code=502, detail="claude CLI 응답이 비어 있습니다.")
-    return _parse_payload(content)
+    return _parse_payload(stdout_text)
 
 
 def _extract_error(res: httpx.Response, provider: str) -> str:
@@ -358,13 +354,45 @@ def _extract_error(res: httpx.Response, provider: str) -> str:
     return f"{provider} API 오류 ({res.status_code}): {msg[:400]}"
 
 
-async def analyze_vulnerability(db: AsyncSession, vuln: Vulnerability) -> AiAnalysis:
-    cred = await _load_active_credential(db)
+async def _dispatch_text(
+    cred: AiCredential,
+    system: str,
+    user: str,
+    *,
+    force_json: bool,
+) -> str:
     provider = (cred.provider or "").lower()
     if provider in _OPENAI_COMPATIBLE:
-        return await _call_openai(cred, vuln)
+        return await _call_openai_text(cred, system, user, force_json=force_json)
     if provider == "anthropic":
-        return await _call_anthropic(cred, vuln)
+        return await _call_anthropic_text(cred, system, user)
     if provider == "claude_cli":
-        return await _call_claude_cli(cred, vuln)
+        return await _call_claude_cli_text(cred, system, user)
     raise AiAnalyzerNotConfigured(f"지원하지 않는 AI 제공자입니다: {cred.provider}")
+
+
+async def call_llm(
+    db: AsyncSession,
+    system: str,
+    user: str,
+    *,
+    force_json: bool = True,
+) -> str:
+    """Public LLM-call helper. Loads the active credential and returns raw text.
+
+    Used by ai_analyzer.analyze_vulnerability and by the sandbox payload-
+    adapter / result-analyzer — anything that needs a one-shot prompt
+    against whatever provider the user has configured.
+    """
+    cred = await _load_active_credential(db)
+    return await _dispatch_text(cred, system, user, force_json=force_json)
+
+
+async def analyze_vulnerability(db: AsyncSession, vuln: Vulnerability) -> AiAnalysis:
+    user_prompt = _USER_TEMPLATE.format(
+        cve_id=vuln.cve_id,
+        title=vuln.title,
+        description=vuln.description,
+    )
+    raw = await call_llm(db, _SYSTEM_PROMPT, user_prompt, force_json=True)
+    return _parse_payload(raw)

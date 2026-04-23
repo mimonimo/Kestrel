@@ -24,7 +24,7 @@
 
 ---
 
-> 진행 상황: Step 1 ✅ · Step 2 ✅ · Step 3 ✅ · Step 4 ✅ · Step 5 ✅ · Step 6 ✅ · Step 7 ✅
+> 진행 상황: Step 1 ✅ · Step 2 ✅ · Step 3 ✅ · Step 4 ✅ · Step 5 ✅ · Step 6 ✅ · Step 7 ✅ · Step 8 ✅
 
 ---
 
@@ -326,6 +326,68 @@ frontend/
 
 - `docker-compose.yml` 에 소스 볼륨 마운트가 없어, 코드 수정 후 `docker compose restart` 만으로는 반영되지 않음. 프롬프트/백엔드/프론트 변경 시엔 반드시 `docker compose build <service>` 후 `up -d --build`.
 - 볼륨 마운트를 dev 전용으로 분리하려면 별도 `docker-compose.dev.yml` 오버레이 방식 추천(현재는 미도입).
+
+---
+
+## Step 8 — 취약점 샌드박스 (CVE → 격리 컨테이너 → AI 적응 페이로드 → 자동 판정) ✅
+
+**완료일:** 2026-04-24
+
+CVE 상세 페이지에서 한 번 클릭으로 (1) 해당 취약점 분류에 맞는 가벼운 실습 컨테이너를 호스트 docker 데몬에 형제 컨테이너로 띄우고 (2) AI 가 CVE 정보를 읽어 그 컨테이너의 실제 엔드포인트/파라미터에 맞춰 페이로드를 재작성한 뒤 (3) 백엔드가 직접 HTTP 요청을 던지고 (4) 응답을 다시 AI 가 보고 성공/실패 판정을 내리는 end-to-end 파이프라인을 추가했습니다.
+
+### 1. 격리 토폴로지 (DooD + internal bridge)
+
+- `docker-compose.yml` 의 backend 에 `/var/run/docker.sock` 마운트 + `group_add: ["${DOCKER_GID:-0}"]`. macOS+OrbStack 은 컨테이너 내부에서 socket 이 root:root 로 보이므로 GID 0 추가로 동작, Linux 호스트는 `.env` 의 `DOCKER_GID` 를 호스트 docker 그룹 GID 로 지정.
+- 새로운 도커 네트워크 `kestrel_sandbox_net` (`internal: true`, bridge) — 인터넷·호스트로의 egress 자체를 차단. 백엔드와 모든 lab 컨테이너가 여기에 부착되어 컨테이너 이름으로 서로를 호출.
+- backend 컨테이너는 `default` + `sandbox` 두 네트워크에 동시 부착 → 외부 API 호출(LLM 등)은 default 로, lab 호출은 sandbox 로.
+
+### 2. 라이프사이클 관리
+
+- **모델**: `sandbox_sessions(id UUID PK, vulnerability_id FK ON DELETE SET NULL, lab_kind, container_id, container_name, target_url, status enum, error, last_run JSONB, created_at, expires_at)` (alembic `0009_sandbox_sessions.py`, `_pg_enum` + 수동 `CREATE TYPE`).
+- **`services/sandbox/manager.py`**:
+  - `start_lab` — docker SDK 로 `image, mem_limit, nano_cpus, pids_limit, cap_drop=["ALL"], security_opt=["no-new-privileges:true"]`, `network=kestrel_sandbox_net` 형제 컨테이너 기동. 라벨에 `kestrel.sandbox=1`, `kestrel.session_id`, `kestrel.expires_at` 부착.
+  - `stop_lab` — 컨테이너 강제 제거.
+  - `proxy_request` — httpx 로 `http://<container_name>:<port><path>` 호출 (응답 본문 64KB 로 잘라서 반환).
+  - `reap_expired` — 라벨 기반으로 TTL 초과 컨테이너 정리. `GET /sandbox/sessions/{id}` 호출 시 만료된 세션은 자동으로 `EXPIRED` 로 동기화.
+- **동기 docker SDK 호출은 모두 `asyncio.to_thread` 로 감싸 이벤트 루프 블로킹 방지.**
+- TTL 기본 1800초(30분), `SANDBOX_TTL_SECONDS` 로 조정.
+
+### 3. Lab 카탈로그 + CWE 분류기
+
+- `services/sandbox/catalog.py` — `LabDefinition(kind, image, container_port, target_path, injection_points: list[InjectionPoint])`. 각 `InjectionPoint` 는 `name, method, path, parameter, location(query|body|header|path), response_kind, notes`.
+- 1차 lab: `xss` → `kestrel-lab-xss:latest` (Flask, 5000 포트, 3 개의 reflection 지점 — `/echo?msg=`, `/search?q=`, `POST /comment` body).
+- `services/sandbox/classifier.py` — CWE → kind 우선 매핑(`CWE-79/80/83/87 → xss`), 매핑 실패 시 제목/설명 키워드 폴백("xss", "cross-site scripting", "stored xss" 등). 미매칭이면 사용자에게 "지원하는 lab 유형이 아직 없습니다" 안내 후 시작 거부.
+
+### 4. AI 페이로드 적응 + 응답 판정
+
+- `services/ai_analyzer.py` 에서 `call_llm(db, system, user, *, force_json=True)` 을 공개 함수로 추출 → CVE 분석과 샌드박스 모듈이 동일 자격 증명/모델을 공유.
+- **`services/sandbox/payload_adapter.py`**: CVE 본문 + 일반 PoC + lab 의 모든 injection point 를 LLM 에 넘겨 실제 엔드포인트/파라미터/메서드 + 적응된 페이로드 본문 + `success_indicator` + `rationale` 을 JSON 으로 회수. 모델이 lab 에 존재하지 않는 path/parameter 를 환각하면 즉시 reject 하고 첫 injection point 로 재시도.
+- **`services/sandbox/result_analyzer.py`**: 휴리스틱(`payload literal in response body`) 으로 1차 신호를 만든 뒤, LLM 에 요청·응답·휴리스틱 신호를 함께 보여주고 `{success, confidence(low/medium/high), summary, evidence, next_step}` JSON 으로 최종 판정. LLM 호출 실패 시 휴리스틱-단독 폴백으로 graceful degrade.
+
+### 5. API & UI
+
+- `POST /sandbox/sessions` — CVE 분류 → lab 컨테이너 기동 → SandboxSession 반환.
+- `GET /sandbox/sessions/{id}` — 상태 조회 (TTL 만료 시 자동 EXPIRED 동기화 포함).
+- `DELETE /sandbox/sessions/{id}` — 컨테이너 제거 + 세션 STOPPED.
+- `POST /sandbox/sessions/{id}/exec` — 풀 파이프라인 (CVE 본문 ↔ AI 적응 → 컨테이너로 HTTP 전송 → AI 판정) 한 번에. 응답으로 `adapted, exchange, verdict` 모두 반환 → UI 에서 단계별로 노출.
+- **Frontend**: `components/cve/SandboxPanel.tsx` 가 CVE 상세에 새 카드로 들어감. `[샌드박스 시작]` → 상태 칩 + 컨테이너명 + injection point 목록 → `[AI 페이로드 적응 + 실행]` 버튼 → 적응 페이로드/요청 메서드·경로/응답 본문(잘림 표시 포함)/AI 판정 배지(성공·실패 + 신뢰도 + 근거 + 다음 시도) + 휴리스틱 신호.
+- 30분 후 자동 회수, 사용자가 직접 `정지` 버튼으로 즉시 종료 가능.
+
+### 6. Lab 이미지 (`sandbox-labs/`)
+
+- `xss-flask/` — 의도적으로 `request.args.get("msg")` 를 escape 없이 그대로 `<div id='echo'>` 에 보간. `/comment` 는 POST body 의 `body` 를 그대로 페이지 하단에 출력. 이미지 크기 ~80MB 수준 (`python:3.12-slim` + Flask 만).
+- `sandbox-labs/README.md` — `docker build -t kestrel-lab-xss:latest sandbox-labs/xss-flask` 빌드 가이드. 카탈로그에 새 kind 추가하는 절차도 함께 기재.
+
+### 7. AI 분석 신뢰성 보강 (Claude CLI)
+
+- `_call_claude_cli` 가 종전엔 stderr 만 사용자에게 보였는데 claude CLI 는 401 같은 인증 오류를 **stdout** 으로 출력함 → stdout 도 함께 회수해 메시지에 포함하도록 수정. 더 이상 "오류: (stderr 없음)" 로 끝나지 않고 실제 원인을 보여줌.
+- macOS 호스트에서는 `~/.claude` 에 OAuth 토큰이 들어 있지 않고 **Keychain** 에 저장되므로 디렉터리만 마운트해도 컨테이너에서는 `Not logged in` 으로 떨어짐. `README.md` 의 Claude CLI 설치 가이드에 `security find-generic-password -s "Claude Code-credentials" -w > ~/.claude/.credentials.json` 한 줄을 추가해 토큰을 파일로 export 하도록 안내. Linux 호스트는 이 단계 생략.
+
+### 8. 운영 메모
+
+- 샌드박스 컨테이너는 항상 `kestrel-sandbox-<sessionhash>` 이름 + `kestrel.sandbox=1` 라벨 → 외부에서 일괄 정리 시 `docker ps --filter "label=kestrel.sandbox=1"` 로 식별.
+- backend 컨테이너의 docker.sock 권한 문제는 거의 항상 **GID 불일치** 가 원인. macOS+OrbStack 은 `DOCKER_GID` 미설정(=0) 으로 동작, Ubuntu 서버는 `getent group docker | cut -d: -f3` 결과를 `.env` 에 박아야 함.
+- backend 컨테이너에 새 lab 이미지를 추가할 때는 (a) `services/sandbox/catalog.py` 에 `LabDefinition` 한 개 등록 (b) `services/sandbox/classifier.py` 에 CWE/키워드 매핑 추가 (c) `sandbox-labs/<kind>/Dockerfile` 만 작성하면 됨. 백엔드 코드 수정 없이 신규 vuln class 가 늘어남.
 
 ---
 

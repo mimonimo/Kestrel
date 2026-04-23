@@ -212,6 +212,23 @@ export const api = {
     request<AiAnalysisResponse>(`/cves/${encodeURIComponent(cveId)}/analyze`, {
       method: "POST",
     }),
+
+  startSandbox: (body: { cveId: string; labKind?: string }) =>
+    request<SandboxSession>(`/sandbox/sessions`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getSandbox: (sessionId: string) =>
+    request<SandboxSession>(`/sandbox/sessions/${encodeURIComponent(sessionId)}`),
+  stopSandbox: (sessionId: string) =>
+    request<void>(`/sandbox/sessions/${encodeURIComponent(sessionId)}`, {
+      method: "DELETE",
+    }),
+  execSandbox: (sessionId: string, body: { genericPayload?: string }) =>
+    request<SandboxExecResponse>(
+      `/sandbox/sessions/${encodeURIComponent(sessionId)}/exec`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
 };
 
 export interface AiCredential {
@@ -255,6 +272,87 @@ export interface AiAnalysisResponse {
   attackMethod: string;
   payloadExample: string;
   mitigation: string[];
+}
+
+export type SandboxStatus =
+  | "pending"
+  | "running"
+  | "stopped"
+  | "expired"
+  | "failed";
+
+export interface InjectionPoint {
+  name: string;
+  method: string;
+  path: string;
+  parameter: string;
+  location: string;
+  responseKind: string;
+  notes: string;
+}
+
+export interface LabInfo {
+  kind: string;
+  description: string;
+  targetPath: string;
+  injectionPoints: InjectionPoint[];
+}
+
+export interface SandboxLastRun {
+  adapted: AdaptedPayload;
+  exchange: SandboxExchange;
+  verdict: SandboxVerdict;
+  ranAt: string;
+}
+
+export interface SandboxSession {
+  id: string;
+  vulnerabilityId: string | null;
+  labKind: string;
+  containerName: string | null;
+  targetUrl: string | null;
+  status: SandboxStatus;
+  error: string | null;
+  lastRun: SandboxLastRun | null;
+  createdAt: string;
+  expiresAt: string | null;
+  lab: LabInfo | null;
+}
+
+export interface AdaptedPayload {
+  method: string;
+  path: string;
+  parameter: string;
+  location: string;
+  payload: string;
+  successIndicator: string;
+  rationale: string;
+  notes: string;
+}
+
+export interface SandboxExchange {
+  url: string;
+  method: string;
+  statusCode: number;
+  responseHeaders: Record<string, string>;
+  body: string;
+  bodyTruncated: boolean;
+}
+
+export interface SandboxVerdict {
+  success: boolean;
+  confidence: string;
+  summary: string;
+  evidence: string;
+  nextStep: string;
+  heuristicSignal: string;
+}
+
+export interface SandboxExecResponse {
+  session: SandboxSession;
+  adapted: AdaptedPayload;
+  exchange: SandboxExchange;
+  verdict: SandboxVerdict;
 }
 
 export interface CommunityPost {

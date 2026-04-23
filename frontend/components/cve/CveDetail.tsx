@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AiAnalysisPanel } from "./AiAnalysisPanel";
 import { BookmarkButton } from "./BookmarkButton";
+import { SandboxPanel } from "./SandboxPanel";
 import { SeverityBadge } from "./SeverityBadge";
 import { TicketControl } from "./TicketControl";
 import { CommentThread } from "@/components/community/CommentThread";
@@ -77,6 +78,8 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
       </Card>
 
       <AiAnalysisPanel cveId={vuln.cveId} />
+
+      <SandboxPanel cveId={vuln.cveId} />
 
       {vuln.affectedProducts.length > 0 && (
         <Card>

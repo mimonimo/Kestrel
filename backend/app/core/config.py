@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     http_max_retries: int = 5
     http_base_backoff: float = 2.0
 
+    # Sandbox (in-app vulnerability lab containers)
+    sandbox_network: str = "kestrel_sandbox_net"
+    sandbox_ttl_seconds: int = 1800  # 30 minutes; auto-reaped past this
+    sandbox_memory_mb: int = 256
+    sandbox_cpus: float = 0.5
+    sandbox_pids_limit: int = 128
+    sandbox_max_concurrent: int = 8
+
     # Observability (모두 옵셔널 — 미설정 시 코드 경로 자체를 건너뜀)
     sentry_dsn: str | None = None
     sentry_traces_sample_rate: float = 0.1

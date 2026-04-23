@@ -30,6 +30,23 @@ services:
       - NVD_API_KEY=${NVD_API_KEY}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - CORS_ORIGINS=["http://localhost:3000"]
+      - SANDBOX_NETWORK=${SANDBOX_NETWORK:-kestrel_sandbox_net}
+      - SANDBOX_TTL_SECONDS=${SANDBOX_TTL_SECONDS:-1800}
+    volumes:
+      # Sandbox feature spawns sibling containers via the host docker daemon.
+      # Mounting the socket grants root-equivalent control of docker — the
+      # API restricts what images/limits/networks are accepted (see
+      # app/services/sandbox/manager.py).
+      - /var/run/docker.sock:/var/run/docker.sock
+    # The non-root app user needs membership in whatever group owns the host
+    # docker.sock. On macOS+OrbStack the socket appears as root:root inside
+    # the container, so adding GID 0 grants access. On Linux hosts set
+    # DOCKER_GID in .env to the host's `docker` group GID (e.g. 999/998).
+    group_add:
+      - "${DOCKER_GID:-0}"
+    networks:
+      - default
+      - sandbox
     depends_on:
       postgres:
         condition: service_healthy
@@ -86,3 +103,14 @@ volumes:
   postgres_data:
   redis_data:
   meili_data:
+
+networks:
+  default:
+  # Isolated bridge network where every sandbox lab container is attached.
+  # `internal: true` blocks egress to the internet/host so AI-generated
+  # exploit payloads cannot reach external systems. The backend container
+  # is also attached so it can reach lab targets by container name.
+  sandbox:
+    name: kestrel_sandbox_net
+    driver: bridge
+    internal: true

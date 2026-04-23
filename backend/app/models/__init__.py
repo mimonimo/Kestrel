@@ -2,6 +2,7 @@ from app.models.ai_credential import AiCredential
 from app.models.base import Base
 from app.models.bookmark import Bookmark
 from app.models.community import Comment, Post, Tag, User, UserRole, Vote, VoteTarget
+from app.models.sandbox import SandboxSession, SandboxStatus
 from app.models.settings import AppSettings
 from app.models.ticket import Ticket, TicketStatus
 from app.models.vulnerability import (
@@ -28,6 +29,8 @@ __all__ = [
     "OsFamily",
     "Post",
     "RefType",
+    "SandboxSession",
+    "SandboxStatus",
     "Severity",
     "Source",
     "Tag",
