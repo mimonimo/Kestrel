@@ -23,7 +23,7 @@ from docker.errors import APIError, ImageNotFound, NotFound
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.services.sandbox.catalog import LabDefinition
+from app.services.sandbox.lab_resolver import LabSpec
 
 log = get_logger(__name__)
 
@@ -86,13 +86,24 @@ async def list_owned_containers() -> list[dict]:
     return await asyncio.to_thread(_do)
 
 
-async def start_lab(lab: LabDefinition, session_id: uuid.UUID) -> LaunchedLab:
-    """Run a fresh container of *lab* attached to the sandbox network.
+async def start_lab(spec: LabSpec, session_id: uuid.UUID) -> LaunchedLab:
+    """Run a fresh container for *spec* attached to the sandbox network.
 
     The container has no host port published, no internet egress (the
     network is ``internal: true``), and tight CPU/memory/PID limits. The
     backend reaches it by container name across the sandbox bridge.
+
+    Only ``run_kind="image"`` is implemented in PR9-A; ``compose`` raises
+    until PR9-B teaches the manager to spin up multi-container stacks.
     """
+    if spec.run_kind != "image":
+        raise SandboxError(
+            f"이 manager 버전은 단일 이미지 lab만 지원합니다 (run_kind={spec.run_kind}). "
+            "docker-compose 기반 vulhub lab은 다음 PR에서 추가됩니다."
+        )
+    if not spec.image:
+        raise SandboxError("lab spec에 image가 비어 있습니다.")
+
     settings = get_settings()
     name = f"kestrel-sandbox-{session_id.hex[:12]}"
     expires_at = datetime.now(timezone.utc) + timedelta(
@@ -103,7 +114,7 @@ async def start_lab(lab: LabDefinition, session_id: uuid.UUID) -> LaunchedLab:
         cli = _client()
         try:
             cli.containers.run(
-                image=lab.image,
+                image=spec.image,
                 name=name,
                 detach=True,
                 remove=False,  # we reap explicitly so we can capture exit logs
@@ -121,15 +132,15 @@ async def start_lab(lab: LabDefinition, session_id: uuid.UUID) -> LaunchedLab:
                 tmpfs={"/tmp": "rw,size=16m"},
                 labels={
                     _LABEL_OWNER: "true",
-                    "kestrel.sandbox.kind": lab.kind,
+                    "kestrel.sandbox.kind": spec.lab_kind,
                     "kestrel.sandbox.session_id": str(session_id),
                     "kestrel.sandbox.expires_at": expires_at.isoformat(),
                 },
             )
         except ImageNotFound as e:
             raise LabImageMissing(
-                f"이미지 '{lab.image}'를 찾을 수 없습니다. 다음 명령으로 빌드하세요:\n"
-                f"  {lab.build_hint or 'docker build -t ' + lab.image + ' <context>'}"
+                f"이미지 '{spec.image}'를 찾을 수 없습니다. 다음 명령으로 빌드하세요:\n"
+                f"  {spec.build_hint or 'docker build -t ' + spec.image + ' <context>'}"
             ) from e
         except APIError as e:
             raise SandboxError(f"컨테이너 생성 실패: {e.explanation or e}") from e
@@ -137,7 +148,7 @@ async def start_lab(lab: LabDefinition, session_id: uuid.UUID) -> LaunchedLab:
         return LaunchedLab(
             container_id=name,  # use name as id surface — easier to log
             container_name=name,
-            target_url=f"http://{name}:{lab.container_port}",
+            target_url=f"http://{name}:{spec.container_port}",
             expires_at=expires_at,
         )
 
@@ -146,10 +157,10 @@ async def start_lab(lab: LabDefinition, session_id: uuid.UUID) -> LaunchedLab:
     return handle
 
 
-async def wait_ready(target_url: str, lab: LabDefinition) -> None:
+async def wait_ready(target_url: str, spec: LabSpec) -> None:
     """Block until the lab responds to a GET on its target_path, or raise."""
     deadline = asyncio.get_event_loop().time() + _READY_TIMEOUT_SECONDS
-    url = f"{target_url}{lab.target_path}"
+    url = f"{target_url}{spec.target_path}"
     last_err: Exception | None = None
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
         while asyncio.get_event_loop().time() < deadline:

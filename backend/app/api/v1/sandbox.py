@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.logging import get_logger
-from app.models import SandboxSession, SandboxStatus, Vulnerability
+from app.models import LabSourceKind, SandboxSession, SandboxStatus, Vulnerability
 from app.schemas.sandbox import (
     AdaptedPayloadOut,
     ExchangeOut,
@@ -25,7 +25,8 @@ from app.schemas.sandbox import (
     SandboxStartRequest,
 )
 from app.services.ai_analyzer import analyze_vulnerability
-from app.services.sandbox import classify_vulnerability, get_lab
+from app.services.sandbox import ResolvedLab, record_success_payload, resolve_lab
+from app.services.sandbox.lab_resolver import LabSpec
 from app.services.sandbox.manager import (
     LabImageMissing,
     SandboxError,
@@ -35,18 +36,17 @@ from app.services.sandbox.manager import (
     stop_lab,
     wait_ready,
 )
-from app.services.sandbox.payload_adapter import adapt_payload
-from app.services.sandbox.result_analyzer import analyze_run
+from app.services.sandbox.payload_adapter import adapt_payload, to_dict
 
 router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 log = get_logger(__name__)
 
 
-def _lab_to_out(lab) -> LabInfoOut:
+def _spec_to_lab_out(spec: LabSpec) -> LabInfoOut:
     return LabInfoOut(
-        kind=lab.kind,
-        description=lab.description,
-        target_path=lab.target_path,
+        kind=spec.lab_kind,
+        description=spec.description,
+        target_path=spec.target_path,
         injection_points=[
             InjectionPointOut(
                 name=ip.name,
@@ -57,21 +57,41 @@ def _lab_to_out(lab) -> LabInfoOut:
                 response_kind=ip.response_kind,
                 notes=ip.notes,
             )
-            for ip in lab.injection_points
+            for ip in spec.injection_points
         ],
     )
 
 
-def _session_to_out(row: SandboxSession, include_lab: bool = True) -> SandboxSessionOut:
+async def _session_to_out(
+    db: AsyncSession,
+    row: SandboxSession,
+    *,
+    spec: LabSpec | None = None,
+) -> SandboxSessionOut:
+    """Build the API view of a session row.
+
+    *spec* is passed in when the caller already resolved one (start/exec).
+    For pure GET we re-resolve from the row's CVE so the UI can still show
+    the injection-point list — the resolver is cheap (one mapping query).
+    """
     lab_out: LabInfoOut | None = None
-    if include_lab:
-        lab = get_lab(row.lab_kind)
-        if lab is not None:
-            lab_out = _lab_to_out(lab)
+    if spec is not None:
+        lab_out = _spec_to_lab_out(spec)
+    elif row.vulnerability_id is not None:
+        vuln = await db.scalar(
+            select(Vulnerability).where(Vulnerability.id == row.vulnerability_id)
+        )
+        if vuln is not None:
+            resolved = await resolve_lab(db, vuln, forced_kind=row.lab_kind)
+            if resolved is not None:
+                lab_out = _spec_to_lab_out(resolved.spec)
+
     return SandboxSessionOut(
         id=row.id,
         vulnerability_id=row.vulnerability_id,
         lab_kind=row.lab_kind,
+        lab_source=row.lab_source,
+        verified=row.verified,
         container_name=row.container_name,
         target_url=row.target_url,
         status=row.status,
@@ -113,18 +133,17 @@ async def start_session(
     if vuln is None:
         raise HTTPException(status_code=404, detail=f"{body.cve_id} not found")
 
-    kind = (body.lab_kind or "").strip().lower() or classify_vulnerability(vuln)
-    if not kind:
+    forced = (body.lab_kind or "").strip().lower() or None
+    resolved = await resolve_lab(db, vuln, forced_kind=forced)
+    if resolved is None:
         raise HTTPException(
             status_code=400,
             detail=(
                 "이 CVE에 대응하는 샌드박스 랩이 아직 없습니다. "
-                "현재 지원: XSS. 다른 클래스는 점진적으로 추가 예정입니다."
+                "현재 지원: 일반 클래스 lab(XSS) + 사전 등록된 vulhub 매핑. "
+                "추후 PR에서 vulhub 시드 + AI 합성으로 커버리지를 확장합니다."
             ),
         )
-    lab = get_lab(kind)
-    if lab is None:
-        raise HTTPException(status_code=400, detail=f"알 수 없는 lab 종류: {kind}")
 
     running = await _count_running(db)
     if running >= settings.sandbox_max_concurrent:
@@ -138,15 +157,17 @@ async def start_session(
 
     session_row = SandboxSession(
         vulnerability_id=vuln.id,
-        lab_kind=kind,
+        lab_kind=resolved.spec.lab_kind,
+        lab_source=resolved.source,
+        verified=resolved.verified,
         status=SandboxStatus.PENDING,
     )
     db.add(session_row)
     await db.flush()  # populate session_row.id
 
     try:
-        handle = await start_lab(lab, session_row.id)
-        await wait_ready(handle.target_url, lab)
+        handle = await start_lab(resolved.spec, session_row.id)
+        await wait_ready(handle.target_url, resolved.spec)
     except LabImageMissing as e:
         session_row.status = SandboxStatus.FAILED
         session_row.error = str(e)
@@ -168,7 +189,7 @@ async def start_session(
     session_row.expires_at = handle.expires_at
     await db.commit()
     await db.refresh(session_row)
-    return _session_to_out(session_row)
+    return await _session_to_out(db, session_row, spec=resolved.spec)
 
 
 @router.get(
@@ -192,7 +213,7 @@ async def get_session(
     ):
         row.status = SandboxStatus.EXPIRED
         await db.commit()
-    return _session_to_out(row)
+    return await _session_to_out(db, row)
 
 
 @router.delete(
@@ -232,9 +253,6 @@ async def exec_payload(
             status_code=409,
             detail=f"세션 상태가 실행 중이 아닙니다 (현재: {row.status.value}).",
         )
-    lab = get_lab(row.lab_kind)
-    if lab is None:
-        raise HTTPException(status_code=500, detail=f"lab 정의가 사라졌습니다: {row.lab_kind}")
 
     vuln: Vulnerability | None = None
     if row.vulnerability_id is not None:
@@ -247,11 +265,22 @@ async def exec_payload(
             detail="이 세션에 연결된 CVE 정보를 찾을 수 없습니다.",
         )
 
-    # Get a generic payload to start from. Caller can pass one (e.g. the AI
-    # analysis result they already have on screen); otherwise we generate a
-    # fresh one via the standard analyzer prompt.
+    resolved = await resolve_lab(db, vuln, forced_kind=row.lab_kind)
+    if resolved is None:
+        raise HTTPException(
+            status_code=500,
+            detail=f"세션 시작 시 매핑되었던 lab을 찾을 수 없습니다: {row.lab_kind}",
+        )
+
+    # Decide whether to use the cached payload. The cache is keyed on
+    # (cve, lab) so swapping out the generic_payload only matters when the
+    # caller asks us to regenerate.
+    force_regen = bool(body.force_regenerate)
+    cached = None if force_regen else resolved.cached_payload
+
     generic = (body.generic_payload or "").strip()
-    if not generic:
+    if not generic and cached is None:
+        # Only spend tokens on the analyzer when we actually need fresh input.
         analysis = await analyze_vulnerability(db, vuln)
         generic = analysis.payload_example
 
@@ -262,7 +291,9 @@ async def exec_payload(
         description=vuln.description,
         generic_payload=generic,
         target_url=row.target_url,
-        lab=lab,
+        spec=resolved.spec,
+        cached_payload=cached,
+        force_regenerate=force_regen,
     )
 
     # Build the actual HTTP request based on adapted.location
@@ -292,6 +323,10 @@ async def exec_payload(
     except SandboxError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
+    # Lazy import to avoid pulling result_analyzer (and the LLM client) at
+    # module import time.
+    from app.services.sandbox.result_analyzer import analyze_run
+
     verdict = await analyze_run(
         db,
         cve_id=vuln.cve_id,
@@ -301,17 +336,23 @@ async def exec_payload(
         exchange=exchange,
     )
 
+    # On a successful run, cache the working payload so the next exec for
+    # this same (CVE, lab) combo skips the LLM call. Update verified flag
+    # on the session too — the UI badge should reflect the current state.
+    if verdict.success and not adapted.from_cache:
+        try:
+            await record_success_payload(
+                db,
+                cve_id=vuln.cve_id,
+                resolved=resolved,
+                adapted_payload_dict=to_dict(adapted),
+            )
+            row.verified = True
+        except Exception as e:  # cache is best-effort; never fail the request
+            log.warning("sandbox.cache_write_failed", error=str(e))
+
     row.last_run = {
-        "adapted": {
-            "method": adapted.method,
-            "path": adapted.path,
-            "parameter": adapted.parameter,
-            "location": adapted.location,
-            "payload": adapted.payload,
-            "success_indicator": adapted.success_indicator,
-            "rationale": adapted.rationale,
-            "notes": adapted.notes,
-        },
+        "adapted": {**to_dict(adapted), "from_cache": adapted.from_cache},
         "exchange": exchange,
         "verdict": {
             "success": verdict.success,
@@ -327,7 +368,7 @@ async def exec_payload(
     await db.refresh(row)
 
     return SandboxExecResponse(
-        session=_session_to_out(row),
+        session=await _session_to_out(db, row, spec=resolved.spec),
         adapted=AdaptedPayloadOut(
             method=adapted.method,
             path=adapted.path,
@@ -337,6 +378,7 @@ async def exec_payload(
             success_indicator=adapted.success_indicator,
             rationale=adapted.rationale,
             notes=adapted.notes,
+            from_cache=adapted.from_cache,
         ),
         exchange=ExchangeOut(**exchange),
         verdict=RunVerdictOut(

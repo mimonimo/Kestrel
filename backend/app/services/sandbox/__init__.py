@@ -7,10 +7,20 @@ in the docker SDK unless the sandbox feature is actually used.
 
 from app.services.sandbox.catalog import LAB_CATALOG, LabDefinition, get_lab
 from app.services.sandbox.classifier import classify_vulnerability
+from app.services.sandbox.lab_resolver import (
+    LabSpec,
+    ResolvedLab,
+    record_success_payload,
+    resolve_lab,
+)
 
 __all__ = [
     "LAB_CATALOG",
     "LabDefinition",
+    "LabSpec",
+    "ResolvedLab",
     "classify_vulnerability",
     "get_lab",
+    "record_success_payload",
+    "resolve_lab",
 ]

@@ -5,14 +5,14 @@ from uuid import UUID
 
 from pydantic import Field
 
-from app.models import SandboxStatus
+from app.models import LabSourceKind, SandboxStatus
 from app.schemas.vulnerability import CamelModel
 
 
 class SandboxStartRequest(CamelModel):
     cve_id: str = Field(min_length=1, max_length=32)
     # Optional override — when caller knows better than the classifier.
-    lab_kind: str | None = Field(default=None, max_length=64)
+    lab_kind: str | None = Field(default=None, max_length=128)
 
 
 class InjectionPointOut(CamelModel):
@@ -36,6 +36,8 @@ class SandboxSessionOut(CamelModel):
     id: UUID
     vulnerability_id: UUID | None = None
     lab_kind: str
+    lab_source: LabSourceKind = LabSourceKind.GENERIC
+    verified: bool = False
     container_name: str | None = None
     target_url: str | None = None
     status: SandboxStatus
@@ -55,6 +57,9 @@ class AdaptedPayloadOut(CamelModel):
     success_indicator: str
     rationale: str
     notes: str = ""
+    # True when the payload was replayed from the known-good cache instead
+    # of going through the LLM. The UI uses this to show "캐시 사용" badge.
+    from_cache: bool = False
 
 
 class RunVerdictOut(CamelModel):
@@ -79,6 +84,10 @@ class SandboxExecRequest(CamelModel):
     # When omitted, the server pulls the latest AI analysis (if cached) or
     # asks the LLM for one and uses its payload_example as input.
     generic_payload: str | None = None
+    # When True, ignore any cached known-good payload and force a fresh LLM
+    # adaptation. Useful when the user wants to retry with a different
+    # technique or when the lab spec changed.
+    force_regenerate: bool = False
 
 
 class SandboxExecResponse(CamelModel):

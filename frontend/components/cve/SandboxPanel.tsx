@@ -6,6 +6,9 @@ import {
   FlaskConical,
   Loader2,
   Play,
+  RefreshCw,
+  ShieldCheck,
+  Sparkles,
   Square,
   XCircle,
 } from "lucide-react";
@@ -17,10 +20,60 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   ApiError,
   api,
+  type LabSourceKind,
   type SandboxExecResponse,
   type SandboxSession,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+function SourceBadge({
+  source,
+  verified,
+}: {
+  source: LabSourceKind;
+  verified: boolean;
+}) {
+  // Three flavors of provenance — UI distinguishes "검증된 vulhub reproducer"
+  // (highest trust) from a "일반 클래스" lab and from an AI-synthesized one.
+  const map: Record<
+    LabSourceKind,
+    { label: string; cls: string; Icon: typeof ShieldCheck }
+  > = {
+    vulhub: {
+      label: "vulhub reproducer",
+      cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
+      Icon: ShieldCheck,
+    },
+    generic: {
+      label: "일반 클래스 lab",
+      cls: "border-neutral-600 bg-neutral-700/30 text-neutral-300",
+      Icon: FlaskConical,
+    },
+    synthesized: {
+      label: "AI 생성 lab",
+      cls: "border-amber-500/40 bg-amber-500/10 text-amber-200",
+      Icon: Sparkles,
+    },
+  };
+  const m = map[source];
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+        m.cls,
+      )}
+      title={
+        verified
+          ? "이전 실행에서 페이로드가 동작함이 확인됨 (캐시 보유)"
+          : "아직 검증되지 않은 lab — 첫 exec에서 결과를 확인하세요"
+      }
+    >
+      <m.Icon className="h-3 w-3" />
+      {m.label}
+      {verified && <span className="ml-0.5 text-emerald-300">· 검증됨</span>}
+    </span>
+  );
+}
 
 function VerdictBadge({ ok, confidence }: { ok: boolean; confidence: string }) {
   return (
@@ -44,6 +97,15 @@ function RunResult({ result }: { result: SandboxExecResponse }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <VerdictBadge ok={verdict.success} confidence={verdict.confidence} />
+        {adapted.fromCache && (
+          <span
+            className="inline-flex items-center gap-1 rounded border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-200"
+            title="캐시된 known-good 페이로드를 그대로 재생했습니다 (LLM 호출 0회)"
+          >
+            <RefreshCw className="h-3 w-3" />
+            캐시 사용
+          </span>
+        )}
         <span className="font-mono text-[11px] text-neutral-500">
           {adapted.method} {adapted.path} ({adapted.location}:{adapted.parameter})
         </span>
@@ -127,7 +189,8 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
   });
 
   const exec = useMutation({
-    mutationFn: () => api.execSandbox(sessionId!, {}),
+    mutationFn: (opts?: { force?: boolean }) =>
+      api.execSandbox(sessionId!, { forceRegenerate: opts?.force }),
     onSuccess: (r: SandboxExecResponse) => {
       setLastResult(r);
       qc.setQueryData(["sandbox-session", r.session.id], r.session);
@@ -223,6 +286,10 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                 >
                   {session.status}
                 </span>
+                <SourceBadge
+                  source={session.labSource}
+                  verified={session.verified}
+                />
                 <span className="font-mono text-neutral-500">{session.labKind}</span>
                 {session.containerName && (
                   <span className="font-mono text-neutral-500">
@@ -255,10 +322,10 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
             </div>
 
             {session.status === "running" && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
-                  onClick={() => exec.mutate()}
+                  onClick={() => exec.mutate(undefined)}
                   disabled={exec.isPending}
                   size="md"
                 >
@@ -267,10 +334,25 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                   ) : (
                     <Play className="mr-1.5 h-4 w-4" />
                   )}
-                  AI 페이로드 적응 + 실행
+                  {session.verified ? "캐시된 페이로드 재생" : "AI 페이로드 적응 + 실행"}
                 </Button>
+                {session.verified && (
+                  <Button
+                    type="button"
+                    onClick={() => exec.mutate({ force: true })}
+                    disabled={exec.isPending}
+                    size="md"
+                    variant="ghost"
+                    title="캐시 무시하고 LLM에 다시 적응 요청 (다른 기법으로 재시도)"
+                  >
+                    <RefreshCw className="mr-1.5 h-4 w-4" />
+                    재생성
+                  </Button>
+                )}
                 <span className="text-[11px] text-neutral-500">
-                  CVE → 적응 → 전송 → AI 판정까지 한 번에
+                  {session.verified
+                    ? "이전 실행에서 검증된 페이로드 — LLM 호출 없이 즉시 재생"
+                    : "CVE → 적응 → 전송 → AI 판정까지 한 번에"}
                 </span>
               </div>
             )}

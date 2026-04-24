@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.services.ai_analyzer import call_llm
-from app.services.sandbox.catalog import LabDefinition
+from app.services.sandbox.lab_resolver import LabSpec
 
 log = get_logger(__name__)
 
@@ -36,6 +36,38 @@ class AdaptedPayload:
     rationale: str
     notes: str = ""
     raw: dict = field(default_factory=dict)
+    from_cache: bool = False  # True when reused from a known-good cache hit
+
+
+def to_dict(p: AdaptedPayload) -> dict:
+    """Stable serialization shape used both for DB cache and API responses."""
+    return {
+        "method": p.method,
+        "path": p.path,
+        "parameter": p.parameter,
+        "location": p.location,
+        "payload": p.payload,
+        "success_indicator": p.success_indicator,
+        "rationale": p.rationale,
+        "notes": p.notes,
+    }
+
+
+def from_cache_dict(d: dict) -> AdaptedPayload:
+    """Inverse of ``to_dict`` — used when the resolver hands us a
+    ``known_good_payload`` blob from ``cve_lab_mappings``."""
+    return AdaptedPayload(
+        method=str(d.get("method", "GET")).upper(),
+        path=str(d.get("path", "/")),
+        parameter=str(d.get("parameter", "")),
+        location=str(d.get("location", "query")),
+        payload=str(d.get("payload", "")),
+        success_indicator=str(d.get("success_indicator", "")),
+        rationale=str(d.get("rationale", "")) or "이전 실행에서 검증된 페이로드를 재사용했습니다.",
+        notes=str(d.get("notes", "")),
+        raw=d,
+        from_cache=True,
+    )
 
 
 _SYSTEM = (
@@ -95,7 +127,7 @@ def _strip_fence(text: str) -> str:
     return t.strip()
 
 
-def _injection_points_dump(lab: LabDefinition) -> str:
+def _injection_points_dump(spec: LabSpec) -> str:
     return json.dumps(
         [
             {
@@ -107,11 +139,32 @@ def _injection_points_dump(lab: LabDefinition) -> str:
                 "response_kind": ip.response_kind,
                 "notes": ip.notes,
             }
-            for ip in lab.injection_points
+            for ip in spec.injection_points
         ],
         ensure_ascii=False,
         indent=2,
     )
+
+
+def _validate_against_lab(data: dict, spec: LabSpec) -> dict:
+    """Reject hallucinated paths — fall back to the first injection point."""
+    valid_paths = {ip.path for ip in spec.injection_points}
+    chosen_path = str(data.get("path", "")).strip()
+    if chosen_path in valid_paths:
+        return data
+    if not spec.injection_points:
+        return data
+    first = spec.injection_points[0]
+    log.warning(
+        "sandbox.adapt_unknown_path",
+        chosen=chosen_path,
+        valid=list(valid_paths),
+    )
+    data["path"] = first.path
+    data.setdefault("method", first.method)
+    data.setdefault("parameter", first.parameter)
+    data.setdefault("location", first.location)
+    return data
 
 
 async def adapt_payload(
@@ -122,17 +175,39 @@ async def adapt_payload(
     description: str,
     generic_payload: str,
     target_url: str,
-    lab: LabDefinition,
+    spec: LabSpec,
+    cached_payload: dict | None = None,
+    force_regenerate: bool = False,
 ) -> AdaptedPayload:
+    """Return a payload tailored to *spec*'s injection points.
+
+    Order of preference:
+      1. If a cached known-good payload exists and the caller didn't ask for
+         a forced regeneration, replay it verbatim — **no LLM call made**.
+      2. Otherwise call the LLM, validate the chosen path against the spec,
+         and return the freshly adapted payload.
+
+    Caching the *successful* result is the caller's responsibility (so we
+    don't write speculative payloads that haven't been proven to work) —
+    see ``lab_resolver.record_success_payload``.
+    """
+    if cached_payload and not force_regenerate:
+        log.info(
+            "sandbox.adapt_cache_hit",
+            cve_id=cve_id,
+            lab_kind=spec.lab_kind,
+        )
+        return from_cache_dict(cached_payload)
+
     user = _USER_TEMPLATE.format(
         cve_id=cve_id,
         title=title,
         description=description,
         generic_payload=generic_payload or "(기존 분석 결과 없음 — CVE 정보만 보고 작성)",
-        lab_kind=lab.kind,
-        lab_description=lab.description,
+        lab_kind=spec.lab_kind,
+        lab_description=spec.description,
         target_url=target_url,
-        injection_points_json=_injection_points_dump(lab),
+        injection_points_json=_injection_points_dump(spec),
     )
     raw = await call_llm(db, _SYSTEM, user, force_json=True)
     try:
@@ -143,24 +218,11 @@ async def adapt_payload(
             status_code=502, detail=f"AI 페이로드 적응 응답 파싱 실패: {e}"
         ) from e
 
-    valid_paths = {ip.path for ip in lab.injection_points}
-    chosen_path = str(data.get("path", "")).strip()
-    if chosen_path not in valid_paths:
-        # AI hallucinated a path. Fall back to the first injection point.
-        first = lab.injection_points[0]
-        log.warning(
-            "sandbox.adapt_unknown_path",
-            chosen=chosen_path,
-            valid=list(valid_paths),
-        )
-        chosen_path = first.path
-        data.setdefault("method", first.method)
-        data.setdefault("parameter", first.parameter)
-        data.setdefault("location", first.location)
+    data = _validate_against_lab(data, spec)
 
     return AdaptedPayload(
         method=str(data.get("method", "GET")).upper(),
-        path=chosen_path,
+        path=str(data.get("path", "/")),
         parameter=str(data.get("parameter", "")),
         location=str(data.get("location", "query")),
         payload=str(data.get("payload", "")),
@@ -168,4 +230,5 @@ async def adapt_payload(
         rationale=str(data.get("rationale", "")),
         notes=str(data.get("notes", "")),
         raw=data,
+        from_cache=False,
     )

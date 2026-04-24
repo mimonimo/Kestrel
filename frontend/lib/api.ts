@@ -224,7 +224,10 @@ export const api = {
     request<void>(`/sandbox/sessions/${encodeURIComponent(sessionId)}`, {
       method: "DELETE",
     }),
-  execSandbox: (sessionId: string, body: { genericPayload?: string }) =>
+  execSandbox: (
+    sessionId: string,
+    body: { genericPayload?: string; forceRegenerate?: boolean },
+  ) =>
     request<SandboxExecResponse>(
       `/sandbox/sessions/${encodeURIComponent(sessionId)}/exec`,
       { method: "POST", body: JSON.stringify(body) },
@@ -281,6 +284,8 @@ export type SandboxStatus =
   | "expired"
   | "failed";
 
+export type LabSourceKind = "vulhub" | "generic" | "synthesized";
+
 export interface InjectionPoint {
   name: string;
   method: string;
@@ -309,6 +314,8 @@ export interface SandboxSession {
   id: string;
   vulnerabilityId: string | null;
   labKind: string;
+  labSource: LabSourceKind;
+  verified: boolean;
   containerName: string | null;
   targetUrl: string | null;
   status: SandboxStatus;
@@ -328,6 +335,7 @@ export interface AdaptedPayload {
   successIndicator: string;
   rationale: string;
   notes: string;
+  fromCache: boolean;
 }
 
 export interface SandboxExchange {

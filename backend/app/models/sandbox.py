@@ -4,11 +4,12 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.models.cve_lab_mapping import LabSourceKind
 from app.models.vulnerability import _pg_enum
 
 
@@ -39,7 +40,20 @@ class SandboxSession(Base):
         nullable=True,
         index=True,
     )
-    lab_kind: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    lab_kind: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    # Provenance of the lab spec used: vulhub | generic | synthesized.
+    # Lets the UI show a "검증된 reproducer" vs "일반 클래스" badge.
+    lab_source: Mapped[LabSourceKind] = mapped_column(
+        _pg_enum(LabSourceKind, "lab_source_kind_enum"),
+        nullable=False,
+        default=LabSourceKind.GENERIC,
+        index=True,
+    )
+    # True when this exact (cve, lab) combo had a working payload before
+    # this session — i.e. ``known_good_payload`` was hit on the cache.
+    verified: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
     container_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     container_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     target_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
