@@ -95,3 +95,11 @@ class SandboxExecResponse(CamelModel):
     adapted: AdaptedPayloadOut
     exchange: ExchangeOut
     verdict: RunVerdictOut
+
+
+class VulhubSyncResponse(CamelModel):
+    folders_scanned: int
+    candidates: int
+    upserted: int
+    skipped: int
+    errors: list[str] = []

@@ -419,7 +419,7 @@ CVE → resolve_lab(cve, db):
 | PR | 범위 | 상태 |
 |----|------|------|
 | **9-A** | cve_lab_mappings 테이블 + lab_resolver chain + manager LabSpec 리팩터 + UI 배지 (인프라만) | ✅ |
-| 9-B | vulhub git harvester (AI 0회) — 폴더 walk + compose 파싱으로 cve_lab_mappings 자동 시드 + manager 의 docker-compose 다중 컨테이너 지원 | 대기 |
+| **9-B** | vulhub git harvester (AI 0회) + manager `run_kind="compose"` 분기 + sweeper(DB 기반) + `/sandbox/vulhub/sync` API | ✅ |
 | 9-C | 샌드박스 격리 강화: gVisor (`runsc`) 런타임 옵션 + seccomp 프로필 + read-only rootfs | 대기 |
 | 9-D | AI lab synthesizer (Dockerfile + app 코드 생성) + 빌드 격리 + 검증 루프 | 대기 |
 | 9-E | resolver 가 mapping miss 시 자동으로 D 트리거 + UI 동의 플로우 | 대기 |
@@ -497,15 +497,74 @@ $ DELETE /api/v1/sandbox/sessions/{id}  → 204, 컨테이너 정상 회수
 
 ---
 
+### 9-B 완료 메모 (vulhub git harvester + compose 분기)
+
+#### 1. 설정 + 인프라
+
+- `core/config.py`: `vulhub_repo_path`, `vulhub_host_path`, `vulhub_repo_remote`, `sandbox_compose_project_prefix` 추가.
+- `Dockerfile`: backend 이미지에 `git`, `docker` static binary, `docker-compose` CLI 플러그인 설치 (DooD 용).
+- `docker-compose.yml`: vulhub 리포 bind mount (`${VULHUB_HOST_PATH}:${VULHUB_REPO_PATH}`).
+- `.env`: macOS+OrbStack 의 경우 양측 경로를 `/Users/.../data/vulhub` 으로 동일화 (compose CLI가 컨테이너 측에서 파일을 읽고, daemon도 같은 경로를 봐야 함).
+
+#### 2. Harvester — `services/sandbox/vulhub_harvester.py`
+
+```
+sync_repo()                  # git init + fetch --depth 1 + reset --hard
+                             # (bind mount 위에서 동작하도록 init 후 fetch 사용)
+_walk_repo(repo_root)        # docker-compose.yml 가진 폴더 + CVE-NNNN-NNNN 토큰 매칭
+_pick_target_service(yaml)   # 첫 service 의 ports → (service_name, container_port)
+_read_readme_description()   # README.md 의 첫 의미있는 paragraph
+sync_all(db) -> HarvestStats # cve_lab_mappings(kind=vulhub) upsert 일괄 처리
+```
+
+LLM 호출 0회. 변경 없는 row 는 건드리지 않음(`updated_at` 보존).
+
+#### 3. Manager — `run_kind="compose"` 분기
+
+```
+_start_compose_lab(spec, session_id):
+  project = "kestrel-sandbox-<short>"
+  docker compose -p <project> -f <compose_path> up -d
+  docker compose -p <project> ps -q <target_service>  → 타깃 컨테이너 ID 획득
+  네트워크 attach: project 의 모든 컨테이너 → kestrel_sandbox_net (internal)
+  반환: LaunchedLab(container_id=project, container_name=target_container, target_url=http://<target>:<port>)
+
+stop_lab(handle):
+  prefix("kestrel-sandbox-") 면 docker compose -p <handle> down -v --remove-orphans
+  아니면 단일 컨테이너 reap
+```
+
+Compose 컨테이너에는 `docker container update --label` 이 미지원이라 라벨 후처리 실패 시도까지만 (best-effort). 대신 새로 만든 `services/sandbox/sweeper.py` 가 DB 의 `sandbox_sessions.expires_at` 을 직접 보고 `stop_lab(container_id)` 호출.
+
+#### 4. API
+
+- `POST /api/v1/sandbox/vulhub/sync` → `VulhubSyncResponse{foldersScanned, candidates, upserted, skipped, errors[]}`. 운영자/관리자 트리거(인증은 추후).
+- 기존 `POST /sandbox/sessions` 가 시작 시 `reap_expired_sessions(db)` 도 함께 호출 → compose-mode 만료 세션 자동 정리.
+- `DELETE /sandbox/sessions/{id}`: `container_id`(compose 의 경우 project name) 우선 사용으로 변경.
+
+#### 5. 검증
+
+```
+$ POST /api/v1/sandbox/vulhub/sync
+→ {"foldersScanned":326,"candidates":246,"upserted":246,"skipped":0,"errors":[]}
+
+$ POST /api/v1/sandbox/sessions {cveId: CVE-2017-12615}
+→ status:running, labSource:"vulhub", labKind:"tomcat/CVE-2017-12615",
+  containerName:"kestrel-sandbox-fea0040cbb30-tomcat-1",
+  targetUrl:"http://kestrel-sandbox-fea0040cbb30-tomcat-1:8080"
+
+$ docker ps --filter "label=com.docker.compose.project=kestrel-sandbox-fea0040cbb30"
+→ tomcat-1 Up, networks: project_default + kestrel_sandbox_net
+
+$ DELETE /sandbox/sessions/{id}  → 204
+$ docker ps -a --filter "label=kestrel.sandbox=true"  → 비어있음
+```
+
+XSS 회귀(image-mode CVE-2026-40472) 도 정상 동작.
+
+---
+
 ## Step 9 — 다음 PR 예고
-
-### PR9-B (vulhub harvester, AI 0회) 작업 메모
-
-- vulhub repo 를 backend 이미지에 git submodule 로 포함 또는 빌드 시 shallow clone.
-- harvester 스크립트: `vulhub/<vendor>/<CVE-XXXX-YYYYY>/` 폴더 walk → `docker-compose.yml` 파싱(yaml) → 첫 service 의 ports 에서 `container_port` 추출 → 옆 README.md 에서 첫 H2 헤더 description 으로 사용 → `cve_lab_mappings` upsert (kind=vulhub).
-- manager.py: `start_lab` 가 `run_kind="compose"` 분기 추가 — `docker compose -p kestrel-sandbox-<id> -f <vulhub_path>/docker-compose.yml up -d` 를 sibling 으로 띄움. 라벨로 sweeper 가 `docker compose down` 호출.
-- 첫 시드 50개: Spring4Shell, Log4Shell(LDAP 의존성 분리 필요 → 대상 제외 후보), Confluence OGNL, GitLab CVE 시리즈, Tomcat PUT RCE 등.
-- AI 미사용 — payload 적응만 기존 LLM 경로 통과.
 
 ### PR9-C (격리 강화) 작업 메모
 

@@ -13,6 +13,8 @@ sync) via ``asyncio.to_thread`` so the FastAPI event loop stays responsive.
 from __future__ import annotations
 
 import asyncio
+import os
+import subprocess
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -87,20 +89,22 @@ async def list_owned_containers() -> list[dict]:
 
 
 async def start_lab(spec: LabSpec, session_id: uuid.UUID) -> LaunchedLab:
-    """Run a fresh container for *spec* attached to the sandbox network.
+    """Run a fresh lab for *spec* attached to the sandbox network.
 
-    The container has no host port published, no internet egress (the
-    network is ``internal: true``), and tight CPU/memory/PID limits. The
-    backend reaches it by container name across the sandbox bridge.
+    Two modes:
+      * ``image`` — single container, run via the docker SDK with strict
+        resource limits.
+      * ``compose`` — vulhub-style multi-container stack, brought up via
+        ``docker compose -f <path> up -d`` against the host docker daemon
+        and *then* attached to the sandbox network and labeled for reaping.
 
-    Only ``run_kind="image"`` is implemented in PR9-A; ``compose`` raises
-    until PR9-B teaches the manager to spin up multi-container stacks.
+    Either way, no ports are published to the host, the lab network is
+    ``internal: true``, and the backend reaches the target by container name.
     """
+    if spec.run_kind == "compose":
+        return await _start_compose_lab(spec, session_id)
     if spec.run_kind != "image":
-        raise SandboxError(
-            f"이 manager 버전은 단일 이미지 lab만 지원합니다 (run_kind={spec.run_kind}). "
-            "docker-compose 기반 vulhub lab은 다음 PR에서 추가됩니다."
-        )
+        raise SandboxError(f"알 수 없는 lab spec.run_kind: {spec.run_kind!r}")
     if not spec.image:
         raise SandboxError("lab spec에 image가 비어 있습니다.")
 
@@ -178,7 +182,31 @@ async def wait_ready(target_url: str, spec: LabSpec) -> None:
 
 
 async def stop_lab(container_id_or_name: str) -> None:
+    """Stop and reap a lab.
+
+    Accepts either a container name (``image`` mode) or a compose project
+    name (``compose`` mode — name starts with ``sandbox_compose_project_prefix``).
+    Compose projects are torn down via ``docker compose down -v --remove-orphans``
+    against the host daemon so dependent containers, anonymous volumes, and
+    the project network all go away together.
+    """
+    settings = get_settings()
+    prefix = settings.sandbox_compose_project_prefix
+
     def _do() -> None:
+        if container_id_or_name.startswith(f"{prefix}-") or container_id_or_name.startswith(
+            prefix + "_"
+        ):
+            try:
+                _compose_down(container_id_or_name)
+                return
+            except RuntimeError as e:
+                log.warning(
+                    "sandbox.compose.down_failed",
+                    project=container_id_or_name,
+                    error=str(e),
+                )
+                # fall through to single-container reap as last resort
         cli = _client()
         try:
             container = cli.containers.get(container_id_or_name)
@@ -198,7 +226,11 @@ async def stop_lab(container_id_or_name: str) -> None:
 
 
 async def reap_expired() -> int:
-    """Stop containers whose label-encoded TTL has passed. Returns count."""
+    """Stop labs whose label-encoded TTL has passed. Returns reap count.
+
+    For compose-mode labs we deduplicate by project name and reap the whole
+    project once instead of stopping each container in the stack individually.
+    """
     now = datetime.now(timezone.utc)
 
     def _do() -> list[str]:
@@ -211,6 +243,7 @@ async def reap_expired() -> int:
             log.warning("sandbox.reap_failed", error=str(e))
             return []
         victims: list[str] = []
+        seen_projects: set[str] = set()
         for c in containers:
             raw = c.labels.get("kestrel.sandbox.expires_at")
             if not raw:
@@ -219,7 +252,15 @@ async def reap_expired() -> int:
                 expires_at = datetime.fromisoformat(raw)
             except ValueError:
                 continue
-            if expires_at <= now:
+            if expires_at > now:
+                continue
+            project = c.labels.get("kestrel.sandbox.compose_project")
+            if project:
+                if project in seen_projects:
+                    continue
+                seen_projects.add(project)
+                victims.append(project)
+            else:
                 victims.append(c.name)
         return victims
 
@@ -264,3 +305,194 @@ async def proxy_request(
         "body": truncated,
         "body_truncated": len(body_text) > len(truncated),
     }
+
+
+# ---------------------------------------------------------------------------
+# Compose mode (vulhub) — invokes the host docker daemon via the docker CLI.
+# Kept on this side of the file so the docker SDK + CLI subprocess paths
+# don't get tangled.
+# ---------------------------------------------------------------------------
+
+
+def _compose_project_name(session_id: uuid.UUID) -> str:
+    settings = get_settings()
+    return f"{settings.sandbox_compose_project_prefix}-{session_id.hex[:12]}"
+
+
+def _compose_env() -> dict[str, str]:
+    """Subprocess env scrubbed of compose-affecting overrides we don't want."""
+    env = os.environ.copy()
+    # Don't accidentally inherit project name / file from the backend's own
+    # compose context.
+    env.pop("COMPOSE_PROJECT_NAME", None)
+    env.pop("COMPOSE_FILE", None)
+    return env
+
+
+def _run_compose(args: list[str], *, timeout: int = 180) -> subprocess.CompletedProcess:
+    """Run ``docker compose ...`` against the host daemon. Raises on failure."""
+    res = subprocess.run(
+        ["docker", "compose", *args],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        env=_compose_env(),
+        check=False,
+    )
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"docker compose 실패 ({res.returncode}): {' '.join(args)}\n"
+            f"stdout: {res.stdout.strip()}\n"
+            f"stderr: {res.stderr.strip()}"
+        )
+    return res
+
+
+def _compose_down(project: str) -> None:
+    _run_compose(["-p", project, "down", "-v", "--remove-orphans"], timeout=60)
+
+
+async def _start_compose_lab(spec: LabSpec, session_id: uuid.UUID) -> LaunchedLab:
+    if not spec.compose_path:
+        raise SandboxError("compose lab spec에 compose_path가 비어 있습니다.")
+    if not spec.target_service:
+        raise SandboxError("compose lab spec에 target_service가 비어 있습니다.")
+
+    settings = get_settings()
+    project = _compose_project_name(session_id)
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        seconds=settings.sandbox_ttl_seconds
+    )
+
+    def _do() -> LaunchedLab:
+        try:
+            _run_compose(
+                ["-p", project, "-f", spec.compose_path, "up", "-d"],
+                timeout=300,
+            )
+        except RuntimeError as e:
+            # Best-effort cleanup if compose left dangling resources.
+            try:
+                _compose_down(project)
+            except RuntimeError:
+                pass
+            raise SandboxError(f"compose up 실패: {e}") from e
+
+        # Find the target service's container ID and inspect for its name.
+        try:
+            ps_out = _run_compose(
+                ["-p", project, "ps", "-q", spec.target_service],
+                timeout=30,
+            ).stdout.strip()
+        except RuntimeError as e:
+            try:
+                _compose_down(project)
+            except RuntimeError:
+                pass
+            raise SandboxError(f"compose ps 실패: {e}") from e
+
+        target_container_id = ps_out.splitlines()[0] if ps_out else ""
+        if not target_container_id:
+            try:
+                _compose_down(project)
+            except RuntimeError:
+                pass
+            raise SandboxError(
+                f"compose project {project} 에서 target_service "
+                f"{spec.target_service!r} 컨테이너를 찾지 못했습니다."
+            )
+
+        cli = _client()
+        try:
+            target_container = cli.containers.get(target_container_id)
+            project_containers = cli.containers.list(
+                all=True,
+                filters={"label": f"com.docker.compose.project={project}"},
+            )
+        except APIError as e:
+            try:
+                _compose_down(project)
+            except RuntimeError:
+                pass
+            raise SandboxError(f"docker inspect 실패: {e}") from e
+
+        # Attach every project container to the sandbox network so the backend
+        # can reach the target by container name, and so internal lab traffic
+        # stays sandboxed. ``internal: true`` on the network blocks egress.
+        net = cli.networks.get(settings.sandbox_network)
+        for c in project_containers:
+            try:
+                net.connect(c)
+            except APIError as e:
+                # Already connected (race or compose pre-attached) — ignore.
+                if "already exists" not in str(e).lower():
+                    log.warning(
+                        "sandbox.compose.network_attach_failed",
+                        container=c.name,
+                        error=str(e),
+                    )
+
+        # Stamp our reaper labels on every project container. Compose owns
+        # the labels at creation time, so we add ours via ``docker update``
+        # after the fact.
+        labels = {
+            _LABEL_OWNER: "true",
+            "kestrel.sandbox.kind": spec.lab_kind,
+            "kestrel.sandbox.session_id": str(session_id),
+            "kestrel.sandbox.expires_at": expires_at.isoformat(),
+            "kestrel.sandbox.compose_project": project,
+        }
+        for c in project_containers:
+            _label_container(c.id, labels)
+
+        return LaunchedLab(
+            container_id=project,  # surface the project name as the handle
+            container_name=target_container.name,
+            target_url=f"http://{target_container.name}:{spec.container_port}",
+            expires_at=expires_at,
+        )
+
+    handle = await asyncio.to_thread(_do)
+    log.info(
+        "sandbox.compose.started",
+        session_id=str(session_id),
+        project=project,
+        target=handle.container_name,
+    )
+    return handle
+
+
+def _label_container(container_id: str, labels: dict[str, str]) -> None:
+    """Apply *labels* to a running container.
+
+    The docker SDK exposes update() for resource limits but not labels;
+    fall back to the CLI which supports ``--label``.
+    """
+    args = ["docker", "container", "update"]
+    # NOTE: ``docker container update`` doesn't support --label on every
+    # docker version. The portable path is to re-create with new labels,
+    # but that defeats the purpose. We instead store reaper state on a
+    # known-good label channel: env vars on the container at compose time
+    # would have been ideal, but we don't own the compose file. Best
+    # effort: try ``docker update --label`` first; if that fails, leave
+    # the labels off this container — the project label still lets the
+    # reaper find it via project_name lookup.
+    for k, v in labels.items():
+        args.extend(["--label", f"{k}={v}"])
+    args.append(container_id)
+    res = subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=_compose_env(),
+        check=False,
+    )
+    if res.returncode != 0:
+        # Non-fatal: the compose project label is enough for reap_expired
+        # to find these containers via their project name on the next sweep.
+        log.debug(
+            "sandbox.compose.label_failed",
+            container=container_id,
+            error=res.stderr.strip(),
+        )

@@ -13,14 +13,19 @@ from app.services.sandbox.lab_resolver import (
     record_success_payload,
     resolve_lab,
 )
+from app.services.sandbox.sweeper import reap_expired_sessions
+from app.services.sandbox.vulhub_harvester import HarvestStats, sync_all as sync_vulhub
 
 __all__ = [
     "LAB_CATALOG",
+    "HarvestStats",
     "LabDefinition",
     "LabSpec",
     "ResolvedLab",
     "classify_vulnerability",
     "get_lab",
+    "reap_expired_sessions",
     "record_success_payload",
     "resolve_lab",
+    "sync_vulhub",
 ]

@@ -42,6 +42,18 @@ class Settings(BaseSettings):
     sandbox_cpus: float = 0.5
     sandbox_pids_limit: int = 128
     sandbox_max_concurrent: int = 8
+    # ``compose`` lab mode launches sibling stacks via the host docker daemon
+    # (docker-out-of-docker). The compose file the daemon reads must live at
+    # a path the *host* can see, which is rarely the same as the path inside
+    # the backend container. ``vulhub_repo_path`` is where we git clone /
+    # update the vulhub tree (inside the backend container), and
+    # ``vulhub_host_path`` is the equivalent absolute path on the host that
+    # we pass to ``docker compose -f``. Set them to the same value and bind
+    # mount accordingly in docker-compose.yml.
+    vulhub_repo_path: str = "/data/vulhub"
+    vulhub_host_path: str = "/data/vulhub"
+    vulhub_repo_remote: str = "https://github.com/vulhub/vulhub.git"
+    sandbox_compose_project_prefix: str = "kestrel-sandbox"
 
     # Observability (모두 옵셔널 — 미설정 시 코드 경로 자체를 건너뜀)
     sentry_dsn: str | None = None

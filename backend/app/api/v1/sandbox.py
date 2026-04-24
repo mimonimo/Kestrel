@@ -23,9 +23,16 @@ from app.schemas.sandbox import (
     SandboxExecResponse,
     SandboxSessionOut,
     SandboxStartRequest,
+    VulhubSyncResponse,
 )
 from app.services.ai_analyzer import analyze_vulnerability
-from app.services.sandbox import ResolvedLab, record_success_payload, resolve_lab
+from app.services.sandbox import (
+    ResolvedLab,
+    reap_expired_sessions,
+    record_success_payload,
+    resolve_lab,
+    sync_vulhub,
+)
 from app.services.sandbox.lab_resolver import LabSpec
 from app.services.sandbox.manager import (
     LabImageMissing,
@@ -114,6 +121,31 @@ async def _count_running(db: AsyncSession) -> int:
 
 
 @router.post(
+    "/vulhub/sync",
+    response_model=VulhubSyncResponse,
+    response_model_by_alias=True,
+)
+async def vulhub_sync(db: AsyncSession = Depends(get_db)) -> VulhubSyncResponse:
+    """Pull the vulhub repo and (re)build all ``vulhub``-kind mappings.
+
+    No AI calls. Safe to run repeatedly — the harvester only writes to a row
+    when its ``lab_kind`` or ``spec`` actually changed. First call fresh-clones
+    the repo (long); subsequent calls fast-forward.
+    """
+    try:
+        stats = await sync_vulhub(db)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return VulhubSyncResponse(
+        folders_scanned=stats.folders_scanned,
+        candidates=stats.candidates,
+        upserted=stats.upserted,
+        skipped=stats.skipped,
+        errors=stats.errors[:50],  # cap so we don't return megabytes
+    )
+
+
+@router.post(
     "/sessions",
     response_model=SandboxSessionOut,
     response_model_by_alias=True,
@@ -124,8 +156,11 @@ async def start_session(
 ) -> SandboxSessionOut:
     settings = get_settings()
     # Opportunistic reap of stale containers — keeps capacity honest without
-    # needing a separate scheduler job.
+    # needing a separate scheduler job. Two paths: label-driven reap covers
+    # image-mode containers; DB-driven reap covers compose stacks (where we
+    # can't add labels post-creation).
     await reap_expired()
+    await reap_expired_sessions(db)
 
     vuln = await db.scalar(
         select(Vulnerability).where(Vulnerability.cve_id == body.cve_id)
@@ -177,9 +212,11 @@ async def start_session(
         session_row.status = SandboxStatus.FAILED
         session_row.error = str(e)
         await db.commit()
-        # Best-effort cleanup of any partially-created container.
-        if session_row.container_name:
-            await stop_lab(session_row.container_name)
+        # Best-effort cleanup of any partially-created container or compose
+        # stack.
+        cleanup_handle = session_row.container_id or session_row.container_name
+        if cleanup_handle:
+            await stop_lab(cleanup_handle)
         raise HTTPException(status_code=502, detail=str(e)) from e
 
     session_row.status = SandboxStatus.RUNNING
@@ -227,8 +264,12 @@ async def stop_session(
     )
     if row is None:
         raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
-    if row.container_name:
-        await stop_lab(row.container_name)
+    # ``container_id`` is the *handle* the manager hands back: image-mode
+    # stores the container name; compose-mode stores the project name. Pass
+    # it straight through so stop_lab can route to the correct teardown.
+    handle = row.container_id or row.container_name
+    if handle:
+        await stop_lab(handle)
     row.status = SandboxStatus.STOPPED
     await db.commit()
 

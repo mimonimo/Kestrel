@@ -10,7 +10,26 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
+
+# docker compose CLI plugin — sandbox manager spawns vulhub stacks via the
+# host docker daemon (DooD). Bundled as a sibling executable to /usr/bin/docker
+# so ``docker compose ...`` works without pulling in the whole Docker Engine.
+RUN ARCH="$(dpkg --print-architecture)" \
+    && case "$ARCH" in \
+         amd64)  COMPOSE_ARCH=x86_64 ;; \
+         arm64)  COMPOSE_ARCH=aarch64 ;; \
+         *) echo "unsupported arch $ARCH" && exit 1 ;; \
+       esac \
+    && mkdir -p /usr/local/lib/docker/cli-plugins \
+    && curl -fsSL "https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-${COMPOSE_ARCH}" \
+         -o /usr/local/lib/docker/cli-plugins/docker-compose \
+    && chmod +x /usr/local/lib/docker/cli-plugins/docker-compose \
+    && curl -fsSL "https://download.docker.com/linux/static/stable/${COMPOSE_ARCH}/docker-27.4.0.tgz" \
+         | tar xz -C /tmp \
+    && mv /tmp/docker/docker /usr/local/bin/docker \
+    && rm -rf /tmp/docker
 
 # --- Optional: Claude Code CLI for the "claude_cli" AI analysis provider ---
 # Enable with: docker compose build --build-arg INSTALL_CLAUDE_CLI=1
