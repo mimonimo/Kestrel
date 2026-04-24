@@ -54,6 +54,25 @@ class Settings(BaseSettings):
     vulhub_host_path: str = "/data/vulhub"
     vulhub_repo_remote: str = "https://github.com/vulhub/vulhub.git"
     sandbox_compose_project_prefix: str = "kestrel-sandbox"
+    # ---- Sandbox isolation hardening (PR9-C, opt-in) -----------------
+    # When ``sandbox_harden`` is true, image-mode containers run with
+    # ``read_only=True`` and compose stacks are launched through an
+    # auto-generated override file that adds the same posture to every
+    # service. Both modes also pass ``runtime`` and seccomp through when
+    # set. All defaults below preserve the pre-9-C behavior.
+    sandbox_harden: bool = False
+    # e.g. "runsc" when gVisor is installed daemon-side. ``None`` falls
+    # through to the daemon's default runtime (runc).
+    sandbox_runtime: str | None = None
+    # Absolute path to a docker seccomp profile JSON readable by both the
+    # backend container *and* the host docker daemon. Empty/None means
+    # use the daemon's default profile.
+    sandbox_seccomp_path: str | None = None
+    # Where the per-session compose override files are written. Defaults
+    # to a subdirectory of the vulhub repo so the existing bind mount makes
+    # the file visible to both the backend container and the host docker
+    # daemon at the same path. Override only if you know what you're doing.
+    sandbox_override_dir: str = ""  # empty → resolved to <vulhub_repo_path>/.kestrel-overrides
 
     # Observability (모두 옵셔널 — 미설정 시 코드 경로 자체를 건너뜀)
     sentry_dsn: str | None = None

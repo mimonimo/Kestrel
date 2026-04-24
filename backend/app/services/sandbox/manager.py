@@ -18,9 +18,11 @@ import subprocess
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import docker
 import httpx
+import yaml
 from docker.errors import APIError, ImageNotFound, NotFound
 
 from app.core.config import get_settings
@@ -114,6 +116,14 @@ async def start_lab(spec: LabSpec, session_id: uuid.UUID) -> LaunchedLab:
         seconds=settings.sandbox_ttl_seconds
     )
 
+    # Hardening (PR9-C): all opt-in via env, default behavior unchanged.
+    security_opt = ["no-new-privileges:true"]
+    if settings.sandbox_seccomp_path:
+        security_opt.append(f"seccomp={settings.sandbox_seccomp_path}")
+    extra_kwargs: dict = {}
+    if settings.sandbox_runtime:
+        extra_kwargs["runtime"] = settings.sandbox_runtime
+
     def _do() -> LaunchedLab:
         cli = _client()
         try:
@@ -131,8 +141,10 @@ async def start_lab(spec: LabSpec, session_id: uuid.UUID) -> LaunchedLab:
                 # Drop every Linux capability — labs are simple HTTP servers,
                 # they need none of CAP_NET_ADMIN/CAP_SYS_*/etc.
                 cap_drop=["ALL"],
-                security_opt=["no-new-privileges:true"],
-                read_only=False,  # some labs (xss-flask gunicorn) want /tmp
+                security_opt=security_opt,
+                # Read-only rootfs only when explicitly hardened — some
+                # labs (xss-flask gunicorn) write to non-/tmp paths.
+                read_only=settings.sandbox_harden,
                 tmpfs={"/tmp": "rw,size=16m"},
                 labels={
                     _LABEL_OWNER: "true",
@@ -140,6 +152,7 @@ async def start_lab(spec: LabSpec, session_id: uuid.UUID) -> LaunchedLab:
                     "kestrel.sandbox.session_id": str(session_id),
                     "kestrel.sandbox.expires_at": expires_at.isoformat(),
                 },
+                **extra_kwargs,
             )
         except ImageNotFound as e:
             raise LabImageMissing(
@@ -184,42 +197,47 @@ async def wait_ready(target_url: str, spec: LabSpec) -> None:
 async def stop_lab(container_id_or_name: str) -> None:
     """Stop and reap a lab.
 
-    Accepts either a container name (``image`` mode) or a compose project
-    name (``compose`` mode — name starts with ``sandbox_compose_project_prefix``).
-    Compose projects are torn down via ``docker compose down -v --remove-orphans``
-    against the host daemon so dependent containers, anonymous volumes, and
-    the project network all go away together.
+    The handle the API stores can be either:
+      * an image-mode container name (``kestrel-sandbox-<short>``), or
+      * a compose-mode project name (``kestrel-sandbox-<short>``) —
+        same prefix shape, since image mode borrows the prefix for tidy
+        container names.
+
+    We disambiguate at runtime by asking the docker daemon: if a container
+    with that exact name exists, image-mode reap. Otherwise treat the handle
+    as a compose project and run ``docker compose down``.
     """
-    settings = get_settings()
-    prefix = settings.sandbox_compose_project_prefix
 
     def _do() -> None:
-        if container_id_or_name.startswith(f"{prefix}-") or container_id_or_name.startswith(
-            prefix + "_"
-        ):
-            try:
-                _compose_down(container_id_or_name)
-                return
-            except RuntimeError as e:
-                log.warning(
-                    "sandbox.compose.down_failed",
-                    project=container_id_or_name,
-                    error=str(e),
-                )
-                # fall through to single-container reap as last resort
         cli = _client()
         try:
             container = cli.containers.get(container_id_or_name)
         except NotFound:
+            container = None
+        except APIError:
+            container = None
+
+        if container is not None:
+            try:
+                container.stop(timeout=3)
+            except APIError:
+                pass
+            try:
+                container.remove(force=True)
+            except APIError:
+                pass
             return
+
+        # Not a single container — assume compose project.
         try:
-            container.stop(timeout=3)
-        except APIError:
-            pass
-        try:
-            container.remove(force=True)
-        except APIError:
-            pass
+            _compose_down(container_id_or_name)
+        except RuntimeError as e:
+            log.warning(
+                "sandbox.compose.down_failed",
+                project=container_id_or_name,
+                error=str(e),
+            )
+        _cleanup_override(container_id_or_name)
 
     await asyncio.to_thread(_do)
     log.info("sandbox.stopped", name=container_id_or_name)
@@ -352,6 +370,82 @@ def _compose_down(project: str) -> None:
     _run_compose(["-p", project, "down", "-v", "--remove-orphans"], timeout=60)
 
 
+def _override_dir() -> Path:
+    """Where per-session compose override files live.
+
+    Defaults to a subdir of the vulhub repo so the existing bind mount makes
+    the file visible at the same absolute path inside the backend container
+    *and* on the host docker daemon side.
+    """
+    settings = get_settings()
+    base = settings.sandbox_override_dir or os.path.join(
+        settings.vulhub_repo_path, ".kestrel-overrides"
+    )
+    p = Path(base)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _build_override(base_compose_path: str, project: str) -> Path | None:
+    """Generate a compose override file applying hardening to every service.
+
+    Returns the absolute path of the override file, or None if no hardening
+    flags are set (caller should run plain ``-f base`` in that case).
+    """
+    settings = get_settings()
+    runtime = settings.sandbox_runtime
+    seccomp = settings.sandbox_seccomp_path
+    harden = settings.sandbox_harden
+    if not (runtime or seccomp or harden):
+        return None
+
+    try:
+        with open(base_compose_path, encoding="utf-8") as fh:
+            base = yaml.safe_load(fh) or {}
+    except (OSError, yaml.YAMLError) as e:
+        log.warning("sandbox.compose.override_skip", reason=str(e))
+        return None
+
+    services = base.get("services") or {}
+    if not isinstance(services, dict) or not services:
+        return None
+
+    security_opt = ["no-new-privileges:true"]
+    if seccomp:
+        security_opt.append(f"seccomp={seccomp}")
+
+    override_services: dict[str, dict] = {}
+    for name in services:
+        svc: dict = {"security_opt": security_opt, "cap_drop": ["ALL"]}
+        if runtime:
+            svc["runtime"] = runtime
+        if harden:
+            svc["read_only"] = True
+            # Common writable mounts most labs need; over-allocates rather
+            # than guessing per-service. tmpfs is daemon-side memory-backed.
+            svc["tmpfs"] = ["/tmp:rw,size=64m"]
+        override_services[name] = svc
+
+    override = {"services": override_services}
+    out = _override_dir() / f"{project}.yml"
+    try:
+        with open(out, "w", encoding="utf-8") as fh:
+            yaml.safe_dump(override, fh, sort_keys=False)
+    except OSError as e:
+        log.warning("sandbox.compose.override_write_failed", error=str(e))
+        return None
+    return out
+
+
+def _cleanup_override(project: str) -> None:
+    try:
+        path = _override_dir() / f"{project}.yml"
+        if path.exists():
+            path.unlink()
+    except OSError as e:
+        log.debug("sandbox.compose.override_cleanup_failed", project=project, error=str(e))
+
+
 async def _start_compose_lab(spec: LabSpec, session_id: uuid.UUID) -> LaunchedLab:
     if not spec.compose_path:
         raise SandboxError("compose lab spec에 compose_path가 비어 있습니다.")
@@ -364,10 +458,15 @@ async def _start_compose_lab(spec: LabSpec, session_id: uuid.UUID) -> LaunchedLa
         seconds=settings.sandbox_ttl_seconds
     )
 
+    override_path = _build_override(spec.compose_path, project)
+    compose_files = ["-f", spec.compose_path]
+    if override_path is not None:
+        compose_files += ["-f", str(override_path)]
+
     def _do() -> LaunchedLab:
         try:
             _run_compose(
-                ["-p", project, "-f", spec.compose_path, "up", "-d"],
+                ["-p", project, *compose_files, "up", "-d"],
                 timeout=300,
             )
         except RuntimeError as e:
@@ -376,6 +475,7 @@ async def _start_compose_lab(spec: LabSpec, session_id: uuid.UUID) -> LaunchedLa
                 _compose_down(project)
             except RuntimeError:
                 pass
+            _cleanup_override(project)
             raise SandboxError(f"compose up 실패: {e}") from e
 
         # Find the target service's container ID and inspect for its name.
@@ -389,6 +489,7 @@ async def _start_compose_lab(spec: LabSpec, session_id: uuid.UUID) -> LaunchedLa
                 _compose_down(project)
             except RuntimeError:
                 pass
+            _cleanup_override(project)
             raise SandboxError(f"compose ps 실패: {e}") from e
 
         target_container_id = ps_out.splitlines()[0] if ps_out else ""
@@ -397,6 +498,7 @@ async def _start_compose_lab(spec: LabSpec, session_id: uuid.UUID) -> LaunchedLa
                 _compose_down(project)
             except RuntimeError:
                 pass
+            _cleanup_override(project)
             raise SandboxError(
                 f"compose project {project} 에서 target_service "
                 f"{spec.target_service!r} 컨테이너를 찾지 못했습니다."
@@ -414,6 +516,7 @@ async def _start_compose_lab(spec: LabSpec, session_id: uuid.UUID) -> LaunchedLa
                 _compose_down(project)
             except RuntimeError:
                 pass
+            _cleanup_override(project)
             raise SandboxError(f"docker inspect 실패: {e}") from e
 
         # Attach every project container to the sandbox network so the backend

@@ -420,7 +420,7 @@ CVE → resolve_lab(cve, db):
 |----|------|------|
 | **9-A** | cve_lab_mappings 테이블 + lab_resolver chain + manager LabSpec 리팩터 + UI 배지 (인프라만) | ✅ |
 | **9-B** | vulhub git harvester (AI 0회) + manager `run_kind="compose"` 분기 + sweeper(DB 기반) + `/sandbox/vulhub/sync` API | ✅ |
-| 9-C | 샌드박스 격리 강화: gVisor (`runsc`) 런타임 옵션 + seccomp 프로필 + read-only rootfs | 대기 |
+| **9-C** | 샌드박스 격리 강화: 옵트인 `SANDBOX_HARDEN`(read_only) + `SANDBOX_RUNTIME`(gVisor 등) + `SANDBOX_SECCOMP_PATH`. compose-mode 는 자동 생성 override 파일로 동일 정책 주입 | ✅ |
 | 9-D | AI lab synthesizer (Dockerfile + app 코드 생성) + 빌드 격리 + 검증 루프 | 대기 |
 | 9-E | resolver 가 mapping miss 시 자동으로 D 트리거 + UI 동의 플로우 | 대기 |
 
@@ -564,14 +564,59 @@ XSS 회귀(image-mode CVE-2026-40472) 도 정상 동작.
 
 ---
 
+### 9-C 완료 메모 (격리 강화 — 옵트인)
+
+#### 1. 설정 (3개, 모두 default off)
+
+```
+sandbox_harden        bool   기본 False  → True 시 read_only=True (image+compose)
+sandbox_runtime       str?   기본 None   → "runsc" 등 daemon-side 런타임명
+sandbox_seccomp_path  str?   기본 None   → JSON profile 절대경로
+sandbox_override_dir  str    기본 ""     → 빈값이면 <vulhub_repo_path>/.kestrel-overrides 사용
+```
+
+기본값으로는 9-A/9-B 동작을 그대로 유지. 운영자는 `.env` 에 환경변수로 켜기만 하면 됨.
+
+#### 2. Image-mode (`manager.start_lab`)
+
+- `read_only` 를 `settings.sandbox_harden` 로.
+- `runtime=` kwarg 를 `sandbox_runtime` 이 있을 때만 추가 (없으면 daemon 기본 runtime).
+- `security_opt` 에 `seccomp=...` 를 `sandbox_seccomp_path` 가 있을 때만 추가.
+
+#### 3. Compose-mode (`manager._build_override`)
+
+base compose 파일을 읽어 모든 service 에 동일 정책을 주입한 override YAML 을 자동 생성, `docker compose -f base -f override` 로 가동:
+
+```yaml
+services:
+  <svc>:
+    security_opt: ["no-new-privileges:true", "seccomp=<path>"]
+    cap_drop: ["ALL"]
+    runtime: runsc          # if set
+    read_only: true         # if HARDEN
+    tmpfs: ["/tmp:rw,size=64m"]
+```
+
+override 파일은 vulhub bind mount 안에 두어 backend 컨테이너와 host docker daemon 이 같은 절대경로로 본다. 세션 stop 시 자동 삭제 (`_cleanup_override`).
+
+#### 4. `stop_lab` 라우팅 버그 수정 (9-B 잔존 버그 동반 수정)
+
+이전에는 핸들 prefix 만 보고 compose vs image 를 구분했는데, image-mode 컨테이너 이름도 같은 prefix(`kestrel-sandbox-`)를 쓰기 때문에 compose down 이 빈 프로젝트에 대해 성공 종료하고 image 컨테이너는 살아남는 케이스 발생.
+
+수정: docker daemon 에 컨테이너 존재 여부를 먼저 물어, 단일 컨테이너면 image-reap, 없으면 compose-down. 이후 양쪽 모드 모두 깨끗히 회수됨.
+
+#### 5. 검증
+
+```
+$ XSS image-mode 세션 생성 → DELETE → docker ps 비어있음 ✓
+$ Tomcat compose-mode 세션 생성 → tomcat-1 + sandbox_net 부착 → DELETE → 프로젝트 전체 정리 ✓
+```
+
+런타임 강화(`SANDBOX_RUNTIME=runsc` 등)는 macOS+OrbStack 에서는 검증 불가 — Linux 호스트(Kali)에서 gVisor 설치 후 `SANDBOX_HARDEN=1 SANDBOX_RUNTIME=runsc` 로 실측 필요.
+
+---
+
 ## Step 9 — 다음 PR 예고
-
-### PR9-C (격리 강화) 작업 메모
-
-- `runtime: "runsc"` 옵션 (호스트에 gVisor 설치 시) — manager 의 `containers.run` 에 추가.
-- seccomp profile JSON 을 backend 이미지에 포함 → `security_opt` 에 추가.
-- `read_only=True` 로 기본 rootfs 읽기 전용, `tmpfs` 만 쓰기 가능.
-- env flag `SANDBOX_HARDEN=1` 일 때만 활성 (개발 편의).
 
 ### PR9-D (AI lab 합성) 작업 메모
 

@@ -40,6 +40,12 @@ services:
       - VULHUB_REPO_PATH=${VULHUB_REPO_PATH:-/data/vulhub}
       - VULHUB_HOST_PATH=${VULHUB_HOST_PATH:-/data/vulhub}
       - VULHUB_REPO_REMOTE=${VULHUB_REPO_REMOTE:-https://github.com/vulhub/vulhub.git}
+      # Sandbox hardening (PR9-C, opt-in). All four are no-ops when unset
+      # so default deployments behave identically to pre-9-C.
+      - SANDBOX_HARDEN=${SANDBOX_HARDEN:-false}
+      - SANDBOX_RUNTIME=${SANDBOX_RUNTIME:-}
+      - SANDBOX_SECCOMP_PATH=${SANDBOX_SECCOMP_PATH:-}
+      - SANDBOX_OVERRIDE_DIR=${SANDBOX_OVERRIDE_DIR:-}
     volumes:
       # Sandbox feature spawns sibling containers via the host docker daemon.
       # Mounting the socket grants root-equivalent control of docker — the
