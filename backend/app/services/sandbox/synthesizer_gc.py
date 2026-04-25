@@ -223,10 +223,26 @@ async def gc_synthesized_images(
         stats.freed_mb += size_mb
         return True
 
-    # Pass 1: drop rows whose underlying image vanished — useless to keep.
+    # Pass 1: rows whose underlying image vanished can no longer spawn a
+    # lab — but the row still carries user feedback notes that PR9-K
+    # feeds back into the next synthesize() call. Demote (verified=False)
+    # instead of deleting so the learning context survives a docker prune
+    # / disk-pressure eviction. The resolver already skips unverified
+    # synthesized rows; the synthesizer treats them as a prior attempt
+    # to learn from on the next consented retry.
     for row, size, in_use in inspected:
         if size is None:
-            await _evict(row, 0, "image_missing")
+            if row.verified:
+                row.verified = False
+                tag = str((row.spec or {}).get("image", ""))
+                stats.evicted.append(
+                    EvictedImage(
+                        cve_id=row.cve_id,
+                        image_tag=tag,
+                        size_mb=0,
+                        reason="image_missing",
+                    )
+                )
             continue
         survivors.append((row, size, in_use))
 

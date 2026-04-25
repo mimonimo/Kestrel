@@ -30,15 +30,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Awaitable, Callable
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.models import CveLabMapping, LabSourceKind, Vulnerability
+from app.models import CveLabFeedback, CveLabMapping, LabSourceKind, Vulnerability
 from app.services.ai_analyzer import call_llm
 from app.services.sandbox.catalog import InjectionPoint
-from app.services.sandbox.lab_resolver import LabSpec
+from app.services.sandbox.lab_resolver import LabSpec, is_degraded
 from app.services.sandbox.manager import (
     SandboxError,
     build_image,
@@ -106,6 +106,7 @@ _USER_TEMPLATE = """\
 
 ## 참고 링크 (필요 시 동작 추정에만 사용; 실제 fetch는 하지 말고 알려진 정보만 활용)
 {references}
+{prior_attempts}
 
 ## 출력 형식 (이 JSON 스키마만 반환)
 {{
@@ -163,6 +164,89 @@ def _references_block(vuln: Vulnerability) -> str:
     for r in vuln.references[:8]:
         lines.append(f"- [{r.ref_type.value}] {r.url}")
     return "\n".join(lines)
+
+
+async def _prior_attempts_block(
+    db: AsyncSession, existing: CveLabMapping | None
+) -> str:
+    """Build the "previous attempt — avoid this approach" prompt section.
+
+    Pulled from the existing synthesized mapping (if any). Self-refinement
+    loop (PR9-K): when the user explicitly retries a previously-attempted
+    CVE, hand the LLM a compact summary of *what didn't work* so it can
+    pick a different approach instead of regenerating the same broken lab.
+
+    Returns an empty string when there's nothing to feed back — the caller
+    omits the section entirely so first-time attempts get the original
+    prompt verbatim.
+    """
+    if existing is None:
+        return ""
+
+    spec = existing.spec or {}
+    payload = existing.known_good_payload or {}
+    ip_list = spec.get("injection_points") or []
+    ip = ip_list[0] if ip_list else {}
+
+    base = _base_image(str(spec.get("dockerfile") or payload.get("dockerfile") or ""))
+    # Spec rows don't carry the Dockerfile (we only persist the runnable
+    # image tag). Use the recorded image as the rough base reference.
+    if base == "(unknown)":
+        base = str(spec.get("image") or "(unknown)")
+
+    summary_lines: list[str] = ["## 이전 시도 (피해야 할 접근)"]
+    summary_lines.append(
+        f"- 베이스 이미지: {base}"
+    )
+    if ip:
+        summary_lines.append(
+            f"- 주입 지점: {ip.get('method', '?')} {ip.get('path', '?')} "
+            f"({ip.get('location', '?')}:{ip.get('parameter', '?')}) "
+            f"→ {ip.get('response_kind', '?')}"
+        )
+    if payload.get("payload"):
+        summary_lines.append(f"- 사용한 페이로드 예: {str(payload['payload'])[:200]}")
+    if payload.get("success_indicator"):
+        summary_lines.append(
+            f"- success_indicator: {payload['success_indicator']}"
+        )
+
+    if existing.verified and is_degraded(existing):
+        summary_lines.append(
+            f"- 결과: 검증은 통과했으나 사용자 평가로 격하됨 "
+            f"(👍 {existing.feedback_up} / 👎 {existing.feedback_down}) — "
+            "응답 본문에 indicator는 보이지만 실제 CVE 동작과 다른 lab일 가능성이 큼"
+        )
+    elif not existing.verified:
+        summary_lines.append(
+            f"- 결과: 합성 실패. 마지막 노트: {(existing.notes or '(노트 없음)')[:240]}"
+        )
+
+    # Pull a few down-vote notes so the LLM sees the human reasoning.
+    notes = (
+        await db.execute(
+            select(CveLabFeedback.note)
+            .where(
+                CveLabFeedback.mapping_id == existing.id,
+                CveLabFeedback.vote == "down",
+                CveLabFeedback.note.isnot(None),
+            )
+            .limit(5)
+        )
+    ).scalars().all()
+    notes = [n.strip() for n in notes if n and n.strip()]
+    if notes:
+        summary_lines.append("- 사용자 👎 노트:")
+        for n in notes:
+            summary_lines.append(f"  · {n[:240]}")
+
+    summary_lines.append("")
+    summary_lines.append(
+        "**위 접근(베이스/주입 지점/페이로드 형태)은 이미 실패 또는 격하된 시도이므로 그대로 반복하지 마세요. "
+        "다른 베이스 이미지, 다른 엔드포인트, 다른 location, 또는 아예 다른 취약 동작 클래스(예: SSTI 대신 path traversal, "
+        "reflect 대신 stored)로 시도하세요.**"
+    )
+    return "\n".join(summary_lines)
 
 
 def _spec_hash(parsed: dict) -> str:
@@ -443,7 +527,19 @@ async def synthesize(
         )
     )
 
-    if existing is not None and existing.verified and not force_regenerate:
+    # Cached-hit shortcut. Skip when:
+    #   - caller asked to regenerate, OR
+    #   - the existing mapping was demoted by user feedback (PR9-J) — returning
+    #     it would just hand back the same broken lab the user tried to retire.
+    #     Treating degraded the same as not-verified means a consented retry
+    #     spends LLM tokens on a fresh attempt, which is what the user clicked.
+    existing_degraded = existing is not None and is_degraded(existing)
+    if (
+        existing is not None
+        and existing.verified
+        and not force_regenerate
+        and not existing_degraded
+    ):
         await emit(
             "cached_hit",
             "이미 검증된 합성 이미지가 있습니다 — 재사용",
@@ -504,11 +600,20 @@ async def synthesize(
         attempt_mapping_id = existing.id
     await db.commit()
 
+    prior_block = await _prior_attempts_block(db, existing)
+    if prior_block:
+        log.info(
+            "synthesizer.prior_context_injected",
+            cve_id=cve_id,
+            mapping_id=existing.id if existing else None,
+            length=len(prior_block),
+        )
     user_prompt = _USER_TEMPLATE.format(
         cve_id=cve_id,
         title=vuln.title,
         description=vuln.description,
         references=_references_block(vuln),
+        prior_attempts=("\n" + prior_block) if prior_block else "",
     )
 
     last_error: str | None = None
@@ -625,12 +730,30 @@ async def synthesize(
                 )
                 db.add(mapping)
             else:
+                # Replacing the previous attempt — drop any stale feedback so
+                # the fresh lab starts with a clean reputation. Carrying the
+                # old 👎 over would re-degrade the new mapping with zero new
+                # user input.
+                stale_feedback_purged = await db.execute(
+                    delete(CveLabFeedback).where(
+                        CveLabFeedback.mapping_id == mapping.id
+                    )
+                )
+                if stale_feedback_purged.rowcount:
+                    log.info(
+                        "synthesizer.feedback_reset",
+                        cve_id=cve_id,
+                        mapping_id=mapping.id,
+                        purged=int(stale_feedback_purged.rowcount),
+                    )
                 mapping.lab_kind = spec.lab_kind
                 mapping.spec = spec_dict
                 mapping.known_good_payload = payload_dict
                 mapping.verified = True
                 mapping.last_verified_at = datetime.now(timezone.utc)
                 mapping.notes = digest
+                mapping.feedback_up = 0
+                mapping.feedback_down = 0
             await db.flush()
             await db.commit()
             log.info(

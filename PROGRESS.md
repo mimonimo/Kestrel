@@ -999,7 +999,39 @@ OpenAPI: `LabInfoOut.properties` 에 `digest` 필드 등록 확인. `next build`
 
 ## Step 9 — 다음 PR 예고
 
-PR 9-K (예정): 합성 결과 증분 학습 — 같은 CVE 에 대해 여러 번 합성을 시도해 가장 높은 평가를 받은 spec 만 보존하고 나머지는 GC. 또는 평가 데이터를 LLM 프롬프트에 피드백하는 self-refinement 루프.
+PR 9-L (예정): 합성 lab 의 다중 후보 보존 + best-of-N 선택. 같은 CVE 의 여러 성공 spec 을 보관하고 평가가 가장 높은 것을 우선 매핑.
+
+---
+
+### PR 9-K — 합성 self-refinement 루프 + 격하된 lab 재합성 ✅
+
+> PR 9-J 가 격하 신호를 만들었지만, "새로 합성으로 시도" 버튼이 사실상 동작하지 않았다 — 동의 후 재호출이 `cached_hit` 으로 같은 격하된 lab 을 그대로 돌려주거나, LLM 이 같은 베이스/주입 지점/페이로드를 또 만들어 똑같이 격하될 수밖에 없었다. PR 9-K 는 (1) 격하 시 cached_hit 우회, (2) 이전 시도(베이스·IP·페이로드·👎 노트)를 다음 LLM 프롬프트에 자연어 블록으로 주입, (3) 재합성 성공 시 평가 카운터/feedback 행 리셋, (4) GC `image_missing` 경로를 삭제 → demote 로 변경해 학습 컨텍스트 보존.
+
+**`synthesize()` 변경 (`backend/app/services/sandbox/synthesizer.py`)**
+- `existing.verified` 만으로 cached_hit 분기를 타지 않음 — `is_degraded(existing)` 면 cached_hit 우회. 즉 "동의 후 재시도" 가 항상 새 LLM 호출로 이어진다.
+- 새 헬퍼 `_prior_attempts_block(db, existing)` — 이전 매핑이 있으면 `## 이전 시도 (피해야 할 접근)` 섹션을 만들어 `_USER_TEMPLATE` 의 새 `{prior_attempts}` 슬롯에 끼워넣음. 첫 시도(existing=None)면 빈 문자열 → 슬롯이 사라져 기존 프롬프트와 100% 동일.
+- 블록 구성: 베이스 이미지(또는 image 태그), `injection_point.method/path/(location:parameter)/response_kind`, 페이로드 예 240자, success_indicator, 결과(verified+degraded vs 합성 실패), 사용자 👎 노트 최대 5개. 마지막에 "이 접근 반복 금지 — 다른 베이스/엔드포인트/location/취약 동작 클래스로 시도" 강조.
+- 재합성 성공 후 attempt_row 를 덮어쓸 때 `DELETE FROM cve_lab_feedback WHERE mapping_id = ...` + `feedback_up=feedback_down=0`. 이전 평가가 새 spec 에 그대로 묻어가 zero-input 으로 다시 격하되는 사이클을 차단.
+- `synthesizer.prior_context_injected` / `synthesizer.feedback_reset` 로그 — 운영자가 self-refinement 가 실제로 발화하는지 확인 가능.
+
+**GC 동작 변경 (`backend/app/services/sandbox/synthesizer_gc.py`)**
+- Pass 1 (image vanished from docker) — 기존: `db.delete(row)` 로 매핑 행 삭제 → FK CASCADE 가 `cve_lab_feedback` 까지 쓸어버림. 결과적으로 PR 9-K 의 학습 컨텍스트가 disk-pressure / `docker prune` 한 번에 증발.
+- 변경: `row.verified = False` 로 demote 만 수행, 행 자체는 보존. resolver 는 unverified synthesized 매핑을 어차피 skip 하므로 세션 spawn 동작은 동일하지만, 다음 `synthesize()` 호출 시 `_prior_attempts_block` 이 노트/페이로드/평가를 그대로 읽어 LLM 에 다시 넘긴다.
+- `EvictedImage(reason="image_missing", size_mb=0)` 형태로 stats 에는 그대로 남아 운영자 대시보드는 변화 없음.
+
+**검증 (`backend/scripts/smoke_pr9k.py`)**
+- `call_llm` 을 monkey-patch 해 실제 토큰/빌드 없이 `synthesize()` 가 LLM 에 넘긴 user_prompt 를 캡처. 일부러 잘못된 JSON 을 반환시켜 schema_invalid 경로로 빠져나오게 함.
+- 세 시나리오 모두 통과:
+  - **A. verified+degraded** (👍1/👎4) → cached_hit 우회 → call_llm 호출 → 프롬프트에 "이전 시도" 블록 + 👎 노트 포함.
+  - **B. demoted (verified=False, image_missing 경로 모사)** → cooldown 우회(last_synthesis_attempt_at=None) → 동일하게 prior block 주입.
+  - **C. 첫 시도 (existing=None)** → "이전 시도" 마커 없음, 기존 프롬프트 그대로.
+- 시드 매핑은 `alpine:latest` (실제 로컬 이미지) 를 사용해 opportunistic GC 의 image_missing pass 가 fixture 를 demote 시키지 않도록 함.
+
+**왜 cached_hit 우회만 추가했는가**
+- PR 9-J 가 resolver 단계에서 격하 매핑을 skip 시켰지만, 그 다음 synthesize() 분기에서 같은 매핑을 cached_hit 으로 반환해 사용자 화면에 결국 같은 lab 이 다시 떴다 — 격하 신호가 사실상 무효화되는 구조였다. 격하면 cached_hit 도 함께 우회하고 self-refinement 컨텍스트를 LLM 에 던져야만 "새로 합성" 버튼이 의미 있게 동작.
+
+**알려진 한계 / 다음 PR 으로 넘김**
+- 같은 CVE 에 대한 다중 후보 spec 보존 (best-of-N) 은 아직 없다 — 재합성은 직전 매핑을 덮어쓰는 단일 후보 모델. 평가가 들쭉날쭉한 CVE 에 대해 N 개 후보를 병렬 보관하고 점수로 우선순위를 매기는 작업은 PR 9-L 로 분리.
 
 ---
 
