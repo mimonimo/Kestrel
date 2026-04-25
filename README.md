@@ -1,6 +1,6 @@
 # Kestrel
 
-> 실시간 CVE · 제로데이 취약점 모니터링 대시보드. NVD · Exploit-DB · GitHub Advisory 세 곳을 한 화면에서.
+> 실시간 CVE 모니터링 + AI 페이로드 분석 + 격리 샌드박스 재현 — NVD · Exploit-DB · GitHub Advisory 세 소스의 취약점을 한 화면에서 검색하고, 클릭 한 번으로 vulhub 기반 reproducer 또는 AI가 합성한 lab 컨테이너에서 직접 페이로드를 검증합니다.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Next.js 15](https://img.shields.io/badge/Next.js-15-000?logo=next.js)](https://nextjs.org/)
@@ -9,7 +9,7 @@
 [![Meilisearch](https://img.shields.io/badge/Search-Meilisearch-FF5CAA)](https://www.meilisearch.com/)
 [![Docker](https://img.shields.io/badge/Docker-compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 
-Kestrel은 공개 취약점 정보를 한 곳으로 모아 보안 엔지니어, 개발자, SOC 담당자가 빠르게 위협을 인지·추적할 수 있도록 돕는 오픈소스 대시보드입니다. 여러 소스의 CVE를 실시간으로 파싱·정규화하여 PostgreSQL에 저장하고 Meilisearch로 인스턴트 검색을 제공하며, 사용자 자산 기반 CPE 매칭과 익명 커뮤니티 기능을 함께 제공합니다.
+Kestrel은 공개 취약점 정보를 한 곳으로 모아 보안 엔지니어, 개발자, SOC 담당자가 빠르게 위협을 인지·추적·검증할 수 있도록 돕는 오픈소스 대시보드입니다. 여러 소스의 CVE를 실시간으로 파싱·정규화하여 PostgreSQL에 저장하고 Meilisearch로 인스턴트 검색을 제공하며, 사용자 자산 기반 CPE 매칭과 익명 커뮤니티 기능에 더해 **격리된 샌드박스 컨테이너에서 실제 페이로드를 재현/검증**할 수 있는 AI 기반 lab synthesizer 까지 한 호스트에서 단일 명령으로 띄울 수 있습니다.
 
 ---
 
@@ -24,6 +24,7 @@ Kestrel은 공개 취약점 정보를 한 곳으로 모아 보안 엔지니어, 
 - [Ubuntu 22.04 원클릭 셋업](#ubuntu-2204-원클릭-셋업)
 - [설정 (환경변수)](#설정-환경변수)
 - [AI 심층 분석](#ai-심층-분석)
+- [샌드박스 (CVE → 격리 컨테이너 → 자동 검증)](#샌드박스-cve--격리-컨테이너--자동-검증)
 - [로컬 개발 (Docker 없이)](#로컬-개발-docker-없이)
 - [실행 & 사용법](#실행--사용법)
 - [API 요약](#api-요약)
@@ -42,8 +43,9 @@ Kestrel은 공개 취약점 정보를 한 곳으로 모아 보안 엔지니어, 
 - **검색 중심 UX**: 히어로 검색창과 팩싯 필터(심각도 · OS · 취약점 유형 · 기간)를 통해 원하는 CVE에 빠르게 도달할 수 있도록 설계되었습니다.
 - **자산 기반 매칭**: 사용자가 등록한 자산(벤더 · 제품 · 버전)을 CPE와 매칭해 사용자 시스템과 관련된 취약점만 별도로 노출합니다.
 - **익명 커뮤니티**: 로그인 없이 디바이스 단위로 게시글과 댓글을 작성할 수 있으며, CVE 상세 페이지에도 댓글 스레드가 통합됩니다.
-- **운영 지향 설계**: Redis sliding-window 레이트 리미터, 지수 백오프 재시도, 파서별 격리된 장애 추적, Meilisearch 장애 시 PostgreSQL tsvector 자동 폴백을 기본 제공합니다.
-- **단일 명령 기동**: `docker compose up --build` 한 줄로 프런트엔드, 백엔드, DB, 검색 엔진, 캐시까지 전부 실행됩니다.
+- **AI 페이로드 + 검증**: CVE 별 구체적 공격 페이로드와 패치 매핑을 LLM 으로 생성하고, vulhub reproducer 또는 AI 가 합성한 lab 컨테이너에서 페이로드를 자동 발사 후 응답 본문에 success indicator 가 떴는지로 성공/실패를 판정합니다.
+- **운영 지향 설계**: Redis sliding-window 레이트 리미터, 지수 백오프 재시도, 파서별 격리된 장애 추적, Meilisearch 장애 시 PostgreSQL tsvector 자동 폴백, 합성 이미지 LRU GC, internal-only bridge 네트워크 + cgroup/PID 한도 등 운영 표면을 기본 제공합니다.
+- **단일 명령 기동**: `docker compose up --build` 한 줄로 프런트엔드, 백엔드, DB, 검색 엔진, 캐시, 그리고 샌드박스 네트워크까지 전부 실행됩니다.
 
 ---
 
@@ -67,6 +69,14 @@ Kestrel은 공개 취약점 정보를 한 곳으로 모아 보안 엔지니어, 
 - 자산 등록 → 실시간 CPE 매칭 → "내 시스템 취약점" 카드.
 - 우측 하단 플로팅 시스템 상태 팝오버(DB/Redis/Meili 핑, 마지막 수집 성공/실패).
 
+### 샌드박스 (재현 + 검증)
+- **vulhub reproducer 우선** — `vulhub_harvester` 가 vulhub 저장소를 git clone/pull 해서 CVE → compose 디렉터리 매핑을 빌드. 호스트 docker 데몬이 sibling 으로 lab 컨테이너를 띄움.
+- **AI lab synthesizer** — vulhub 가 커버하지 않는 CVE 는 LLM 이 단일 파일 Dockerfile + 앱 + 주입 지점 + 페이로드 + success indicator 를 한 번에 만들고, 격리 네트워크에서 실제 빌드/검증한 다음에만 `cve_lab_mappings(verified=true)` 로 캐시.
+- **격리 토폴로지** — `kestrel_sandbox_net` 은 internal-only bridge (인터넷 X), 모든 lab 컨테이너는 256MB / 0.5 CPU / 128 PIDs 한도. `SANDBOX_HARDEN=true` 시 read-only rootfs, `no-new-privileges`, custom seccomp.
+- **자동 페이로드 + 판정** — `payload_adapter` 가 LLM 또는 cached known-good payload 를 골라 lab 의 주입 지점으로 발사 → 응답 본문에 success indicator 가 보이면 success, 아니면 retry/실패 판정.
+- **사용자 평가 루프 (PR 9-J/K)** — 합성 lab 카드에서 👍/👎 + 노트. `down ≥ 2 AND down ≥ up + 2` 면 자동 격하되어 다음 호출에서 skip. "새로 합성으로 시도" 클릭 시 이전 시도(베이스/주입 지점/페이로드/👎 노트)를 다음 LLM 프롬프트에 자연어 블록으로 주입하는 self-refinement 루프.
+- **LRU GC + 운영자 대시보드** — 합성 이미지가 disk 를 다 먹지 않도록 총량/개수/age 3중 ceiling 으로 LRU 회수, 사용 중인 이미지는 skip. `GET /sandbox/synthesize/cache` 로 현재 상태와 다음에 evict 될 후보를 노출.
+
 ### 운영성
 - `/health` (단순 liveness) · `/status` (의존성 전체 상태 + 파서별 최근 수집 로그).
 - 구조화 로깅 (structlog, dev 콘솔 / prod JSON).
@@ -83,24 +93,27 @@ Kestrel은 공개 취약점 정보를 한 곳으로 모아 보안 엔지니어, 
 │ (Client) │ ◀───────── │  App Router  │ ◀───────── │  async     │
 └──────────┘            └──────────────┘            └─────┬──────┘
                                                           │
-                  ┌───────────────────────────────────────┼──────────────┐
-                  │                                       │              │
-            ┌─────▼─────┐     ┌────────────┐     ┌────────▼────┐   ┌─────▼─────┐
-            │ Postgres  │     │ Meilisearch│     │    Redis    │   │APScheduler│
-            │ (truth DB)│     │  (search)  │     │ (rate-limit)│   │ (ingest)  │
-            └───────────┘     └────────────┘     └─────────────┘   └─────┬─────┘
-                                                                         │
-                               ┌─────────────────────────────────────────┼────────┐
-                               │                                         │        │
-                         ┌─────▼─────┐                          ┌────────▼───┐  ┌─▼──────┐
-                         │ NVD 2.0   │                          │ Exploit-DB │  │ GHSA   │
-                         │ REST API  │                          │ CSV mirror │  │GraphQL │
-                         └───────────┘                          └────────────┘  └────────┘
+        ┌─────────────────────────────────────────────────┼───────────────────────────┐
+        │                                                 │                           │
+  ┌─────▼─────┐     ┌────────────┐     ┌────────▼────┐    ┌─────▼─────┐    ┌──────────▼──────────┐
+  │ Postgres  │     │ Meilisearch│     │    Redis    │    │APScheduler│    │ Sandbox / Synthesizer│
+  │ (truth DB)│     │  (search)  │     │ (rate-limit)│    │ (ingest)  │    │ (host docker daemon) │
+  └───────────┘     └────────────┘     └─────────────┘    └─────┬─────┘    └──────────┬──────────┘
+                                                                │                     │ DooD via /var/run/docker.sock
+                          ┌─────────────────────────────────────┼─────────┐           │
+                          │                                     │         │           ▼
+                    ┌─────▼─────┐                       ┌───────▼─────┐ ┌─▼──────┐  ┌──────────────────────┐
+                    │ NVD 2.0   │                       │ Exploit-DB  │ │ GHSA   │  │ kestrel_sandbox_net  │
+                    │ REST API  │                       │ CSV mirror  │ │GraphQL │  │ (internal bridge)    │
+                    └───────────┘                       └─────────────┘ └────────┘  │  ├─ vulhub lab(s)    │
+                                                                                    │  └─ kestrel-syn-*    │
+                                                                                    └──────────────────────┘
 ```
 
 - PostgreSQL이 단일 진실 소스. Meilisearch는 색인 레이어(장애 시 자동 폴백).
 - Alembic 마이그레이션이 컨테이너 기동 시 자동 실행.
 - `raw_data JSONB` 컬럼으로 소스 원본 보존 → 스키마 변경 시 재파싱 가능.
+- 샌드박스는 호스트 도커 데몬을 마운트해 sibling 컨테이너로 lab 을 띄우는 DooD 모델 — backend 컨테이너 자체가 격리 네트워크에 들어가지 않으므로 lab 의 인터넷 차단/리소스 한도가 backend 의 외부 통신에 영향을 주지 않습니다.
 
 ---
 
@@ -117,11 +130,13 @@ Kestrel은 공개 취약점 정보를 한 곳으로 모아 보안 엔지니어, 
 | Layer       | Tech                                                                 |
 | ----------- | -------------------------------------------------------------------- |
 | Frontend    | Next.js 15 (App Router) · React 19 · TypeScript · TailwindCSS · TanStack Query v5 · lucide-react |
-| Backend     | FastAPI · SQLAlchemy 2.0 async · asyncpg · Pydantic v2 · APScheduler · tenacity · structlog |
+| Backend     | FastAPI · SQLAlchemy 2.0 async · asyncpg · Pydantic v2 · APScheduler · tenacity · structlog · httpx |
 | Database    | PostgreSQL 16 (JSONB + tsvector + GIN 인덱스)                        |
 | Search      | Meilisearch v1.10 (rankingRules 튜닝, stopWords, typoTolerance)      |
 | Cache       | Redis 7 (sliding window rate limiter)                                |
-| Infra       | Docker Compose (멀티 아키텍처 자동 빌드)                               |
+| AI          | OpenAI · Anthropic · Gemini · Groq · OpenRouter · Cerebras · Claude Code CLI (다중 제공자, 활성 키 스위치) |
+| Sandbox     | Docker SDK for Python · vulhub git harvester · custom AI lab synthesizer · internal bridge network · cgroup/PID 한도 + 옵트인 seccomp |
+| Infra       | Docker Compose (멀티 아키텍처 자동 빌드, DooD via host socket)         |
 | Observability (optional) | Sentry · OpenTelemetry                                   |
 | Testing     | Playwright (frontend e2e)                                            |
 
@@ -309,6 +324,14 @@ docker compose down -v   # ⚠️ DB · 수집 이력 전부 삭제
 | `NVD_API_KEY` | 5→50 req/30s 한도 상향 | — |
 | `GITHUB_TOKEN` | GHSA GraphQL 호출용 | — |
 | `CORS_ORIGINS` | 허용 오리진 JSON 배열 | `["http://localhost:3000"]` |
+| `SANDBOX_NETWORK` | lab 컨테이너가 붙는 internal-only bridge 이름 | `kestrel_sandbox_net` |
+| `SANDBOX_TTL_SECONDS` | lab 자동 reaping 주기 | `1800` |
+| `SANDBOX_HARDEN` | `true` 시 read-only rootfs · no-new-privileges · seccomp 강화 (옵트인) | `false` |
+| `SANDBOX_RUNTIME` / `SANDBOX_SECCOMP_PATH` | 런타임/seccomp 프로파일 (예: `runsc`, gVisor 환경) | — |
+| `VULHUB_REPO_PATH` / `VULHUB_HOST_PATH` | vulhub 저장소 경로 (컨테이너/호스트 동일하게 두는 것을 권장) | `/data/vulhub` |
+| `VULHUB_REPO_REMOTE` | git clone 원격 | `https://github.com/vulhub/vulhub.git` |
+| `DOCKER_GID` | Linux 호스트에서 docker.sock 그룹 GID (macOS+OrbStack 은 0) | `0` |
+| `INSTALL_CLAUDE_CLI` | `1` 시 backend 이미지에 `claude` CLI 설치 (Claude Code CLI 제공자용) | `0` |
 | `SENTRY_DSN` | Sentry(선택) | — |
 | `OTEL_ENABLED` / `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry(선택) | `false` |
 
@@ -384,11 +407,87 @@ docker compose \
 
 > ⚠️ `~/.claude/.credentials.json` 에는 세션 토큰이 있으므로 마운트는 읽기 전용입니다. 컨테이너 외부에 노출되지 않도록 주의하세요. 공용/공유 서버에서 이 방식을 쓰는 것은 권장하지 않습니다.
 
+### AI 의 두 가지 역할
+
+Kestrel 에서 LLM 은 두 곳에서 쓰입니다 — 같은 활성 키가 두 작업 모두에 사용됩니다.
+
+1. **CVE 심층 분석** (CVE 상세 → "AI 심층 분석 요청") — 공격 기법, 페이로드, 대응 방안을 한국어 마크다운으로 생성.
+2. **Lab 합성** (샌드박스 → vulhub 매핑이 없을 때) — Dockerfile + 앱 코드 + 주입 지점 + 페이로드 + success indicator 를 JSON 으로 생성, backend 가 빌드/검증 후 캐시. 자세한 동작은 다음 섹션 참고.
+
 ### 무료·저비용 시작 팁
 
 - **아무 키도 없을 때**: Groq → Cerebras → Gemini 순서로 시도해보세요. 등록이 가장 간단하고 속도도 빠른 건 Groq, 출력 품질은 Gemini가 가장 좋은 경향입니다.
 - **Anthropic API 크레딧 부족 오류가 뜰 때**: `console.anthropic.com` 에서 결제 수단을 등록하거나, Claude Code CLI 방식으로 전환하세요.
 - **Gemini 403 `PERMISSION_DENIED`**: 지역 제한 또는 프로젝트 플래그로 차단된 경우입니다. AI Studio에서 **새 프로젝트**로 키를 다시 발급하면 대부분 해결됩니다.
+
+---
+
+## 샌드박스 (CVE → 격리 컨테이너 → 자동 검증)
+
+CVE 상세 페이지의 **샌드박스** 카드에서 **세션 시작** 을 누르면, 해당 CVE 가 실제로 트리거되는 격리 컨테이너가 즉석에서 떠오르고, AI 가 만든 페이로드를 자동으로 발사한 다음, 응답 본문에 success indicator 가 보였는지로 성공/실패를 보여줍니다. 외부 인터넷 접근이 차단된 internal-only 브리지 위에서, 메모리/CPU/PID 한도가 강제된 상태로 돌아갑니다.
+
+### 어떻게 lab 이 결정되는가 (resolver chain)
+
+```
+1. cve_lab_mappings(kind=vulhub, verified=true)        ← vulhub_harvester 가 git 에서 채워둔 정식 reproducer
+2. cve_lab_mappings(kind=synthesized, verified=true)   ← AI 가 합성 + 검증 통과 후 캐시한 lab
+                                                       (is_degraded(mapping) 면 skip → 다음 단계로)
+3. classifier 가 추정한 generic lab (CWE → 일반 카탈로그)
+4. 사용자가 명시 동의 시 → AI 합성 실시간 호출 (별도 24h 쿨다운)
+```
+
+- **격하 (degradation)**: 합성 lab 카드의 👎 가 `down ≥ 2 AND down ≥ up + 2` 를 넘기면 매핑이 자동 skip 됩니다. 한 명의 사용자가 lab 을 죽일 수 없도록 최소 2명의 별개 클라이언트를 요구합니다.
+- **Self-refinement**: 격하 후 "새로 합성으로 시도" 를 누르면 이전 시도(베이스 이미지 / 주입 지점 / 페이로드 / 👎 노트) 가 다음 LLM 프롬프트에 자연어 블록으로 주입돼, 같은 실패를 반복하지 않도록 다른 접근을 강제합니다.
+- **검증된 캐시만 보존**: 합성 lab 은 빌드 → 격리 컨테이너에서 페이로드 발사 → 응답 본문에 `success_indicator` 가 그대로 등장 → 그제서야 매핑 row 가 생성됩니다. 검증 실패 시 이미지가 즉시 삭제되고, 24h 쿨다운이 걸려 같은 CVE 로 토큰을 반복 소모하지 않습니다.
+
+### 격리 + 안전장치
+
+- **네트워크**: `kestrel_sandbox_net` 은 `internal: true` 브리지 — lab 컨테이너는 외부 인터넷에 접근할 수 없고, exfil 패턴이 동작하지 않습니다.
+- **리소스**: 컨테이너당 메모리 256MB · CPU 0.5 코어 · PID 128 한도 (기본값, `.env` 로 조정 가능). 동시 lab 수도 `SANDBOX_MAX_CONCURRENT` 로 제한.
+- **TTL 자동 회수**: `sweeper` 가 30분 (`SANDBOX_TTL_SECONDS`) 마다 idle lab 을 자동 stop. 합성 이미지는 별도 LRU GC 로 디스크 캡 (총량/개수/age 3중 ceiling) 안에서 회수.
+- **하드닝 (옵트인)**: `.env` 에 `SANDBOX_HARDEN=true` + (선택) `SANDBOX_RUNTIME=runsc` / `SANDBOX_SECCOMP_PATH=...` 를 두면 read-only rootfs · `no-new-privileges` · 사용자 지정 seccomp 가 적용됩니다.
+- **DooD 모델**: backend 컨테이너가 `/var/run/docker.sock` 을 마운트해 호스트 도커 데몬에 lab 을 sibling 으로 띄웁니다. 즉 docker-in-docker 가 아니므로 lab 의 격리 정책이 backend 자체에 영향을 주지 않습니다. 반대로 docker.sock 마운트는 사실상 root 권한이므로, 운영 환경에서는 backend 가 받는 이미지/리소스/네트워크 파라미터를 화이트리스트로 제한합니다 (`app/services/sandbox/manager.py`).
+
+### vulhub 저장소 준비
+
+vulhub reproducer 를 자동 활용하려면 호스트의 어딘가에 vulhub 저장소가 있어야 합니다. 첫 기동 시 Kestrel 이 자동으로 clone 합니다 (`VULHUB_REPO_REMOTE` 기본값). 이미 다른 곳에 받아둔 저장소가 있다면:
+
+```bash
+# .env 에 호스트 경로와 컨테이너 경로를 같게 두는 것을 권장 (compose 사이블링이 호스트 경로로 읽음)
+VULHUB_HOST_PATH=/data/vulhub
+VULHUB_REPO_PATH=/data/vulhub
+
+# 수동 동기화
+curl -X POST http://localhost:8000/api/v1/sandbox/vulhub/sync
+```
+
+### 사용 예 (curl)
+
+```bash
+# 1. CVE 가 어떤 lab 으로 매핑되는지 + 합성 가능한지 확인
+curl -s http://localhost:8000/api/v1/cves/CVE-2021-44228 | jq '.title'
+
+# 2. 세션 시작 — vulhub 매핑이 없고 합성도 거부했다면 422 lab_degraded / no_lab 가 떨어짐
+curl -s -X POST http://localhost:8000/api/v1/sandbox/sessions \
+  -H "Content-Type: application/json" \
+  -H "X-Client-Id: $(uuidgen)" \
+  -d '{"cveId":"CVE-2021-44228","attemptSynthesis":false}'
+
+# 3. 명시 동의로 AI 합성 호출 (실시간 진행상황은 SSE 로 노출)
+curl -N http://localhost:8000/api/v1/sandbox/synthesize/stream \
+  -H "Content-Type: application/json" \
+  -d '{"cveId":"CVE-2099-EXAMPLE"}'
+
+# 4. 합성 캐시 상태 보기 / 즉석 GC
+curl -s http://localhost:8000/api/v1/sandbox/synthesize/cache | jq '.'
+curl -s -X POST http://localhost:8000/api/v1/sandbox/synthesize/gc | jq '.evicted | length'
+```
+
+### 무엇을 검증하지 않는가 (한계)
+
+- **Lab 의 "정확성" 자체는 보증하지 않습니다**. 합성 lab 은 success indicator 가 응답 본문에 떴는지로 성공/실패를 판단하므로, 페이로드가 진짜로 해당 CVE 의 동작을 재현했는지는 사용자의 👍/👎 평가가 사실상 마지막 게이트입니다. 격하 + self-refinement 가 그 신호를 다음 합성에 다시 먹입니다.
+- **외부 의존이 큰 CVE 는 합성에 부적합**합니다. systemd / mysql / 외부 OAuth 같이 무거운 스택이 필요한 CVE 는 vulhub 매핑이 있어야 의미 있습니다.
+- 운영 환경에 띄울 때는 반드시 `SANDBOX_HARDEN=true` + 가능한 경우 gVisor (`SANDBOX_RUNTIME=runsc`) 조합을 권장합니다.
 
 ---
 
@@ -527,6 +626,16 @@ Swagger UI: http://localhost:8000/docs
 | `GET  /api/v1/cves/batch?ids=...` | 복수 ID 일괄 조회 (즐겨찾기 뷰용) |
 | `POST /api/v1/assets/match`       | 자산 리스트 → 매칭된 CVE |
 | `POST /api/v1/admin/refresh`      | 수동 재수집 트리거 (`X-NVD-API-Key`, `X-GitHub-Token`) |
+| `POST /api/v1/sandbox/vulhub/sync` | vulhub 저장소 git pull + CVE 매핑 재빌드 |
+| `POST /api/v1/sandbox/sessions`   | CVE 에 대한 격리 lab 세션 시작 (`X-Client-Id`) |
+| `GET  /api/v1/sandbox/sessions/{id}` | 세션 상태 + lab 정보 + 사용자 평가 |
+| `DELETE /api/v1/sandbox/sessions/{id}` | 세션 즉시 종료 + 컨테이너 stop |
+| `POST /api/v1/sandbox/sessions/{id}/exec` | lab 으로 페이로드 발사 + 응답/판정 |
+| `POST /api/v1/sandbox/sessions/{id}/feedback` | 합성 lab 평가 (`{vote: "up"\|"down", note?}`) |
+| `POST /api/v1/sandbox/synthesize` | AI lab 합성 호출 (블로킹) |
+| `POST /api/v1/sandbox/synthesize/stream` | 합성 진행상황 SSE 스트림 |
+| `GET  /api/v1/sandbox/synthesize/cache` | 합성 이미지 캐시 리포트 (운영자 대시보드) |
+| `POST /api/v1/sandbox/synthesize/gc` | 합성 이미지 LRU GC 즉시 실행 |
 
 응답 키는 모두 camelCase로 통일되어 있어 프런트 TypeScript 타입과 1:1 매칭됩니다.
 
@@ -566,12 +675,24 @@ Kestrel/
 │       ├── core/                  # config · database · redis · logging
 │       ├── models/                # SQLAlchemy 2.0 모델
 │       ├── schemas/               # Pydantic v2 (CamelModel 베이스)
-│       ├── api/v1/                # 라우터 (health/status/cves/search/assets/admin)
+│       ├── api/v1/                # 라우터 (health/status/cves/search/assets/admin/sandbox/...)
 │       ├── services/
 │       │   ├── parsers/           # nvd · exploit_db · github_advisory
 │       │   ├── ingestion.py       # 오케스트레이터
 │       │   ├── search_service.py  # Meilisearch 래퍼
-│       │   └── rate_limiter.py    # Redis sliding window
+│       │   ├── rate_limiter.py    # Redis sliding window
+│       │   ├── ai_analyzer.py     # 다중 제공자 LLM 클라이언트 (CVE 분석 + lab 합성 공용)
+│       │   └── sandbox/
+│       │       ├── manager.py            # docker SDK 래퍼 (lab spawn/stop/proxy)
+│       │       ├── lab_resolver.py       # vulhub → 합성 → generic resolver chain
+│       │       ├── vulhub_harvester.py   # git clone/pull + compose 매핑 빌더
+│       │       ├── synthesizer.py        # AI lab 합성기 (self-refinement 포함)
+│       │       ├── synthesizer_gc.py     # 합성 이미지 LRU GC
+│       │       ├── catalog.py            # generic lab 카탈로그
+│       │       ├── classifier.py         # CWE → generic lab 분류기
+│       │       ├── payload_adapter.py    # cached / LLM 페이로드 선택
+│       │       ├── result_analyzer.py    # 응답 본문 → 성공/실패 판정
+│       │       └── sweeper.py            # TTL 기반 idle lab 회수
 │       ├── scheduler/             # APScheduler 잡
 │       └── utils/                 # tenacity 재시도 등
 └── frontend/
@@ -582,7 +703,7 @@ Kestrel/
     │   ├── settings/              # API 키 · 자산 · 테마
     │   └── layout.tsx             # pre-hydration theme boot
     ├── components/
-    │   ├── cve/                   # 리스트 아이템 · 상세 · 즐겨찾기 버튼
+    │   ├── cve/                   # 리스트 아이템 · 상세 · 즐겨찾기 · AI 분석 패널 · SandboxPanel
     │   ├── dashboard/             # RefreshBar · MyAssetsPanel
     │   ├── search/                # FilterPanel · Pagination · SearchBar
     │   ├── settings/              # ApiKeyField · ThemeSwitcher · AssetsManager
@@ -610,10 +731,16 @@ npm run test:e2e
 - [x] 사용자 자산 등록 + CPE 매칭
 - [x] 즐겨찾기 (백엔드 영속화)
 - [x] AI 심층 분석 — 다중 제공자(OpenAI · Anthropic · Gemini · Groq · OpenRouter · Cerebras · Claude Code CLI) + 활성 키 스위치
-- [ ] 티켓 시스템 (미확인 / 조치완료 상태 + 주의 / 경고 / 심각 뱃지)
+- [x] 티켓 시스템 (미확인 / 조치완료 상태 + 주의 / 경고 / 심각 뱃지)
+- [x] 격리 샌드박스 (vulhub reproducer + DooD + internal-only bridge + cgroup/PID 한도 + 옵트인 seccomp)
+- [x] AI lab 합성기 (Dockerfile + 앱 + 페이로드 + indicator 자동 생성 + 검증 후 캐시)
+- [x] 합성 lab LRU GC + 운영자 대시보드
+- [x] 합성 진행 SSE 스트리밍
+- [x] 사용자 평가(👍/👎) → 자동 격하 + self-refinement 루프 (이전 시도를 다음 LLM 프롬프트에 주입)
+- [ ] 합성 lab 다중 후보 보존 + best-of-N 선택 (PR 9-L 예정)
 - [ ] CVSS 게이지 시각화 및 다양한 정렬 옵션
 - [ ] Slack · Discord · Webhook 알림
-- [ ] GitHub Advisory · OSV 스키마 확장
+- [ ] OSV 스키마 확장
 - [ ] LLM 요약 교체 (현재는 휴리스틱 기반)
 
 ---
