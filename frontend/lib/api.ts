@@ -48,6 +48,74 @@ function clientHeaders(): Record<string, string> {
   return id ? { "X-Client-Id": id } : {};
 }
 
+// Minimal SSE consumer over fetch (EventSource doesn't support POST). Parses
+// `event:` + `data:` line pairs, dispatches each frame as it arrives. Throws
+// on HTTP error before the stream opens; once we're in the stream, errors are
+// surfaced as an `error` event from the server (then the stream closes).
+async function streamSse<E>(
+  path: string,
+  body: unknown,
+  onEvent: (ev: E) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify(body),
+    signal,
+    cache: "no-store",
+  });
+  if (!res.ok || !res.body) {
+    let message = `SSE ${path} failed: ${res.status}`;
+    try {
+      const text = await res.text();
+      if (text) message = text.slice(0, 400);
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    // SSE frames are separated by a blank line. Process all complete frames
+    // in the buffer, leave the trailing partial for the next read.
+    let sep = buf.indexOf("\n\n");
+    while (sep !== -1) {
+      const frame = buf.slice(0, sep);
+      buf = buf.slice(sep + 2);
+      const ev = parseSseFrame(frame);
+      if (ev) onEvent(ev as E);
+      sep = buf.indexOf("\n\n");
+    }
+  }
+}
+
+function parseSseFrame(frame: string): { event: string; data: unknown } | null {
+  let event = "message";
+  const dataLines: string[] = [];
+  for (const raw of frame.split("\n")) {
+    const line = raw.replace(/\r$/, "");
+    if (!line || line.startsWith(":")) continue;
+    const idx = line.indexOf(":");
+    const field = idx === -1 ? line : line.slice(0, idx);
+    const value = idx === -1 ? "" : line.slice(idx + 1).replace(/^ /, "");
+    if (field === "event") event = value;
+    else if (field === "data") dataLines.push(value);
+  }
+  if (dataLines.length === 0) return null;
+  const dataStr = dataLines.join("\n");
+  try {
+    return { event, data: JSON.parse(dataStr) };
+  } catch {
+    return { event, data: dataStr };
+  }
+}
+
 export interface BookmarkListResponse {
   items: { cveId: string }[];
   total: number;
@@ -239,6 +307,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  streamSynthesizeSandbox: (
+    body: { cveId: string; forceRegenerate?: boolean },
+    onEvent: (ev: SynthesizeStreamEvent) => void,
+    signal?: AbortSignal,
+  ) => streamSse(`/sandbox/synthesize/stream`, body, onEvent, signal),
   getSynthesizerCache: () =>
     request<SynthesizeCacheReport>(`/sandbox/synthesize/cache`),
   triggerSynthesizerGc: (
@@ -410,6 +483,47 @@ export interface SynthesizeResponse {
   responseStatus: number | null;
   responseBodyPreview: string | null;
 }
+
+// Phases emitted by /sandbox/synthesize/stream — UI maps to friendly labels.
+// Keep in sync with synthesizer.synthesize emit() call sites.
+export type SynthesizePhase =
+  | "start"
+  | "cached_hit"
+  | "cooldown"
+  | "call_llm"
+  | "parsed"
+  | "build_started"
+  | "build_done"
+  | "lab_started"
+  | "verifying"
+  | "verify_failed"
+  | "verify_ok"
+  | "cached"
+  | "failed";
+
+export interface SynthesizeStepEvent {
+  event: "step";
+  data: {
+    phase: SynthesizePhase;
+    message: string;
+    payload: Record<string, unknown> | null;
+  };
+}
+
+export interface SynthesizeDoneEvent {
+  event: "done";
+  data: SynthesizeResponse;
+}
+
+export interface SynthesizeErrorEvent {
+  event: "error";
+  data: { message: string };
+}
+
+export type SynthesizeStreamEvent =
+  | SynthesizeStepEvent
+  | SynthesizeDoneEvent
+  | SynthesizeErrorEvent;
 
 export interface SynthesizeCacheEntry {
   cveId: string;

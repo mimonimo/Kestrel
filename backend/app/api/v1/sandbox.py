@@ -2,10 +2,14 @@
 AI-generated payloads to them, and replay through a single endpoint."""
 from __future__ import annotations
 
+import asyncio
+import json as _json
 from datetime import datetime, timezone
+from typing import AsyncIterator
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -193,6 +197,97 @@ async def synthesize_lab(
         build_log_tail=result.build_log_tail,
         response_status=result.response_status,
         response_body_preview=result.response_body_preview,
+    )
+
+
+def _sse_chunk(event: str, data: dict) -> bytes:
+    """Format one Server-Sent Event frame.
+
+    Lines must be \\n-separated and the frame ends with a blank line. We
+    encode JSON as a single ``data:`` line — the spec allows multiple but
+    one keeps the parser trivial on the browser side.
+    """
+    payload = _json.dumps(data, ensure_ascii=False, default=str)
+    return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
+
+
+@router.post("/synthesize/stream")
+async def synthesize_stream(
+    body: SynthesizeRequest, db: AsyncSession = Depends(get_db)
+) -> StreamingResponse:
+    """SSE stream of synthesis progress.
+
+    Each ``step`` event carries ``{phase, message, payload}`` keyed to the
+    stages in synthesizer.synthesize. The final ``done`` event carries the
+    full SynthesisResult (same shape as the non-streaming endpoint's body).
+    Connection errors mid-stream do NOT abort synthesis — the call already
+    spent LLM tokens by then so we let it finish writing the DB row and the
+    image cache.
+    """
+    vuln = await db.scalar(
+        select(Vulnerability).where(Vulnerability.cve_id == body.cve_id)
+    )
+    if vuln is None:
+        raise HTTPException(status_code=404, detail=f"{body.cve_id} not found")
+
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+
+    async def emit(phase: str, message: str, payload: dict | None) -> None:
+        await queue.put(
+            _sse_chunk("step", {"phase": phase, "message": message, "payload": payload})
+        )
+
+    async def runner() -> None:
+        try:
+            result = await synthesize(
+                db,
+                vuln,
+                force_regenerate=body.force_regenerate,
+                progress=emit,
+            )
+            done = {
+                "cveId": result.cve_id,
+                "imageTag": result.image_tag,
+                "verified": result.verified,
+                "mappingId": result.mapping_id,
+                "attempts": result.attempts,
+                "error": result.error,
+                "spec": result.spec_dict,
+                "payload": result.payload,
+                "buildLogTail": result.build_log_tail,
+                "responseStatus": result.response_status,
+                "responseBodyPreview": result.response_body_preview,
+            }
+            await queue.put(_sse_chunk("done", done))
+        except Exception as e:  # noqa: BLE001 — last resort, surface to client
+            log.warning("synthesize_stream.unhandled", error=str(e))
+            await queue.put(_sse_chunk("error", {"message": str(e)}))
+        finally:
+            await queue.put(None)  # sentinel — close the stream
+
+    task = asyncio.create_task(runner())
+
+    async def gen() -> AsyncIterator[bytes]:
+        try:
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    return
+                yield chunk
+        finally:
+            # Client disconnected before runner finished — let it complete
+            # in the background (we already burned LLM tokens, may as well
+            # cache the result on success).
+            if not task.done():
+                log.info("synthesize_stream.client_disconnect", cve_id=body.cve_id)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",  # disables nginx buffering if proxied
+        },
     )
 
 

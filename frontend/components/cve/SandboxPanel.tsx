@@ -3,6 +3,7 @@
 import {
   AlertCircle,
   CheckCircle2,
+  Circle,
   FlaskConical,
   Loader2,
   Play,
@@ -12,7 +13,7 @@ import {
   Square,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
@@ -25,8 +26,49 @@ import {
   type NoLabDetail,
   type SandboxExecResponse,
   type SandboxSession,
+  type SynthesizePhase,
+  type SynthesizeStreamEvent,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+// Friendly labels keyed by phase. Order matters when we render the *expected*
+// timeline ahead of any real events — we pre-fill an empty checklist and let
+// arrived events tick boxes off as they come in.
+const PHASE_LABEL: Record<SynthesizePhase, string> = {
+  start: "준비",
+  cached_hit: "기존 검증된 캐시 발견",
+  cooldown: "최근 실패로 24시간 cooldown 중",
+  call_llm: "LLM 호출 (Dockerfile + 앱 코드 + 페이로드 생성)",
+  parsed: "AI 응답 파싱 + 스키마 검증",
+  build_started: "docker 이미지 빌드",
+  build_done: "이미지 빌드 완료",
+  lab_started: "검증 컨테이너 기동",
+  verifying: "페이로드 전송 + 응답 확인",
+  verify_failed: "응답 본문에서 success_indicator 찾지 못함",
+  verify_ok: "취약점 트리거 확인됨",
+  cached: "매핑 row 캐시 — 다음 호출은 즉시 사용",
+  failed: "실패",
+};
+
+// Default timeline shown before any events arrive. cached_hit / cooldown are
+// short-circuit terminals — they replace the timeline at runtime, not part of
+// the happy path.
+const DEFAULT_TIMELINE: SynthesizePhase[] = [
+  "start",
+  "call_llm",
+  "parsed",
+  "build_started",
+  "build_done",
+  "lab_started",
+  "verify_ok",
+  "cached",
+];
+
+interface SynthLogEntry {
+  phase: SynthesizePhase;
+  message: string;
+  ts: number;
+}
 
 function SourceBadge({
   source,
@@ -165,6 +207,14 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<SandboxExecResponse | null>(null);
 
+  // Synthesis stream state — lives in the panel because the stream is
+  // bidirectional with React state (each event updates the timeline) and
+  // outlives any single mutation.
+  const [synthLog, setSynthLog] = useState<SynthLogEntry[]>([]);
+  const [synthError, setSynthError] = useState<string | null>(null);
+  const [synthRunning, setSynthRunning] = useState(false);
+  const synthAbort = useRef<AbortController | null>(null);
+
   const sessionQuery = useQuery({
     queryKey: ["sandbox-session", sessionId],
     queryFn: () => api.getSandbox(sessionId!),
@@ -185,6 +235,56 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
       qc.setQueryData(["sandbox-session", s.id], s);
     },
   });
+
+  const startSynthesis = async () => {
+    setSynthLog([]);
+    setSynthError(null);
+    setSynthRunning(true);
+    start.reset();
+    const ctrl = new AbortController();
+    synthAbort.current = ctrl;
+    try {
+      await api.streamSynthesizeSandbox(
+        { cveId },
+        (ev: SynthesizeStreamEvent) => {
+          if (ev.event === "step") {
+            setSynthLog((prev) => [
+              ...prev,
+              { phase: ev.data.phase, message: ev.data.message, ts: Date.now() },
+            ]);
+          } else if (ev.event === "done") {
+            if (ev.data.verified) {
+              // Synthesis cached the mapping; resolver chain will hit it now
+              // without needing the consent flag again.
+              start.mutate(undefined);
+            } else {
+              setSynthError(ev.data.error ?? "합성 실패");
+            }
+            setSynthRunning(false);
+          } else if (ev.event === "error") {
+            setSynthError(ev.data.message);
+            setSynthRunning(false);
+          }
+        },
+        ctrl.signal,
+      );
+    } catch (e) {
+      if ((e as Error).name === "AbortError") return;
+      setSynthError((e as Error).message);
+      setSynthRunning(false);
+    }
+  };
+
+  const cancelSynthesis = () => {
+    // Aborts the SSE stream on the client side. Backend keeps running until
+    // the synthesis completes — tokens are already spent and we want the row
+    // cached, even if the user closed the panel.
+    synthAbort.current?.abort();
+    synthAbort.current = null;
+    setSynthRunning(false);
+    setSynthLog([]);
+    setSynthError(null);
+  };
 
   const stop = useMutation({
     mutationFn: () => api.stopSandbox(sessionId!),
@@ -218,8 +318,6 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
     isNoLabDetail(startError.detail)
       ? (startError.detail as NoLabDetail)
       : null;
-  const synthAttemptInFlight =
-    start.isPending && start.variables?.attemptSynthesis === true;
 
   return (
     <Card>
@@ -268,47 +366,58 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
         {start.isPending && (
           <div className="flex items-center gap-2 py-2 text-sm text-neutral-400">
             <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-            {synthAttemptInFlight
-              ? "AI 합성 진행 중 — Dockerfile/앱 코드 생성 + 빌드 + 검증 (수십초~수분 소요)…"
-              : "랩 컨테이너 시작 중…"}
+            랩 컨테이너 시작 중…
           </div>
         )}
 
         {/* Consent gate: backend says no curated lab exists — invite the user
-            to opt into AI synthesis. Separate from the generic error block so
-            the choice is obvious and the wording isn't alarming red. */}
-        {noLabDetail && noLabDetail.code === "no_lab" && noLabDetail.canSynthesize && (
-          <div className="space-y-2 rounded border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
-            <div className="flex items-center gap-1.5 text-amber-200">
-              <Sparkles className="h-3.5 w-3.5" />
-              <span className="font-medium">등록된 lab 이 없습니다</span>
+            to opt into AI synthesis. Hidden once the synthesis stream starts. */}
+        {noLabDetail &&
+          noLabDetail.code === "no_lab" &&
+          noLabDetail.canSynthesize &&
+          !synthRunning &&
+          synthLog.length === 0 && (
+            <div className="space-y-2 rounded border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+              <div className="flex items-center gap-1.5 text-amber-200">
+                <Sparkles className="h-3.5 w-3.5" />
+                <span className="font-medium">등록된 lab 이 없습니다</span>
+              </div>
+              <p className="text-amber-100/90">{noLabDetail.message}</p>
+              <p className="text-amber-100/60">
+                합성은 LLM 토큰을 사용하고 빌드 시간이 걸립니다. 24시간 내 합성에 실패하면
+                같은 CVE 에 대해 자동 재시도가 차단됩니다 (캐시 보존).
+              </p>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  type="button"
+                  onClick={startSynthesis}
+                  size="md"
+                  className="bg-amber-500 text-black hover:bg-amber-400"
+                >
+                  <Sparkles className="mr-1.5 h-4 w-4" />
+                  AI 합성으로 시도
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => start.reset()}
+                  size="md"
+                  variant="ghost"
+                  className="text-amber-200/70"
+                >
+                  취소
+                </Button>
+              </div>
             </div>
-            <p className="text-amber-100/90">{noLabDetail.message}</p>
-            <p className="text-amber-100/60">
-              합성은 LLM 토큰을 사용하고 빌드 시간이 걸립니다. 24시간 내 합성에 실패하면
-              같은 CVE 에 대해 자동 재시도가 차단됩니다 (캐시 보존).
-            </p>
-            <div className="flex gap-2 pt-1">
-              <Button
-                type="button"
-                onClick={() => start.mutate({ attemptSynthesis: true })}
-                size="md"
-                className="bg-amber-500 text-black hover:bg-amber-400"
-              >
-                <Sparkles className="mr-1.5 h-4 w-4" />
-                AI 합성으로 시도
-              </Button>
-              <Button
-                type="button"
-                onClick={() => start.reset()}
-                size="md"
-                variant="ghost"
-                className="text-amber-200/70"
-              >
-                취소
-              </Button>
-            </div>
-          </div>
+          )}
+
+        {(synthRunning || synthLog.length > 0 || synthError) && (
+          <SynthesisTimeline
+            log={synthLog}
+            running={synthRunning}
+            error={synthError}
+            onCancel={cancelSynthesis}
+            onRetry={startSynthesis}
+          />
         )}
 
         {startError && !noLabDetail && (
@@ -424,5 +533,135 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function SynthesisTimeline({
+  log,
+  running,
+  error,
+  onCancel,
+  onRetry,
+}: {
+  log: SynthLogEntry[];
+  running: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onRetry: () => void;
+}) {
+  const seen = new Set(log.map((e) => e.phase));
+  // If the backend short-circuited (cooldown / cached_hit), the default
+  // timeline doesn't apply — render only the events we received.
+  const shortCircuit = seen.has("cooldown") || seen.has("cached_hit");
+  const failed = seen.has("failed") || error !== null;
+  const verifyFailed = seen.has("verify_failed");
+  const phases: SynthesizePhase[] = shortCircuit
+    ? log.map((e) => e.phase)
+    : DEFAULT_TIMELINE;
+  // Latest event the user can see — drives the spinner row.
+  const lastSeenIdx = (() => {
+    let idx = -1;
+    for (let i = 0; i < phases.length; i++) {
+      if (seen.has(phases[i])) idx = i;
+    }
+    return idx;
+  })();
+
+  return (
+    <div className="space-y-3 rounded border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5 text-amber-200">
+          <Sparkles className="h-3.5 w-3.5" />
+          <span className="font-medium">AI 합성 진행 상황</span>
+        </div>
+        {running && (
+          <Button
+            type="button"
+            onClick={onCancel}
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-amber-200/70"
+          >
+            연결 끊기
+          </Button>
+        )}
+        {!running && (failed || verifyFailed) && (
+          <Button
+            type="button"
+            onClick={onRetry}
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-amber-200"
+          >
+            <RefreshCw className="mr-1 h-3 w-3" />
+            재시도
+          </Button>
+        )}
+      </div>
+
+      <ul className="space-y-1">
+        {phases.map((phase, i) => {
+          const entry = log.find((e) => e.phase === phase);
+          const done = seen.has(phase);
+          const isCurrent = running && i === lastSeenIdx + 1 && !done;
+          const isFailedHere = phase === "failed" || phase === "verify_failed";
+          return (
+            <li key={`${phase}-${i}`} className="flex items-start gap-2">
+              <span className="mt-0.5">
+                {done ? (
+                  isFailedHere ? (
+                    <XCircle className="h-3.5 w-3.5 text-rose-400" />
+                  ) : (
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                  )
+                ) : isCurrent ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-300" />
+                ) : (
+                  <Circle className="h-3.5 w-3.5 text-neutral-700" />
+                )}
+              </span>
+              <div className="flex-1">
+                <div
+                  className={cn(
+                    "font-medium",
+                    done
+                      ? isFailedHere
+                        ? "text-rose-200"
+                        : "text-amber-100"
+                      : isCurrent
+                        ? "text-amber-200"
+                        : "text-neutral-500",
+                  )}
+                >
+                  {PHASE_LABEL[phase] ?? phase}
+                </div>
+                {entry?.message && (
+                  <div
+                    className={cn(
+                      "mt-0.5 break-words",
+                      isFailedHere ? "text-rose-200/80" : "text-amber-100/70",
+                    )}
+                  >
+                    {entry.message}
+                  </div>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+
+      {error && (
+        <div className="rounded border border-rose-500/30 bg-rose-500/10 p-2 text-rose-200">
+          {error}
+        </div>
+      )}
+
+      {running && (
+        <p className="text-[11px] text-amber-200/60">
+          빌드 중 연결을 끊어도 백엔드 합성은 계속 진행됩니다 (캐시까지 완료).
+        </p>
+      )}
+    </div>
   );
 }

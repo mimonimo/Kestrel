@@ -28,6 +28,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Awaitable, Callable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -353,11 +354,34 @@ async def _verify(spec: LabSpec, parsed: dict) -> tuple[bool, dict]:
 _ATTEMPT_COOLDOWN = timedelta(hours=24)
 
 
+# Progress callback signature: ``await cb(phase, message, payload)``.
+# Phases (UI consumption — keep stable):
+#   start           — synthesis kicked off (cooldown not yet checked)
+#   cached_hit      — verified mapping exists, returning early (terminal)
+#   cooldown        — recent failure within 24h, refusing (terminal)
+#   call_llm        — about to call LLM
+#   parsed          — JSON parsed + schema validated
+#   build_started   — docker build kicked off
+#   build_done      — image built (payload.size_mb on success)
+#   lab_started     — verification container running
+#   verifying       — sending verification payload
+#   verify_failed   — indicator missing in response (will retry or fail)
+#   verify_ok       — indicator found, about to cache
+#   cached          — final success (terminal)
+#   failed          — all attempts exhausted (terminal)
+ProgressCallback = Callable[[str, str, dict | None], Awaitable[None]]
+
+
+async def _noop_progress(phase: str, message: str, payload: dict | None) -> None:
+    return None
+
+
 async def synthesize(
     db: AsyncSession,
     vuln: Vulnerability,
     *,
     force_regenerate: bool = False,
+    progress: ProgressCallback | None = None,
 ) -> SynthesisResult:
     """End-to-end: prompt → parse → build → verify → cache (on success).
 
@@ -374,6 +398,8 @@ async def synthesize(
     settings = get_settings()
     cve_id = vuln.cve_id
     now = datetime.now(timezone.utc)
+    emit: ProgressCallback = progress or _noop_progress
+    await emit("start", f"{cve_id} 합성 준비 중", {"cveId": cve_id})
 
     # Opportunistic LRU sweep — keeps the synthesized-image cache under the
     # configured ceilings without a separate cron. Failures never block
@@ -391,6 +417,11 @@ async def synthesize(
     )
 
     if existing is not None and existing.verified and not force_regenerate:
+        await emit(
+            "cached_hit",
+            "이미 검증된 합성 이미지가 있습니다 — 재사용",
+            {"mappingId": existing.id},
+        )
         return SynthesisResult(
             cve_id=cve_id,
             image_tag=str((existing.spec or {}).get("image", "")),
@@ -411,17 +442,19 @@ async def synthesize(
         if age < _ATTEMPT_COOLDOWN:
             remaining = _ATTEMPT_COOLDOWN - age
             hours = int(remaining.total_seconds() // 3600) + 1
+            cooldown_msg = (
+                f"이 CVE 는 최근 24시간 내에 합성에 실패했습니다 — "
+                f"약 {hours}시간 후 재시도 가능합니다 "
+                "(즉시 재시도하려면 forceRegenerate=true)."
+            )
+            await emit("cooldown", cooldown_msg, {"hoursRemaining": hours})
             return SynthesisResult(
                 cve_id=cve_id,
                 image_tag="",
                 verified=False,
                 mapping_id=existing.id,
                 attempts=0,
-                error=(
-                    f"이 CVE 는 최근 24시간 내에 합성에 실패했습니다 — "
-                    f"약 {hours}시간 후 재시도 가능합니다 "
-                    "(즉시 재시도하려면 forceRegenerate=true)."
-                ),
+                error=cooldown_msg,
             )
 
     # Stamp the attempt start so concurrent calls / process restarts respect
@@ -458,6 +491,7 @@ async def synthesize(
 
     while attempts < max_attempts:
         attempts += 1
+        await emit("call_llm", f"LLM 호출 (시도 {attempts}/{max_attempts})", {"attempt": attempts})
         try:
             raw = await call_llm(db, _SYSTEM, user_prompt, force_json=True)
         except Exception as e:  # noqa: BLE001 — surface upstream as result
@@ -476,12 +510,18 @@ async def synthesize(
             last_error = f"응답 스키마 검증 실패: {validation_err}"
             log.warning("synthesizer.schema_invalid", cve_id=cve_id, error=validation_err)
             continue
+        await emit(
+            "parsed",
+            "AI 응답 파싱 + 스키마 검증 완료",
+            {"files": len(parsed.get("files") or [])},
+        )
 
         sha = _spec_hash(parsed)
         image_tag = f"{settings.sandbox_syn_image_prefix}-{sha}:latest"
         ctx_dir = _stage_build_context(sha, parsed)
 
         try:
+            await emit("build_started", f"docker 이미지 빌드 중 ({image_tag})", {"imageTag": image_tag})
             try:
                 logs = await build_image(
                     context_dir=str(ctx_dir),
@@ -494,6 +534,7 @@ async def synthesize(
                 last_logs = []
                 log.warning("synthesizer.build_failed", cve_id=cve_id, error=str(e))
                 continue
+            await emit("build_done", "이미지 빌드 완료", {"imageTag": image_tag})
 
             spec_dict = _spec_dict_for_mapping(parsed, image_tag)
             spec = LabSpec(
@@ -507,6 +548,7 @@ async def synthesize(
                 build_hint=spec_dict["build_hint"],
             )
 
+            await emit("lab_started", "검증용 컨테이너 기동 + 페이로드 전송", None)
             try:
                 ok, exchange = await _verify(spec, parsed)
             except SandboxError as e:
@@ -529,8 +571,14 @@ async def synthesize(
                     status=status_code,
                     body_head=body_preview[:120],
                 )
+                await emit(
+                    "verify_failed",
+                    last_error,
+                    {"status": status_code, "bodyPreview": body_preview[:200]},
+                )
                 await remove_image(image_tag)
                 continue
+            await emit("verify_ok", "success_indicator 응답 본문에서 확인됨", {"status": status_code})
 
             payload_dict = _payload_dict_for_mapping(parsed)
             mapping = await db.get(CveLabMapping, attempt_mapping_id)
@@ -563,6 +611,11 @@ async def synthesize(
                 mapping_id=mapping.id,
                 image=image_tag,
             )
+            await emit(
+                "cached",
+                "매핑 row 저장 — 이후 호출은 캐시 사용",
+                {"mappingId": mapping.id, "imageTag": image_tag},
+            )
             return SynthesisResult(
                 cve_id=cve_id,
                 image_tag=image_tag,
@@ -589,12 +642,14 @@ async def synthesize(
     if failure_row is not None:
         failure_row.notes = failure_note
         await db.commit()
+    final_error = last_error or "알 수 없는 실패"
+    await emit("failed", final_error, {"attempts": attempts})
     return SynthesisResult(
         cve_id=cve_id,
         image_tag="",
         verified=False,
         mapping_id=attempt_mapping_id,
         attempts=attempts,
-        error=last_error or "알 수 없는 실패",
+        error=final_error,
         build_log_tail=last_logs,
     )
