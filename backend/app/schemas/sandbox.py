@@ -34,6 +34,9 @@ class LabInfoOut(CamelModel):
     description: str
     target_path: str
     injection_points: list[InjectionPointOut] = []
+    # One-line summary of how this lab was put together (base image,
+    # injection shape, ...). Empty unless the synthesizer wrote one.
+    digest: str = ""
 
 
 class SandboxSessionOut(CamelModel):

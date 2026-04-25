@@ -408,6 +408,9 @@ export interface LabInfo {
   description: string;
   targetPath: string;
   injectionPoints: InjectionPoint[];
+  // Empty for vulhub / generic labs; populated by the synthesizer with
+  // a one-line summary (base image + injection shape).
+  digest: string;
 }
 
 export interface SandboxLastRun {

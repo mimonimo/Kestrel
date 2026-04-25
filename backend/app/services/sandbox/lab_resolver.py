@@ -66,6 +66,11 @@ class LabSpec:
 
     build_hint: str = ""
 
+    # Optional human-readable one-liner. Set by the synthesizer (PR9-I) and
+    # surfaced in the CVE detail sidebar so the user can tell at a glance
+    # what shape of lab the AI built. Empty for vulhub / generic specs.
+    digest: str = ""
+
     def expected_image(self) -> str:
         """Best-effort image identifier for error messages."""
         return self.image or f"compose:{self.compose_path}#{self.target_service}"
@@ -137,6 +142,10 @@ def _spec_from_mapping(mapping: CveLabMapping) -> LabSpec:
         target_path=str(s.get("target_path", "/")),
         injection_points=points,
         build_hint=str(s.get("build_hint", "")),
+        # Prefer the spec's digest field but fall back to the mapping's
+        # ``notes`` column — older synthesized rows (pre-PR9-I) only stored
+        # the digest there.
+        digest=str(s.get("digest") or mapping.notes or ""),
     )
 
 

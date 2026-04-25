@@ -80,6 +80,7 @@ def _spec_to_lab_out(spec: LabSpec) -> LabInfoOut:
             )
             for ip in spec.injection_points
         ],
+        digest=spec.digest,
     )
 
 

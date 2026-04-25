@@ -462,6 +462,12 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                   </span>
                 )}
               </div>
+              {session.lab?.digest && (
+                <p className="mt-2 flex items-start gap-1.5 text-amber-200/90">
+                  <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-amber-300" />
+                  <span>{session.lab.digest}</span>
+                </p>
+              )}
               {session.targetUrl && (
                 <p className="mt-2 break-all font-mono text-neutral-400">
                   타깃 (내부 전용): {session.targetUrl}

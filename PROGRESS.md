@@ -962,9 +962,44 @@ happy path live (이미지 build_started → build_done → verify_ok → cached
 
 ---
 
+### Step 9-I — 합성 다이제스트 (한 줄 요약) ✅ 완료
+
+backend:
+- `synthesizer._build_digest(parsed, attempts, sha)` — Dockerfile 의 `FROM` 줄에서 베이스 이미지를 뽑고 injection_point (method/path/location:parameter/response_kind) 와 합쳐 한국어 한 줄로 포맷:
+  - 예: `AI 합성 — python:3.11-slim 베이스, GET /reflect 의 query:msg 에 html-reflect 페이로드 주입 (attempts=2, sha=deadbeef)`
+- `_spec_dict_for_mapping(..., digest=...)` — JSONB spec 에 `digest` 필드 추가 (resolver 가 spec 만으로도 다이제스트를 복원 가능).
+- 성공 경로의 `mapping.notes` 값을 더 이상 `attempts/sha` 만 적던 짧은 문자열이 아니라 위 다이제스트로 덮어쓰기. (실패 경로 notes 는 그대로 — 디버그 단서).
+- emit("cached") payload 에 `digest` 동봉 → SSE 스트림 시청자가 done 이벤트 전에도 결과 요약을 읽을 수 있음.
+- `LabSpec.digest` 신설, `lab_resolver._spec_from_mapping` 이 `spec.digest → mapping.notes` 순서로 fallback (PR9-I 이전에 만들어진 row 도 자동 호환).
+
+API 스키마:
+- `LabInfoOut.digest: str = ""` — `/sandbox/sessions/{id}` 응답의 `lab.digest` 로 노출. vulhub/generic lab 은 빈 문자열.
+
+frontend:
+- `LabInfo.digest: string` 타입 추가.
+- `SandboxPanel` 의 세션 카드에 `lab.digest` 가 비어있지 않으면 `<Sparkles>` 아이콘 + amber 라인으로 한 줄 표시 (target URL 위쪽). 일반 lab 에는 표시되지 않으므로 합성된 lab 인지 즉시 식별 가능.
+
+smoke 검증:
+```text
+$ docker compose exec backend python -c "from app.services.sandbox.synthesizer import _build_digest; print(_build_digest({...parsed...}, attempts=2, sha='deadbeefcafef00d'))"
+AI 합성 — python:3.11-slim 베이스, GET /reflect 의 query:msg 에 html-reflect 페이로드 주입 (attempts=2, sha=deadbeefcafef00d)
+
+# cached_hit 경로 — POST /synthesize 가 spec.digest 를 그대로 노출
+$ curl -s -X POST .../sandbox/synthesize -d '{"cveId":"CVE-2026-0081"}' | jq '.spec.digest'
+"AI 합성 — python:3.11-slim 베이스, GET /reflect 의 query:msg 에 html-reflect 페이로드 주입 (attempts=2, sha=deadbeef)"
+
+# 세션 응답에도 lab.digest 가 그대로 옴
+$ curl -s .../sandbox/sessions/<id> | jq '.lab.digest'
+"AI 합성 — python:3.11-slim 베이스, GET /reflect 의 query:msg 에 html-reflect 페이로드 주입 (attempts=2, sha=deadbeef)"
+```
+
+OpenAPI: `LabInfoOut.properties` 에 `digest` 필드 등록 확인. `next build` 통과 (타입 호환성 OK).
+
+---
+
 ## Step 9 — 다음 PR 예고
 
-PR 9-I (예정): 합성 결과 다이제스트 — `cve_lab_mappings.notes` 가 사람이 읽을 만한 텍스트 한 문장이 되도록 emit("cached") 시 spec 요약(언어/베이스 이미지/주입 지점) 자동 생성, 그 요약을 `/cves/{id}/sandbox` 응답·CVE 상세 페이지 sidebar 에 노출.
+PR 9-J (예정): 합성된 lab 의 사용자 평가 (👍/👎) 를 mapping row 에 적재 → 캐시 신뢰도가 낮은 lab 은 다음 resolve 때 자동 재합성 후보로 격하 (단, 24h cooldown 우회는 명시 동의 시에만).
 
 ---
 

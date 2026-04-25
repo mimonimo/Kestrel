@@ -266,7 +266,33 @@ def _injection_point_from(parsed: dict) -> InjectionPoint:
     )
 
 
-def _spec_dict_for_mapping(parsed: dict, image_tag: str) -> dict:
+_BASE_IMAGE_RE = re.compile(r"^\s*FROM\s+([^\s]+)", re.IGNORECASE | re.MULTILINE)
+
+
+def _base_image(dockerfile: str) -> str:
+    """Pull the first ``FROM <image>`` out of the Dockerfile for the digest."""
+    m = _BASE_IMAGE_RE.search(dockerfile or "")
+    return m.group(1) if m else "(unknown)"
+
+
+def _build_digest(parsed: dict, *, attempts: int, sha: str) -> str:
+    """Human-readable one-liner describing this synthesized lab.
+
+    Surfaced on the CVE detail sidebar so a user picking between the
+    "vulhub vs synthesized" badges has some idea *what* the AI built —
+    base image, injection shape, response kind. Pure formatting, no I/O.
+    """
+    ip = _injection_point_from(parsed)
+    base = _base_image(parsed.get("dockerfile", ""))
+    return (
+        f"AI 합성 — {base} 베이스, "
+        f"{ip.method} {ip.path} 의 {ip.location}:{ip.parameter} 에 "
+        f"{ip.response_kind} 페이로드 주입 "
+        f"(attempts={attempts}, sha={sha})"
+    )
+
+
+def _spec_dict_for_mapping(parsed: dict, image_tag: str, *, digest: str = "") -> dict:
     """Build the JSONB blob that ``lab_resolver._spec_from_mapping`` reads."""
     ip = _injection_point_from(parsed)
     return {
@@ -288,6 +314,7 @@ def _spec_dict_for_mapping(parsed: dict, image_tag: str) -> dict:
         ],
         "build_hint": f"kestrel synthesized — image '{image_tag}' built from cached Dockerfile",
         "success_indicator": str(parsed["success_indicator"]),
+        "digest": digest,
     }
 
 
@@ -536,7 +563,8 @@ async def synthesize(
                 continue
             await emit("build_done", "이미지 빌드 완료", {"imageTag": image_tag})
 
-            spec_dict = _spec_dict_for_mapping(parsed, image_tag)
+            digest = _build_digest(parsed, attempts=attempts, sha=sha)
+            spec_dict = _spec_dict_for_mapping(parsed, image_tag, digest=digest)
             spec = LabSpec(
                 run_kind="image",
                 lab_kind=f"synthesized/{cve_id}/{sha}",
@@ -593,7 +621,7 @@ async def synthesize(
                     known_good_payload=payload_dict,
                     verified=True,
                     last_verified_at=datetime.now(timezone.utc),
-                    notes=f"AI 합성, attempts={attempts}, sha={sha}",
+                    notes=digest,
                 )
                 db.add(mapping)
             else:
@@ -602,7 +630,7 @@ async def synthesize(
                 mapping.known_good_payload = payload_dict
                 mapping.verified = True
                 mapping.last_verified_at = datetime.now(timezone.utc)
-                mapping.notes = f"AI 합성, attempts={attempts}, sha={sha}"
+                mapping.notes = digest
             await db.flush()
             await db.commit()
             log.info(
@@ -614,7 +642,7 @@ async def synthesize(
             await emit(
                 "cached",
                 "매핑 row 저장 — 이후 호출은 캐시 사용",
-                {"mappingId": mapping.id, "imageTag": image_tag},
+                {"mappingId": mapping.id, "imageTag": image_tag, "digest": digest},
             )
             return SynthesisResult(
                 cve_id=cve_id,
