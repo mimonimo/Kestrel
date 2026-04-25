@@ -999,7 +999,58 @@ OpenAPI: `LabInfoOut.properties` 에 `digest` 필드 등록 확인. `next build`
 
 ## Step 9 — 다음 PR 예고
 
-PR 9-J (예정): 합성된 lab 의 사용자 평가 (👍/👎) 를 mapping row 에 적재 → 캐시 신뢰도가 낮은 lab 은 다음 resolve 때 자동 재합성 후보로 격하 (단, 24h cooldown 우회는 명시 동의 시에만).
+PR 9-K (예정): 합성 결과 증분 학습 — 같은 CVE 에 대해 여러 번 합성을 시도해 가장 높은 평가를 받은 spec 만 보존하고 나머지는 GC. 또는 평가 데이터를 LLM 프롬프트에 피드백하는 self-refinement 루프.
+
+---
+
+### PR 9-J — 합성 lab 사용자 평가(👍/👎) 적재 + 신뢰도 낮은 lab 자동 격하 ✅
+
+> 합성된 lab 이 매번 똑같이 잘 동작하지 않는 현실을 드러내기 위함. 사용자가 실패한 lab 을 👎 로 표시하면 매핑이 격하되어 다음 호출에서 자동 선택되지 않고, 사용자는 새로 합성으로 시도하라는 안내를 받음.
+
+**스키마 (alembic 0014_lab_feedback)**
+- `cve_lab_mappings.feedback_up`, `feedback_down` (INT NOT NULL DEFAULT 0) — 비정규화 카운터. resolver 가 join 없이 O(1) 격하 판정용.
+- `cve_lab_feedback` (id, mapping_id FK CASCADE, client_id VARCHAR(64), vote VARCHAR(8), note TEXT, created_at, updated_at, UNIQUE(mapping_id, client_id)) — 익명 클라이언트별 1표.
+
+**Resolver — `is_degraded(mapping)`**
+- `down >= 2 AND down >= up + 2` — 최소 두 명의 별개 클라이언트가 👎 한 lab 만 격하. 한 명의 grumpy session 이 lab 을 죽일 수 없음.
+- `resolve_lab` 의 synthesized 분기에서 격하된 mapping 은 skip → 다음 단계(generic / 합성 동의 게이트)로 자연스럽게 넘어감. 24h cooldown 은 그대로 유지 — 우회는 `forceRegenerate=true` 명시 동의 시에만.
+
+**API**
+- `POST /sandbox/sessions/{id}/feedback` — `{vote: "up"|"down", note?}`. `X-Client-Id` 헤더 필수 (북마크/티켓/커뮤니티와 동일 익명 컨벤션). 한 클라이언트가 여러 번 누르면 같은 row 를 upsert. 응답 후 `feedback_up/down` 을 SELECT GROUP BY 로 재계산해 비정규화 카운터에 반영 (drift 방지).
+- 405가 아닌 명확한 에러: vulhub/generic lab 에 투표하면 409 (격하 대상 아님), bad vote → 422, 헤더 누락 → 400.
+- `start_session` 에 새 422 `lab_degraded` 코드 추가 — 격하된 합성 lab 이 존재할 때만 표시. payload 는 `feedbackUp/feedbackDown/canSynthesize` 포함해 UI 가 별도 안내 배너를 그릴 수 있게 함.
+- `LabInfoOut` 에 `feedbackUp/feedbackDown/myVote/degraded` 추가. `_session_to_out` 가 GET 시에도 client_id 헤더로 myVote 를 surface. resolver 가 격하 mapping 을 skip 하더라도 직접 lookup fallback 으로 lab 정보를 계속 표시 (이미 살아 있는 세션은 무엇이 돌아가는지 보여줘야 함).
+
+**Frontend (`SandboxPanel.tsx`)**
+- `LabFeedbackButtons` — 합성 lab 일 때만 lab 카드 안에 👍/👎 카운트 + 토글 상태로 표시. 한 번 더 누르면 다른 vote 로 전환된다는 힌트 표시.
+- `lab_degraded` 코드 전용 빨강 배너 — 현재 평가 카운트와 함께 "새로 합성으로 시도" 버튼. 기존 `no_lab` 노란 배너와 색·문구로 구분.
+- 진행 중인 세션이 격하되면 lab 카드에 `ShieldAlert` 줄로 안내 ("다음 시작 시 다른 매핑이 선택됩니다").
+- API helper `submitLabFeedback` + `clientHeaders()` 일관 적용 (start/get/exec 도 X-Client-Id 헤더 추가 — myVote 표시 위함).
+
+**검증**
+```
+# OpenAPI
+GET /openapi.json → /api/v1/sandbox/sessions/{id}/feedback 등록 확인
+LabInfoOut: digest, feedbackUp, feedbackDown, myVote, degraded
+LabFeedbackResponse: mappingId, feedbackUp, feedbackDown, myVote, degraded
+
+# 카운터/임계치/upsert 동작
+voter A down → up=0/down=1 degraded=false
+voter B down → up=0/down=2 degraded=true   ← 임계 통과
+voter A 재투표 up → up=1/down=1 degraded=false   (row 업서트, 중복 row 없음)
+
+# resolver 격하 mapping 회피
+POST /sandbox/sessions {cveId: ...} → 422 lab_degraded
+{"code":"lab_degraded","canSynthesize":true,"feedbackUp":0,"feedbackDown":2,...}
+
+# GET fallback — resolver 가 격하시킨 mapping 도 직접 lookup 으로 lab 정보 유지
+GET /sandbox/sessions/<id>  X-Client-Id: voter-aaa
+→ lab.degraded=true, lab.myVote="down", lab.digest 그대로
+다른 client / 헤더 없음 → myVote 만 다르게 (down / null)
+
+# 거부 케이스
+bad vote → 422, 헤더 누락 → 400
+```
 
 ---
 

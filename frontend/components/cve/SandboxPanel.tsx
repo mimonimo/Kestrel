@@ -8,9 +8,12 @@ import {
   Loader2,
   Play,
   RefreshCw,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Square,
+  ThumbsDown,
+  ThumbsUp,
   XCircle,
 } from "lucide-react";
 import { useRef, useState } from "react";
@@ -22,6 +25,7 @@ import {
   ApiError,
   api,
   isNoLabDetail,
+  type LabFeedbackResponse,
   type LabSourceKind,
   type NoLabDetail,
   type SandboxExecResponse,
@@ -303,6 +307,31 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
     },
   });
 
+  const feedback = useMutation({
+    mutationFn: (vote: "up" | "down") =>
+      api.submitLabFeedback(sessionId!, { vote }),
+    onSuccess: (r: LabFeedbackResponse) => {
+      // Patch the cached session in place — saves a round-trip and keeps the
+      // toggled-state visible immediately after the click.
+      qc.setQueryData(
+        ["sandbox-session", sessionId],
+        (prev: SandboxSession | undefined) =>
+          prev && prev.lab
+            ? {
+                ...prev,
+                lab: {
+                  ...prev.lab,
+                  feedbackUp: r.feedbackUp,
+                  feedbackDown: r.feedbackDown,
+                  myVote: r.myVote,
+                  degraded: r.degraded,
+                },
+              }
+            : prev,
+      );
+    },
+  });
+
   const session = sessionQuery.data;
   const startError = start.error as Error | undefined;
   const execError = exec.error as Error | undefined;
@@ -410,6 +439,51 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
             </div>
           )}
 
+        {/* Degraded gate: existing synthesized lab was voted down enough
+            times that the resolver refuses it. Offer fresh re-synthesis. */}
+        {noLabDetail &&
+          noLabDetail.code === "lab_degraded" &&
+          !synthRunning &&
+          synthLog.length === 0 && (
+            <div className="space-y-2 rounded border border-rose-500/30 bg-rose-500/10 p-3 text-xs">
+              <div className="flex items-center gap-1.5 text-rose-200">
+                <ShieldAlert className="h-3.5 w-3.5" />
+                <span className="font-medium">
+                  사용자 평가로 격하된 lab 입니다
+                </span>
+              </div>
+              <p className="text-rose-100/90">{noLabDetail.message}</p>
+              <p className="text-rose-100/70">
+                현재 평가 — 👍 {noLabDetail.feedbackUp ?? 0} · 👎{" "}
+                {noLabDetail.feedbackDown ?? 0}. 이 매핑은 더 이상 자동
+                선택되지 않습니다. 새로 합성하면 새 매핑(빈 평가)으로
+                대체됩니다.
+              </p>
+              <div className="flex gap-2 pt-1">
+                {noLabDetail.canSynthesize && (
+                  <Button
+                    type="button"
+                    onClick={startSynthesis}
+                    size="md"
+                    className="bg-amber-500 text-black hover:bg-amber-400"
+                  >
+                    <Sparkles className="mr-1.5 h-4 w-4" />
+                    새로 합성으로 시도
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  onClick={() => start.reset()}
+                  size="md"
+                  variant="ghost"
+                  className="text-rose-200/70"
+                >
+                  취소
+                </Button>
+              </div>
+            </div>
+          )}
+
         {(synthRunning || synthLog.length > 0 || synthError) && (
           <SynthesisTimeline
             log={synthLog}
@@ -467,6 +541,24 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                   <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-amber-300" />
                   <span>{session.lab.digest}</span>
                 </p>
+              )}
+              {session.lab?.degraded && (
+                <p className="mt-2 flex items-start gap-1.5 text-rose-300">
+                  <ShieldAlert className="mt-0.5 h-3 w-3 shrink-0" />
+                  <span>
+                    사용자 평가로 격하된 lab 입니다 — 다음 시작 시 다른 매핑이
+                    선택됩니다.
+                  </span>
+                </p>
+              )}
+              {session.lab && session.labSource === "synthesized" && (
+                <LabFeedbackButtons
+                  up={session.lab.feedbackUp}
+                  down={session.lab.feedbackDown}
+                  myVote={session.lab.myVote}
+                  pending={feedback.isPending}
+                  onVote={(v) => feedback.mutate(v)}
+                />
               )}
               {session.targetUrl && (
                 <p className="mt-2 break-all font-mono text-neutral-400">
@@ -667,6 +759,63 @@ function SynthesisTimeline({
         <p className="text-[11px] text-amber-200/60">
           빌드 중 연결을 끊어도 백엔드 합성은 계속 진행됩니다 (캐시까지 완료).
         </p>
+      )}
+    </div>
+  );
+}
+
+function LabFeedbackButtons({
+  up,
+  down,
+  myVote,
+  pending,
+  onVote,
+}: {
+  up: number;
+  down: number;
+  myVote: "up" | "down" | null;
+  pending: boolean;
+  onVote: (v: "up" | "down") => void;
+}) {
+  return (
+    <div className="mt-2 flex items-center gap-2 text-[11px] text-neutral-400">
+      <span className="uppercase tracking-wide text-neutral-500">
+        이 lab 정확도
+      </span>
+      <button
+        type="button"
+        onClick={() => onVote("up")}
+        disabled={pending}
+        className={cn(
+          "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 transition",
+          myVote === "up"
+            ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-200"
+            : "border-neutral-700 hover:border-emerald-500/40 hover:text-emerald-200",
+          pending && "opacity-50",
+        )}
+        title="페이로드/주입 지점이 CVE 와 정확히 맞다"
+      >
+        <ThumbsUp className="h-3 w-3" />
+        {up}
+      </button>
+      <button
+        type="button"
+        onClick={() => onVote("down")}
+        disabled={pending}
+        className={cn(
+          "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 transition",
+          myVote === "down"
+            ? "border-rose-500/60 bg-rose-500/15 text-rose-200"
+            : "border-neutral-700 hover:border-rose-500/40 hover:text-rose-200",
+          pending && "opacity-50",
+        )}
+        title="잘못된 lab — 다른 CVE를 흉내내거나 동작하지 않음"
+      >
+        <ThumbsDown className="h-3 w-3" />
+        {down}
+      </button>
+      {myVote && (
+        <span className="text-neutral-500">한 번 더 누르면 변경됩니다</span>
       )}
     </div>
   );

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import AsyncIterator
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,12 +16,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.logging import get_logger
-from app.models import CveLabMapping, LabSourceKind, SandboxSession, SandboxStatus, Vulnerability
+from app.models import (
+    CveLabFeedback,
+    CveLabMapping,
+    LabSourceKind,
+    SandboxSession,
+    SandboxStatus,
+    Vulnerability,
+)
 from app.schemas.sandbox import (
     AdaptedPayloadOut,
     EvictedImageOut,
     ExchangeOut,
     InjectionPointOut,
+    LabFeedbackRequest,
+    LabFeedbackResponse,
     LabInfoOut,
     RunVerdictOut,
     SandboxExecRequest,
@@ -47,7 +56,7 @@ from app.services.sandbox import (
     synthesize,
     sync_vulhub,
 )
-from app.services.sandbox.lab_resolver import LabSpec
+from app.services.sandbox.lab_resolver import LabSpec, _spec_from_mapping, is_degraded
 from app.services.sandbox.manager import (
     LabImageMissing,
     SandboxError,
@@ -63,7 +72,9 @@ router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 log = get_logger(__name__)
 
 
-def _spec_to_lab_out(spec: LabSpec) -> LabInfoOut:
+def _spec_to_lab_out(
+    spec: LabSpec, *, my_vote: str | None = None, degraded: bool = False
+) -> LabInfoOut:
     return LabInfoOut(
         kind=spec.lab_kind,
         description=spec.description,
@@ -81,7 +92,35 @@ def _spec_to_lab_out(spec: LabSpec) -> LabInfoOut:
             for ip in spec.injection_points
         ],
         digest=spec.digest,
+        feedback_up=spec.feedback_up,
+        feedback_down=spec.feedback_down,
+        my_vote=my_vote,
+        degraded=degraded,
     )
+
+
+async def _my_vote(
+    db: AsyncSession, mapping_id: int | None, client_id: str | None
+) -> str | None:
+    """Look up the caller's vote on a mapping, if any. Returns None when
+    no client_id was supplied or no vote row exists."""
+    if mapping_id is None or not client_id:
+        return None
+    fb = await db.scalar(
+        select(CveLabFeedback).where(
+            CveLabFeedback.mapping_id == mapping_id,
+            CveLabFeedback.client_id == client_id,
+        )
+    )
+    return fb.vote if fb is not None else None
+
+
+def _degraded_from_counts(up: int, down: int) -> bool:
+    """Mirror of resolver.is_degraded that works from raw counts. Used
+    when surfacing a session whose mapping would *now* be degraded —
+    even though the resolver let it through earlier (e.g. user voted it
+    down after starting the session)."""
+    return down >= 2 and down >= up + 2
 
 
 async def _session_to_out(
@@ -89,6 +128,8 @@ async def _session_to_out(
     row: SandboxSession,
     *,
     spec: LabSpec | None = None,
+    mapping_id: int | None = None,
+    client_id: str | None = None,
 ) -> SandboxSessionOut:
     """Build the API view of a session row.
 
@@ -98,7 +139,9 @@ async def _session_to_out(
     """
     lab_out: LabInfoOut | None = None
     if spec is not None:
-        lab_out = _spec_to_lab_out(spec)
+        my_vote = await _my_vote(db, mapping_id, client_id)
+        degraded = _degraded_from_counts(spec.feedback_up, spec.feedback_down)
+        lab_out = _spec_to_lab_out(spec, my_vote=my_vote, degraded=degraded)
     elif row.vulnerability_id is not None:
         vuln = await db.scalar(
             select(Vulnerability).where(Vulnerability.id == row.vulnerability_id)
@@ -106,7 +149,34 @@ async def _session_to_out(
         if vuln is not None:
             resolved = await resolve_lab(db, vuln, forced_kind=row.lab_kind)
             if resolved is not None:
-                lab_out = _spec_to_lab_out(resolved.spec)
+                my_vote = await _my_vote(db, resolved.mapping_id, client_id)
+                degraded = _degraded_from_counts(
+                    resolved.spec.feedback_up, resolved.spec.feedback_down
+                )
+                lab_out = _spec_to_lab_out(
+                    resolved.spec, my_vote=my_vote, degraded=degraded
+                )
+            else:
+                # Resolver refused (e.g. synthesized mapping was degraded
+                # after the session started). Fall back to a direct mapping
+                # lookup so the panel can still render the lab info + the
+                # degraded badge — the session is alive, the user wants to
+                # see what it's running.
+                mapping = await db.scalar(
+                    select(CveLabMapping).where(
+                        CveLabMapping.cve_id == vuln.cve_id,
+                        CveLabMapping.kind == row.lab_source,
+                    )
+                )
+                if mapping is not None:
+                    fallback_spec = _spec_from_mapping(mapping)
+                    my_vote = await _my_vote(db, mapping.id, client_id)
+                    degraded = _degraded_from_counts(
+                        fallback_spec.feedback_up, fallback_spec.feedback_down
+                    )
+                    lab_out = _spec_to_lab_out(
+                        fallback_spec, my_vote=my_vote, degraded=degraded
+                    )
 
     return SandboxSessionOut(
         id=row.id,
@@ -384,7 +454,9 @@ async def synthesize_gc(
     status_code=status.HTTP_201_CREATED,
 )
 async def start_session(
-    body: SandboxStartRequest, db: AsyncSession = Depends(get_db)
+    body: SandboxStartRequest,
+    db: AsyncSession = Depends(get_db),
+    x_client_id: str | None = Header(default=None, alias="X-Client-Id"),
 ) -> SandboxSessionOut:
     settings = get_settings()
     # Opportunistic reap of stale containers — keeps capacity honest without
@@ -420,6 +492,32 @@ async def start_session(
                         "AI 합성으로도 이 CVE 의 lab 을 만들지 못했습니다. "
                         "/sandbox/synthesize 로 직접 호출하면 빌드 로그와 응답 본문을 "
                         "확인할 수 있습니다."
+                    ),
+                },
+            )
+        # Distinguish "never had a lab" from "lab was deliberately demoted
+        # by user feedback" — the second deserves an explanation, not the
+        # generic onboarding text.
+        existing_synth = await db.scalar(
+            select(CveLabMapping).where(
+                CveLabMapping.cve_id == body.cve_id,
+                CveLabMapping.kind == LabSourceKind.SYNTHESIZED,
+                CveLabMapping.verified.is_(True),
+            )
+        )
+        if existing_synth is not None and is_degraded(existing_synth):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "lab_degraded",
+                    "canSynthesize": True,
+                    "feedbackUp": int(existing_synth.feedback_up or 0),
+                    "feedbackDown": int(existing_synth.feedback_down or 0),
+                    "message": (
+                        "이 CVE 의 합성된 lab 이 사용자 평가로 격하되었습니다 "
+                        f"(👍 {existing_synth.feedback_up} / 👎 {existing_synth.feedback_down}). "
+                        "재합성을 원하면 attemptSynthesis=true 로 호출하세요. "
+                        "(24시간 cooldown 내라면 forceRegenerate=true 로 즉시 재시도)"
                     ),
                 },
             )
@@ -492,7 +590,13 @@ async def start_session(
 
     await db.commit()
     await db.refresh(session_row)
-    return await _session_to_out(db, session_row, spec=resolved.spec)
+    return await _session_to_out(
+        db,
+        session_row,
+        spec=resolved.spec,
+        mapping_id=resolved.mapping_id,
+        client_id=x_client_id,
+    )
 
 
 @router.get(
@@ -501,7 +605,9 @@ async def start_session(
     response_model_by_alias=True,
 )
 async def get_session(
-    session_id: UUID, db: AsyncSession = Depends(get_db)
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    x_client_id: str | None = Header(default=None, alias="X-Client-Id"),
 ) -> SandboxSessionOut:
     row = await db.scalar(
         select(SandboxSession).where(SandboxSession.id == session_id)
@@ -516,7 +622,7 @@ async def get_session(
     ):
         row.status = SandboxStatus.EXPIRED
         await db.commit()
-    return await _session_to_out(db, row)
+    return await _session_to_out(db, row, client_id=x_client_id)
 
 
 @router.delete(
@@ -549,6 +655,7 @@ async def exec_payload(
     session_id: UUID,
     body: SandboxExecRequest,
     db: AsyncSession = Depends(get_db),
+    x_client_id: str | None = Header(default=None, alias="X-Client-Id"),
 ) -> SandboxExecResponse:
     row = await db.scalar(
         select(SandboxSession).where(SandboxSession.id == session_id)
@@ -675,7 +782,13 @@ async def exec_payload(
     await db.refresh(row)
 
     return SandboxExecResponse(
-        session=await _session_to_out(db, row, spec=resolved.spec),
+        session=await _session_to_out(
+            db,
+            row,
+            spec=resolved.spec,
+            mapping_id=resolved.mapping_id,
+            client_id=x_client_id,
+        ),
         adapted=AdaptedPayloadOut(
             method=adapted.method,
             path=adapted.path,
@@ -696,4 +809,120 @@ async def exec_payload(
             next_step=verdict.next_step,
             heuristic_signal=verdict.heuristic_signal,
         ),
+    )
+
+
+_VOTE_VALUES = {"up", "down"}
+
+
+@router.post(
+    "/sessions/{session_id}/feedback",
+    response_model=LabFeedbackResponse,
+    response_model_by_alias=True,
+)
+async def submit_feedback(
+    session_id: UUID,
+    body: LabFeedbackRequest,
+    db: AsyncSession = Depends(get_db),
+    x_client_id: str | None = Header(default=None, alias="X-Client-Id"),
+) -> LabFeedbackResponse:
+    """Vote on the synthesized lab tied to *session_id*.
+
+    Identity is the anonymous ``X-Client-Id`` header (same convention as
+    bookmarks/tickets/community). Re-voting upserts the same row in
+    ``cve_lab_feedback`` and recomputes the denormalized counters on the
+    mapping. Votes against vulhub / generic labs are refused — those
+    aren't subject to the trust gating, so a vote would be misleading.
+    """
+    if body.vote not in _VOTE_VALUES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"vote must be one of {sorted(_VOTE_VALUES)}",
+        )
+    if not x_client_id or len(x_client_id) > 64:
+        raise HTTPException(
+            status_code=400, detail="X-Client-Id header is required"
+        )
+
+    row = await db.scalar(
+        select(SandboxSession).where(SandboxSession.id == session_id)
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+    if row.lab_source != LabSourceKind.SYNTHESIZED:
+        raise HTTPException(
+            status_code=409,
+            detail="vulhub / generic lab 은 평가 대상이 아닙니다 — 합성 lab 만 평가 가능합니다.",
+        )
+    if row.vulnerability_id is None:
+        raise HTTPException(
+            status_code=409, detail="이 세션에 연결된 CVE 정보를 찾을 수 없습니다."
+        )
+
+    # The session's lab_kind embeds the CVE + spec hash; resolve back to
+    # the underlying mapping. We don't trust row.lab_kind alone because
+    # the mapping might have been re-synthesized since this session
+    # started — current mapping is what counts for the trust gate.
+    vuln = await db.scalar(
+        select(Vulnerability).where(Vulnerability.id == row.vulnerability_id)
+    )
+    mapping = (
+        await db.scalar(
+            select(CveLabMapping).where(
+                CveLabMapping.cve_id == vuln.cve_id,
+                CveLabMapping.kind == LabSourceKind.SYNTHESIZED,
+            )
+        )
+        if vuln is not None
+        else None
+    )
+    if mapping is None:
+        raise HTTPException(
+            status_code=404, detail="평가할 합성 mapping 이 없습니다."
+        )
+
+    fb = await db.scalar(
+        select(CveLabFeedback).where(
+            CveLabFeedback.mapping_id == mapping.id,
+            CveLabFeedback.client_id == x_client_id,
+        )
+    )
+    if fb is None:
+        fb = CveLabFeedback(
+            mapping_id=mapping.id,
+            client_id=x_client_id,
+            vote=body.vote,
+            note=body.note,
+        )
+        db.add(fb)
+    else:
+        fb.vote = body.vote
+        fb.note = body.note
+
+    # Recompute denormalized counters from the source of truth (the
+    # feedback rows). This costs one extra SELECT but keeps drift
+    # impossible — important because the resolver reads these counters
+    # to decide ``is_degraded``.
+    await db.flush()
+    counts = await db.execute(
+        select(CveLabFeedback.vote, func.count())
+        .where(CveLabFeedback.mapping_id == mapping.id)
+        .group_by(CveLabFeedback.vote)
+    )
+    up = down = 0
+    for vote, n in counts.all():
+        if vote == "up":
+            up = int(n)
+        elif vote == "down":
+            down = int(n)
+    mapping.feedback_up = up
+    mapping.feedback_down = down
+    await db.commit()
+
+    return LabFeedbackResponse(
+        mapping_id=mapping.id,
+        feedback_up=up,
+        feedback_down=down,
+        my_vote=body.vote,
+        degraded=is_degraded(mapping),
     )

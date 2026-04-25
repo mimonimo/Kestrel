@@ -71,6 +71,11 @@ class LabSpec:
     # what shape of lab the AI built. Empty for vulhub / generic specs.
     digest: str = ""
 
+    # Per-mapping feedback tally (PR9-J). Only populated for specs derived
+    # from a mapping row — generic-class labs without a row stay at zero.
+    feedback_up: int = 0
+    feedback_down: int = 0
+
     def expected_image(self) -> str:
         """Best-effort image identifier for error messages."""
         return self.image or f"compose:{self.compose_path}#{self.target_service}"
@@ -146,6 +151,8 @@ def _spec_from_mapping(mapping: CveLabMapping) -> LabSpec:
         # ``notes`` column — older synthesized rows (pre-PR9-I) only stored
         # the digest there.
         digest=str(s.get("digest") or mapping.notes or ""),
+        feedback_up=int(mapping.feedback_up or 0),
+        feedback_down=int(mapping.feedback_down or 0),
     )
 
 
@@ -158,6 +165,26 @@ async def _find_mapping(
             CveLabMapping.kind == kind,
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# Trust gating
+# ---------------------------------------------------------------------------
+
+
+def is_degraded(mapping: CveLabMapping) -> bool:
+    """Return True when user feedback says this synthesized lab is broken
+    enough that we should refuse to spawn it on the regular path.
+
+    Heuristic kept deliberately simple: ≥2 down votes and downs strictly
+    exceed ups by ≥2. That requires at least two distinct users to flag a
+    lab and protects against a single grumpy session. The rule is read-
+    only here; the synthesizer's 24h cooldown still gates re-synthesis
+    even when ``attempt_synthesis=True`` arrives via the consent flow.
+    """
+    down = int(mapping.feedback_down or 0)
+    up = int(mapping.feedback_up or 0)
+    return down >= 2 and down >= up + 2
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +220,19 @@ async def resolve_lab(
         if mapping is None:
             continue
         if kind == LabSourceKind.SYNTHESIZED and not mapping.verified:
+            continue
+        # Trust gating (PR9-J): a synthesized lab with bad feedback is
+        # treated as if it didn't exist on the regular path. The chain
+        # continues so the caller naturally falls into the no_lab consent
+        # flow and can opt into re-synthesis.
+        if kind == LabSourceKind.SYNTHESIZED and is_degraded(mapping):
+            log.info(
+                "sandbox.resolve.degraded_skip",
+                cve_id=cve_id,
+                lab_kind=mapping.lab_kind,
+                feedback_up=mapping.feedback_up,
+                feedback_down=mapping.feedback_down,
+            )
             continue
         spec = _spec_from_mapping(mapping)
         log.info(

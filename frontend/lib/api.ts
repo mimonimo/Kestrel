@@ -300,6 +300,7 @@ export const api = {
   }) =>
     request<SandboxSession>(`/sandbox/sessions`, {
       method: "POST",
+      headers: clientHeaders(),
       body: JSON.stringify(body),
     }),
   synthesizeSandbox: (body: { cveId: string; forceRegenerate?: boolean }) =>
@@ -326,7 +327,9 @@ export const api = {
       body: JSON.stringify(body ?? {}),
     }),
   getSandbox: (sessionId: string) =>
-    request<SandboxSession>(`/sandbox/sessions/${encodeURIComponent(sessionId)}`),
+    request<SandboxSession>(`/sandbox/sessions/${encodeURIComponent(sessionId)}`, {
+      headers: clientHeaders(),
+    }),
   stopSandbox: (sessionId: string) =>
     request<void>(`/sandbox/sessions/${encodeURIComponent(sessionId)}`, {
       method: "DELETE",
@@ -337,7 +340,15 @@ export const api = {
   ) =>
     request<SandboxExecResponse>(
       `/sandbox/sessions/${encodeURIComponent(sessionId)}/exec`,
-      { method: "POST", body: JSON.stringify(body) },
+      { method: "POST", headers: clientHeaders(), body: JSON.stringify(body) },
+    ),
+  submitLabFeedback: (
+    sessionId: string,
+    body: { vote: "up" | "down"; note?: string | null },
+  ) =>
+    request<LabFeedbackResponse>(
+      `/sandbox/sessions/${encodeURIComponent(sessionId)}/feedback`,
+      { method: "POST", headers: clientHeaders(), body: JSON.stringify(body) },
     ),
 };
 
@@ -411,6 +422,16 @@ export interface LabInfo {
   // Empty for vulhub / generic labs; populated by the synthesizer with
   // a one-line summary (base image + injection shape).
   digest: string;
+  // Per-mapping vote tally — only meaningful for synthesized labs.
+  feedbackUp: number;
+  feedbackDown: number;
+  // The current client's previous vote on this mapping. null when
+  // never voted or when no client header was sent.
+  myVote: "up" | "down" | null;
+  // True when feedback ratio would currently cause the resolver to
+  // refuse this mapping. UI uses this to flag a session whose lab was
+  // voted down after starting.
+  degraded: boolean;
 }
 
 export interface SandboxLastRun {
@@ -570,15 +591,25 @@ export interface SynthesizeGcResponse {
 }
 
 export interface NoLabDetail {
-  code: "no_lab" | "synthesis_failed";
+  code: "no_lab" | "synthesis_failed" | "lab_degraded";
   canSynthesize?: boolean;
+  feedbackUp?: number;
+  feedbackDown?: number;
   message: string;
 }
 
 export function isNoLabDetail(detail: unknown): detail is NoLabDetail {
   if (!detail || typeof detail !== "object") return false;
   const code = (detail as { code?: unknown }).code;
-  return code === "no_lab" || code === "synthesis_failed";
+  return code === "no_lab" || code === "synthesis_failed" || code === "lab_degraded";
+}
+
+export interface LabFeedbackResponse {
+  mappingId: number;
+  feedbackUp: number;
+  feedbackDown: number;
+  myVote: "up" | "down" | null;
+  degraded: boolean;
 }
 
 export interface CommunityPost {

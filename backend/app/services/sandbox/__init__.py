@@ -10,6 +10,7 @@ from app.services.sandbox.classifier import classify_vulnerability
 from app.services.sandbox.lab_resolver import (
     LabSpec,
     ResolvedLab,
+    is_degraded,
     record_success_payload,
     resolve_lab,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "classify_vulnerability",
     "gc_synthesized_images",
     "get_lab",
+    "is_degraded",
     "reap_expired_sessions",
     "record_success_payload",
     "report_synthesized_cache",

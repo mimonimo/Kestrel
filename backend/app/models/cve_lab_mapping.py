@@ -3,7 +3,17 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -66,6 +76,15 @@ class CveLabMapping(Base):
         DateTime(timezone=True), nullable=True
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Per-mapping vote tally — denormalized from cve_lab_feedback so the
+    # resolver can decide ``degraded?`` in O(1). Kept in sync by the
+    # feedback endpoint after every upsert.
+    feedback_up: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    feedback_down: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -79,4 +98,39 @@ class CveLabMapping(Base):
     __table_args__ = (
         UniqueConstraint("cve_id", "kind", name="uq_cve_lab_mappings_cve_kind"),
         Index("ix_cve_lab_mappings_kind_verified", "kind", "verified"),
+    )
+
+
+class CveLabFeedback(Base):
+    """One vote per (mapping, client). Re-voting upserts in place."""
+
+    __tablename__ = "cve_lab_feedback"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mapping_id: Mapped[int] = mapped_column(
+        ForeignKey("cve_lab_mappings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Anonymous client identity — same `X-Client-Id` header bookmarks /
+    # tickets / community use. No auth → opaque UUID is the only signal.
+    client_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    # 'up' | 'down'. Kept as a short string (not an enum) so we can extend
+    # to e.g. 'flag' later without a migration.
+    vote: Mapped[str] = mapped_column(String(8), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "mapping_id", "client_id", name="uq_lab_feedback_mapping_client"
+        ),
     )

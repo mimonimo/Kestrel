@@ -37,6 +37,18 @@ class LabInfoOut(CamelModel):
     # One-line summary of how this lab was put together (base image,
     # injection shape, ...). Empty unless the synthesizer wrote one.
     digest: str = ""
+    # Per-mapping vote tally (synthesized labs only). Always present so the
+    # UI can render a stable layout — for vulhub/generic labs this is just
+    # ``{0,0}`` and the buttons stay hidden.
+    feedback_up: int = 0
+    feedback_down: int = 0
+    # Caller's previous vote on this mapping (so the UI can show the
+    # toggled state). None when never voted or when no client header.
+    my_vote: str | None = None
+    # True when bad feedback caused the resolver to refuse this mapping
+    # on the regular path. Surfaced so the UI can explain *why* the user
+    # is being asked to consent to re-synthesis.
+    degraded: bool = False
 
 
 class SandboxSessionOut(CamelModel):
@@ -168,6 +180,21 @@ class SynthesizeCacheEntryOut(CamelModel):
     last_verified_at: datetime | None
     created_at: datetime
     age_days: int
+
+
+class LabFeedbackRequest(CamelModel):
+    # 'up' = the lab worked as expected; 'down' = lab is broken /
+    # misleading. Anything else → 422.
+    vote: str = Field(min_length=2, max_length=8)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class LabFeedbackResponse(CamelModel):
+    mapping_id: int
+    feedback_up: int
+    feedback_down: int
+    my_vote: str | None
+    degraded: bool
 
 
 class SynthesizeCacheReport(CamelModel):
