@@ -23,6 +23,8 @@ from app.schemas.sandbox import (
     SandboxExecResponse,
     SandboxSessionOut,
     SandboxStartRequest,
+    SynthesizeRequest,
+    SynthesizeResponse,
     VulhubSyncResponse,
 )
 from app.services.ai_analyzer import analyze_vulnerability
@@ -31,6 +33,7 @@ from app.services.sandbox import (
     reap_expired_sessions,
     record_success_payload,
     resolve_lab,
+    synthesize,
     sync_vulhub,
 )
 from app.services.sandbox.lab_resolver import LabSpec
@@ -142,6 +145,47 @@ async def vulhub_sync(db: AsyncSession = Depends(get_db)) -> VulhubSyncResponse:
         upserted=stats.upserted,
         skipped=stats.skipped,
         errors=stats.errors[:50],  # cap so we don't return megabytes
+    )
+
+
+@router.post(
+    "/synthesize",
+    response_model=SynthesizeResponse,
+    response_model_by_alias=True,
+)
+async def synthesize_lab(
+    body: SynthesizeRequest, db: AsyncSession = Depends(get_db)
+) -> SynthesizeResponse:
+    """AI-synthesize a lab for *cve_id* and verify it.
+
+    On success, the resulting ``cve_lab_mappings(kind=synthesized)`` row is
+    visible to the resolver chain and future sandbox sessions for this CVE
+    will use it automatically (vulhub still wins if both exist).
+
+    Failures (LLM error, build error, indicator missing in response) return
+    HTTP 200 with ``verified=false`` and an ``error`` string — the caller can
+    inspect ``buildLogTail`` / ``responseBodyPreview`` to decide whether to
+    retry. We deliberately do not raise so the UI can render the diagnostics.
+    """
+    vuln = await db.scalar(
+        select(Vulnerability).where(Vulnerability.cve_id == body.cve_id)
+    )
+    if vuln is None:
+        raise HTTPException(status_code=404, detail=f"{body.cve_id} not found")
+
+    result = await synthesize(db, vuln, force_regenerate=body.force_regenerate)
+    return SynthesizeResponse(
+        cve_id=result.cve_id,
+        image_tag=result.image_tag,
+        verified=result.verified,
+        mapping_id=result.mapping_id,
+        attempts=result.attempts,
+        error=result.error,
+        spec=result.spec_dict,
+        payload=result.payload,
+        build_log_tail=result.build_log_tail,
+        response_status=result.response_status,
+        response_body_preview=result.response_body_preview,
     )
 
 

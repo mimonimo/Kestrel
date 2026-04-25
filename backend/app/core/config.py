@@ -74,6 +74,18 @@ class Settings(BaseSettings):
     # daemon at the same path. Override only if you know what you're doing.
     sandbox_override_dir: str = ""  # empty → resolved to <vulhub_repo_path>/.kestrel-overrides
 
+    # ---- AI lab synthesizer (PR9-D) ----------------------------------
+    # The synthesizer asks the configured LLM to produce a CVE-specific
+    # reproducer (Dockerfile + app code + injection point + success
+    # indicator), builds it into a docker image, runs it once to verify
+    # the synthesized payload actually triggers, and only on success
+    # caches the mapping. All defaults below keep the feature opt-in.
+    sandbox_syn_image_prefix: str = "kestrel-syn"
+    sandbox_syn_build_dir: str = ""  # empty → /tmp/kestrel-syn-builds
+    sandbox_syn_build_timeout_seconds: int = 240
+    sandbox_syn_verify_timeout_seconds: int = 60
+    sandbox_syn_max_attempts: int = 1
+
     # Observability (모두 옵셔널 — 미설정 시 코드 경로 자체를 건너뜀)
     sentry_dsn: str | None = None
     sentry_traces_sample_rate: float = 0.1

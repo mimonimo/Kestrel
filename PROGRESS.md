@@ -616,15 +616,84 @@ $ Tomcat compose-mode 세션 생성 → tomcat-1 + sandbox_net 부착 → DELETE
 
 ---
 
+### Step 9-D — AI lab 합성기 (Synthesizer) ✅ 완료
+
+vulhub 에 없는 CVE 에 대해 LLM 이 직접 reproducer Dockerfile + 앱 코드 + 페이로드 + 성공 지표를 생성, 빌드 → 격리 네트워크에서 한 번 트리거 → 성공 지표가 응답에 보이면 `cve_lab_mappings(kind=synthesized, verified=true)` 로 캐시. 검증 실패는 캐시하지 않음.
+
+#### 1. 새 파일 / 변경 파일
+
+- `backend/app/services/sandbox/synthesizer.py` (신규)
+  - `synthesize(db, vuln)` — LLM 호출 → JSON 파싱 → 빌드 컨텍스트 stage → `manager.build_image` → `start_lab` + `proxy_request` 로 검증 → 성공 시 `cve_lab_mappings` 업서트 + `known_good_payload` 미리 채움 → 실패 시 image 제거.
+  - `_spec_hash` 로 sha16 산출 → image tag `kestrel-syn-<sha>:latest`. 동일 합성은 멱등.
+  - 빌드 컨텍스트는 `/tmp/kestrel-syn-builds/<sha>/`. 빌드 후 항상 정리.
+  - 보안: `files[].path` 절대경로/`..` 거부, internal-only network, mem 256MB·CPU 0.5 한도 그대로.
+- `backend/app/services/sandbox/manager.py`
+  - `build_image(context_dir, tag, timeout)` — 저수준 `cli.api.build` 사용해 스트리밍 로그 수집, 실패 시 마지막 30줄을 SandboxError 에 담음.
+  - `remove_image(tag)` — best-effort 정리.
+- `backend/app/api/v1/sandbox.py`
+  - `POST /api/v1/sandbox/synthesize` — body: `{cveId, forceRegenerate?}`. 검증 실패도 200 으로 진단 정보(`buildLogTail`, `responseBodyPreview`, `error`) 와 함께 반환 — UI 가 그대로 렌더할 수 있도록.
+- `backend/app/schemas/sandbox.py` — `SynthesizeRequest` / `SynthesizeResponse` (camelCase 응답).
+- `backend/app/services/sandbox/__init__.py` — `synthesize`, `SynthesisResult` export.
+- `backend/app/core/config.py` — synthesizer 전용 setting 5종 추가:
+  ```python
+  sandbox_syn_image_prefix: str = "kestrel-syn"
+  sandbox_syn_build_dir: str = ""  # → /tmp/kestrel-syn-builds
+  sandbox_syn_build_timeout_seconds: int = 240
+  sandbox_syn_verify_timeout_seconds: int = 60
+  sandbox_syn_max_attempts: int = 1
+  ```
+
+#### 2. LLM 프롬프트 디자인
+
+시스템: "취약 동작 그대로 재현하는 최소 Dockerfile + 앱 코드 + 트리거 페이로드 + 응답에 반드시 등장하는 성공 지표". 사이즈 제약 명시 (`python:3.11-slim` + flask 단일파일 / `node:20-alpine` + express 단일파일 수준). systemd/nginx/mysql 등 무거운 의존성 금지.
+
+JSON 스키마: `{description, dockerfile, files[], container_port, target_path, injection_point, payload_example, success_indicator}`.
+
+핵심 규칙: payload 를 그대로 보냈을 때 success_indicator 가 응답 본문에 **그대로** 등장해야 함 — exfil 채널 같은 것은 internal-only network 에서 동작하지 않으므로 echo back 형태로만 검증.
+
+#### 3. 자동 검증 루프
+
+```
+synthesize() →
+  call_llm → parse → validate schema →
+  stage build context (/tmp/kestrel-syn-builds/<sha>/) →
+  build_image(timeout=240s) →
+  start_lab(image-mode, internal sandbox net) →
+  wait_ready →
+  proxy_request(method/path/parameter/location/payload) →
+  indicator in body? →
+    yes: insert mapping(verified=True, known_good_payload=...) → 다음 sandbox session 부터 vulhub 다음 우선순위로 자동 사용.
+    no:  remove_image, no DB write, error 반환.
+  finally: stop_lab, cleanup build context.
+```
+
+#### 4. 검증 (스모크)
+
+```
+$ docker compose up -d --build backend
+$ curl http://localhost:8000/openapi.json | jq '.paths | keys[] | select(contains("sandbox"))'
+"/api/v1/sandbox/sessions"
+"/api/v1/sandbox/sessions/{session_id}"
+"/api/v1/sandbox/sessions/{session_id}/exec"
+"/api/v1/sandbox/synthesize"   ← 신규
+"/api/v1/sandbox/vulhub/sync"
+```
+
+스키마 형태 정상 (`cveId`, `forceRegenerate`, response: `imageTag`, `verified`, `mappingId`, `attempts`, `error`, `spec`, `payload`, `buildLogTail`, `responseStatus`, `responseBodyPreview`).
+
+End-to-end live 호출(LLM 토큰 소모) 은 Kali 배포본에서 active credential 로 실측 예정.
+
+---
+
 ## Step 9 — 다음 PR 예고
 
-### PR9-D (AI lab 합성) 작업 메모
+### PR9-E (resolver 자동 fallback + UI consent)
 
-- 입력: CVE 본문 + references(advisory/patch URL fetched) + 영향 vendor/product/version.
-- 출력: 최소 Flask/Node 앱 + Dockerfile.
-- 빌드는 BuildKit rootless builder 안에서.
-- 검증 루프: 빌드 성공 → 임시 컨테이너 띄움 → 합성과 함께 받은 success_indicator 가 응답에 보이는지 자동 확인 → 통과 시 `cve_lab_mappings(kind=synthesized, verified=true)` 로 인서트.
-- 캐시: 같은 CVE 재요청 시 동일 image tag 재사용.
+- `lab_resolver.resolve_lab` 에 4번째 단계로 "AI 합성 자동 실행" 추가. 단, 무조건 호출하지 말고:
+  - 사용자가 명시적으로 fallback 동의했을 때만 (UI 에서 "AI 합성으로 시도" 버튼).
+  - 한 CVE 당 일정 시간(예: 24h) 한 번만 자동 시도.
+- UI: sandbox 세션 시작 시 "이 CVE 는 등록된 lab 이 없습니다 — AI 합성으로 시도하시겠습니까?" 모달.
+- `cve_lab_mappings` 에 `last_synthesis_attempt_at` 컬럼 추가.
 
 ---
 

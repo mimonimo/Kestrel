@@ -66,6 +66,68 @@ def _short_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
+async def build_image(
+    *,
+    context_dir: str,
+    tag: str,
+    timeout_seconds: int = 300,
+) -> list[str]:
+    """Build a docker image from *context_dir* and tag it locally.
+
+    Returns the build-log lines (each entry's ``stream`` field, lightly
+    cleaned) so callers can include them in error messages without having
+    to re-run a failed build manually. Raises ``SandboxError`` on failure.
+    """
+
+    def _do() -> list[str]:
+        cli = _client()
+        # Use the lower-level API so we get streaming build logs even on
+        # failure; the high-level ``images.build`` swallows them inside the
+        # exception object.
+        try:
+            stream = cli.api.build(
+                path=context_dir,
+                tag=tag,
+                rm=True,
+                forcerm=True,
+                pull=True,
+                decode=True,
+                timeout=timeout_seconds,
+            )
+        except APIError as e:
+            raise SandboxError(f"docker build 시작 실패: {e}") from e
+        logs: list[str] = []
+        error: str | None = None
+        for chunk in stream:
+            if not isinstance(chunk, dict):
+                continue
+            if "stream" in chunk:
+                line = str(chunk["stream"]).rstrip()
+                if line:
+                    logs.append(line)
+            if "error" in chunk:
+                error = str(chunk["error"]).strip()
+        if error is not None:
+            tail = "\n".join(logs[-30:])
+            raise SandboxError(f"docker build 실패: {error}\n--- 마지막 빌드 로그 ---\n{tail}")
+        return logs
+
+    return await asyncio.to_thread(_do)
+
+
+async def remove_image(tag: str) -> None:
+    """Best-effort image removal — used to clean up failed-verify builds."""
+
+    def _do() -> None:
+        cli = _client()
+        try:
+            cli.images.remove(image=tag, force=True, noprune=False)
+        except (APIError, ImageNotFound):
+            pass
+
+    await asyncio.to_thread(_do)
+
+
 async def list_owned_containers() -> list[dict]:
     """Return raw container summaries owned by the sandbox feature."""
 

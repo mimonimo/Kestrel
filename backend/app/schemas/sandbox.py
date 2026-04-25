@@ -103,3 +103,25 @@ class VulhubSyncResponse(CamelModel):
     upserted: int
     skipped: int
     errors: list[str] = []
+
+
+class SynthesizeRequest(CamelModel):
+    cve_id: str = Field(min_length=1, max_length=32)
+    # When True, ignore any existing verified ``synthesized`` mapping and
+    # ask the LLM for a fresh build. Use sparingly — burns LLM tokens and
+    # docker build minutes.
+    force_regenerate: bool = False
+
+
+class SynthesizeResponse(CamelModel):
+    cve_id: str
+    image_tag: str
+    verified: bool
+    mapping_id: int | None = None
+    attempts: int
+    error: str | None = None
+    spec: dict | None = None
+    payload: dict | None = None
+    build_log_tail: list[str] = []
+    response_status: int | None = None
+    response_body_preview: str | None = None
