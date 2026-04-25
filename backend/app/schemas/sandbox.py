@@ -129,3 +129,26 @@ class SynthesizeResponse(CamelModel):
     build_log_tail: list[str] = []
     response_status: int | None = None
     response_body_preview: str | None = None
+
+
+class SynthesizeGcRequest(CamelModel):
+    # All optional — omit to use the configured defaults from settings.
+    target_total_mb: int | None = Field(default=None, ge=0)
+    target_max_count: int | None = Field(default=None, ge=0)
+    target_max_age_days: int | None = Field(default=None, ge=0)
+
+
+class EvictedImageOut(CamelModel):
+    cve_id: str
+    image_tag: str
+    size_mb: int
+    reason: str
+
+
+class SynthesizeGcResponse(CamelModel):
+    scanned: int
+    evicted: list[EvictedImageOut] = []
+    freed_mb: int
+    retained_count: int
+    retained_total_mb: int
+    skipped_in_use: list[str] = []

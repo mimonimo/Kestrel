@@ -12,9 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.logging import get_logger
-from app.models import LabSourceKind, SandboxSession, SandboxStatus, Vulnerability
+from app.models import CveLabMapping, LabSourceKind, SandboxSession, SandboxStatus, Vulnerability
 from app.schemas.sandbox import (
     AdaptedPayloadOut,
+    EvictedImageOut,
     ExchangeOut,
     InjectionPointOut,
     LabInfoOut,
@@ -23,6 +24,8 @@ from app.schemas.sandbox import (
     SandboxExecResponse,
     SandboxSessionOut,
     SandboxStartRequest,
+    SynthesizeGcRequest,
+    SynthesizeGcResponse,
     SynthesizeRequest,
     SynthesizeResponse,
     VulhubSyncResponse,
@@ -30,6 +33,7 @@ from app.schemas.sandbox import (
 from app.services.ai_analyzer import analyze_vulnerability
 from app.services.sandbox import (
     ResolvedLab,
+    gc_synthesized_images,
     reap_expired_sessions,
     record_success_payload,
     resolve_lab,
@@ -190,6 +194,47 @@ async def synthesize_lab(
 
 
 @router.post(
+    "/synthesize/gc",
+    response_model=SynthesizeGcResponse,
+    response_model_by_alias=True,
+)
+async def synthesize_gc(
+    body: SynthesizeGcRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> SynthesizeGcResponse:
+    """Manually trigger LRU eviction of synthesized lab images.
+
+    The same sweep runs opportunistically at every ``synthesize()`` call;
+    this endpoint exists for operators who want to force a cleanup (e.g.
+    free disk before a big build) or tighten the ceilings ad-hoc by
+    passing override targets in the body.
+    """
+    overrides = body or SynthesizeGcRequest()
+    stats = await gc_synthesized_images(
+        db,
+        target_total_mb=overrides.target_total_mb,
+        target_max_count=overrides.target_max_count,
+        target_max_age_days=overrides.target_max_age_days,
+    )
+    return SynthesizeGcResponse(
+        scanned=stats.scanned,
+        evicted=[
+            EvictedImageOut(
+                cve_id=e.cve_id,
+                image_tag=e.image_tag,
+                size_mb=e.size_mb,
+                reason=e.reason,
+            )
+            for e in stats.evicted
+        ],
+        freed_mb=stats.freed_mb,
+        retained_count=stats.retained_count,
+        retained_total_mb=stats.retained_total_mb,
+        skipped_in_use=stats.skipped_in_use,
+    )
+
+
+@router.post(
     "/sessions",
     response_model=SandboxSessionOut,
     response_model_by_alias=True,
@@ -292,6 +337,16 @@ async def start_session(
     session_row.container_name = handle.container_name
     session_row.target_url = handle.target_url
     session_row.expires_at = handle.expires_at
+
+    # Touch last_used_at on the source mapping (if any) so the synthesizer
+    # GC keeps hot images around. Generic labs without a cached row have
+    # no mapping_id yet — nothing to stamp; the cache row will get one on
+    # first successful exec via record_success_payload.
+    if resolved.mapping_id is not None:
+        mapping = await db.get(CveLabMapping, resolved.mapping_id)
+        if mapping is not None:
+            mapping.last_used_at = datetime.now(timezone.utc)
+
     await db.commit()
     await db.refresh(session_row)
     return await _session_to_out(db, session_row, spec=resolved.spec)

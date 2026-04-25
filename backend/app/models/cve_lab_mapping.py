@@ -59,6 +59,12 @@ class CveLabMapping(Base):
     last_synthesis_attempt_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Stamped each time this mapping is used to spawn a sandbox session.
+    # Drives LRU eviction in the synthesizer GC (PR9-F): hot images stay,
+    # cold ones get pruned when the disk/count ceiling is hit.
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

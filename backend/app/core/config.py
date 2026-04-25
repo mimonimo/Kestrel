@@ -85,6 +85,16 @@ class Settings(BaseSettings):
     sandbox_syn_build_timeout_seconds: int = 240
     sandbox_syn_verify_timeout_seconds: int = 60
     sandbox_syn_max_attempts: int = 1
+    # ---- Synthesized image GC (PR9-F) --------------------------------
+    # Each AI-synthesized image is ~150-400MB (slim base + python/node
+    # runtime). On a multi-week deployment the cache grows unbounded
+    # otherwise. The GC runs opportunistically at every synthesize() call
+    # and is also exposed via POST /sandbox/synthesize/gc for manual
+    # cleanup. Eviction is LRU on (last_used_at NULLS FIRST, created_at)
+    # and skips images currently referenced by running containers.
+    sandbox_syn_image_max_total_mb: int = 4096  # ~4GB ceiling
+    sandbox_syn_image_max_count: int = 50
+    sandbox_syn_image_max_age_days: int = 30
 
     # Observability (모두 옵셔널 — 미설정 시 코드 경로 자체를 건너뜀)
     sentry_dsn: str | None = None

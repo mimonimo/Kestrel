@@ -47,6 +47,7 @@ from app.services.sandbox.manager import (
     stop_lab,
     wait_ready,
 )
+from app.services.sandbox.synthesizer_gc import gc_synthesized_images
 
 log = get_logger(__name__)
 
@@ -373,6 +374,14 @@ async def synthesize(
     settings = get_settings()
     cve_id = vuln.cve_id
     now = datetime.now(timezone.utc)
+
+    # Opportunistic LRU sweep — keeps the synthesized-image cache under the
+    # configured ceilings without a separate cron. Failures never block
+    # synthesis; if docker is unreachable we'd fail at build_image anyway.
+    try:
+        await gc_synthesized_images(db)
+    except Exception as e:  # noqa: BLE001 — best-effort housekeeping
+        log.warning("synthesizer.gc_failed", error=str(e))
 
     existing = await db.scalar(
         select(CveLabMapping).where(

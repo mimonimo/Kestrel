@@ -744,9 +744,85 @@ $ docker compose exec -T postgres psql -U kestrel -d kestrel -c "\d cve_lab_mapp
 
 ---
 
+### Step 9-F — 합성 이미지 LRU 캐시 회수 정책 ✅ 완료
+
+AI 합성 lab 은 1개당 ~150-400MB 이미지를 docker daemon 에 남긴다. 장기 배포에서 캐시가 무한히 커지는 것을 막기 위해 LRU 기반 회수 정책을 추가. opportunistic 트리거(`synthesize()` 진입 시 자동 sweep) + 운영자용 수동 엔드포인트(`POST /sandbox/synthesize/gc`) 두 가지 경로로 동작.
+
+#### 1. DB 변경 (마이그레이션 0013)
+
+```sql
+ALTER TABLE cve_lab_mappings
+ADD COLUMN last_used_at timestamptz;
+```
+
+`POST /sandbox/sessions` 가 mapping 으로 lab 을 띄우는 데 성공하면 `last_used_at = now()` stamp. resolver 가 mapping_id 를 반환하지 않는 경우(첫 generic-class lab — exec 성공 시 `record_success_payload` 로 row 생성됨) 는 자연히 skip.
+
+#### 2. 설정 (`Settings`)
+
+- `sandbox_syn_image_max_total_mb: 4096` — 합성 이미지 합계 크기 ceiling (~4GB).
+- `sandbox_syn_image_max_count: 50` — 보관 가능한 합성 이미지 개수 상한.
+- `sandbox_syn_image_max_age_days: 30` — 마지막 사용 시점이 N일을 초과하면 evict.
+
+세 값은 endpoint body 에서 per-call override 가능 (`targetTotalMb`, `targetMaxCount`, `targetMaxAgeDays`).
+
+#### 3. GC 모듈 (`services/sandbox/synthesizer_gc.py`)
+
+```
+gc_synthesized_images(db, *, target_total_mb=None, target_max_count=None, target_max_age_days=None) → GcStats
+  ├─ verified=true SYNTHESIZED row 모두 조회 → LRU 키((last_used_at NULLS FIRST, created_at)) 정렬
+  ├─ 한 번에 docker SDK 로 (image size, ancestor 컨테이너 존재 여부) inspect, tuple 에 캐시
+  ├─ Pass 1: image 가 사라진 row → 매핑만 drop (image_missing)
+  ├─ Pass 2: age cutoff 초과 + 사용 중 아님 → evict (age)
+  ├─ Pass 3: count 초과분만큼 가장 오래된 것부터 evict (count)
+  ├─ Pass 4: 합계 size > ceiling 이면 오래된 것부터 evict 하면서 합계 줄이기 (total_size)
+  └─ 사용 중(컨테이너 ancestor 존재) 이면 모든 pass 에서 skip → stats.skipped_in_use 에 기록
+
+GcStats(scanned, evicted: list[EvictedImage], freed_mb, retained_count, retained_total_mb, skipped_in_use)
+EvictedImage(cve_id, image_tag, size_mb, reason)
+```
+
+세이프티: `cli.images.remove(force=False)` — docker daemon 이 컨테이너 ancestor 가 있으면 제거 거부 (sweep 도중 라이브 세션 보호용 이중장벽).
+
+#### 4. API + 호출 wiring
+
+- `POST /api/v1/sandbox/synthesize/gc` 신규 엔드포인트 — body 의 override 값(없으면 기본값) 으로 sweep 후 `GcStats` 를 camelCase 로 반환.
+- `synthesize()` 함수 진입부에서 `gc_synthesized_images(db)` opportunistic 호출 — 실패해도 best-effort (warning log, 진행 계속).
+- `start_session()` 마지막에서 `resolved.mapping_id` 가 있으면 `last_used_at = now()` stamp.
+
+#### 5. 검증 (스모크)
+
+```
+$ docker compose exec -T postgres psql -U kestrel -d kestrel -c "SELECT version_num FROM alembic_version;"
+ 0013
+
+$ docker compose exec -T postgres psql -U kestrel -d kestrel -c "\d cve_lab_mappings" | grep last_used
+ last_used_at | timestamp with time zone
+
+$ curl -s http://localhost:8000/openapi.json | jq '.paths | keys[] | select(contains("sandbox"))'
+"/api/v1/sandbox/sessions"
+"/api/v1/sandbox/sessions/{session_id}"
+"/api/v1/sandbox/sessions/{session_id}/exec"
+"/api/v1/sandbox/synthesize"
+"/api/v1/sandbox/synthesize/gc"   ← 신규
+"/api/v1/sandbox/vulhub/sync"
+
+$ curl -sX POST http://localhost:8000/api/v1/sandbox/synthesize/gc \
+  -H 'Content-Type: application/json' -d '{}'
+{"scanned":0,"evicted":[],"freedMb":0,"retainedCount":0,
+ "retainedTotalMb":0,"skippedInUse":[]}
+
+$ curl -sX POST http://localhost:8000/api/v1/sandbox/synthesize/gc \
+  -H 'Content-Type: application/json' -d '{"targetMaxCount":0}'
+{"scanned":0,"evicted":[], ...}   # override 도 200 OK
+```
+
+실제 evict path (Dockerfile build → image 생성 → quota 초과 → reason="count" 로 제거 + 매핑 row 삭제) 는 LLM credential 이 살아있는 Kali 배포본에서 라이브 검증 예정.
+
+---
+
 ## Step 9 — 다음 PR 예고
 
-PR 9-F (예정): 합성된 lab 의 image 캐시 정리 정책 (LRU / 디스크 사용량 ceiling), `/sandbox/synthesize` 응답 streaming(SSE) 으로 빌드/검증 진행 상황 실시간 표시.
+PR 9-G (예정): `/sandbox/synthesize` 응답 streaming(SSE) 으로 빌드/검증 진행 상황 실시간 표시. 운영자 대시보드 — 현재 캐시 상태(개수/MB/가장 오래된 row) 노출.
 
 ---
 
