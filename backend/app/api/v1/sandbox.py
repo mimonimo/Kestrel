@@ -213,15 +213,39 @@ async def start_session(
         raise HTTPException(status_code=404, detail=f"{body.cve_id} not found")
 
     forced = (body.lab_kind or "").strip().lower() or None
-    resolved = await resolve_lab(db, vuln, forced_kind=forced)
+    resolved = await resolve_lab(
+        db,
+        vuln,
+        forced_kind=forced,
+        attempt_synthesis=body.attempt_synthesis,
+    )
     if resolved is None:
+        # If the caller already consented to synthesis and we still can't
+        # produce a lab, surface the synthesis failure verbatim. Otherwise
+        # invite the caller to opt in via attemptSynthesis=true.
+        if body.attempt_synthesis:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "synthesis_failed",
+                    "message": (
+                        "AI 합성으로도 이 CVE 의 lab 을 만들지 못했습니다. "
+                        "/sandbox/synthesize 로 직접 호출하면 빌드 로그와 응답 본문을 "
+                        "확인할 수 있습니다."
+                    ),
+                },
+            )
         raise HTTPException(
-            status_code=400,
-            detail=(
-                "이 CVE에 대응하는 샌드박스 랩이 아직 없습니다. "
-                "현재 지원: 일반 클래스 lab(XSS) + 사전 등록된 vulhub 매핑. "
-                "추후 PR에서 vulhub 시드 + AI 합성으로 커버리지를 확장합니다."
-            ),
+            status_code=422,
+            detail={
+                "code": "no_lab",
+                "canSynthesize": True,
+                "message": (
+                    "이 CVE 에 대응하는 등록된 lab 이 없습니다. "
+                    "AI 합성으로 시도하려면 attemptSynthesis=true 로 다시 호출하세요. "
+                    "(LLM 토큰 + 수십초~수분 빌드 시간 소요)"
+                ),
+            },
         )
 
     running = await _count_running(db)

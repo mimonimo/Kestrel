@@ -685,15 +685,68 @@ End-to-end live 호출(LLM 토큰 소모) 은 Kali 배포본에서 active creden
 
 ---
 
+### Step 9-E — Resolver 자동 fallback + UI consent ✅ 완료
+
+vulhub/generic 모두 miss 인 경우 사용자 동의 하에 resolver 가 합성을 자동으로 실행하고, 24시간 cooldown 으로 같은 CVE 의 반복 실패에 토큰을 태우지 않도록 가드.
+
+#### 1. DB 변경 (마이그레이션 0012)
+
+```sql
+ALTER TABLE cve_lab_mappings
+ADD COLUMN last_synthesis_attempt_at timestamptz;
+```
+
+매 합성 시도 시(성공/실패 무관) `now()` 로 갱신. 실패 시 row 는 `verified=false` 로 남고, 24h 안에 재호출하면 cooldown 메시지 반환.
+
+#### 2. 백엔드
+
+- `synthesizer.synthesize` 재구조화
+  - 시작 시점에 `(cve_id, SYNTHESIZED)` row 를 get-or-create. `last_synthesis_attempt_at=now`, `verified=false`, `lab_kind="synthesized/<cve>/pending"` 으로 placeholder 삽입.
+  - 24h 이내 미검증 시도가 있으면 `forceRegenerate` 없는 한 즉시 rate-limit 메시지 반환.
+  - 성공 시: 동일 row 를 update (lab_kind/spec/known_good_payload/verified=true/last_verified_at).
+  - 실패 시: row 의 `notes` 만 업데이트 (cooldown 은 이미 stamp 됨).
+- `lab_resolver.resolve_lab(..., attempt_synthesis=False)` 신호 추가
+  - 1단계 (vulhub/synthesized) — `verified=false` synthesized placeholder 는 skip (합성 실패 row 가 resolver 결과로 새지 않게).
+  - 2단계 (generic) — 동일.
+  - 3단계 신규: `attempt_synthesis=True` 일 때만 lazy import 후 `synthesize(db, vuln)` 호출 → 성공 시 mapping 재조회로 `ResolvedLab(SYNTHESIZED, verified=True)` 반환.
+- `POST /sandbox/sessions` body 에 `attemptSynthesis: bool = false` 추가
+  - resolver miss + consent 없음 → `422 {code:"no_lab", canSynthesize:true, message}`
+  - resolver miss + consent 있음(합성도 실패) → `422 {code:"synthesis_failed", message}`
+  - 두 경우 모두 detail 이 dict 로, 프론트가 구조 인식 가능.
+
+#### 3. 프론트엔드
+
+- `lib/api.ts`
+  - `ApiError.detail` 필드 추가 — FastAPI 422 detail 객체 보존.
+  - `request()` — `detail` 이 객체면 `message` 만 뽑아 `Error.message` 로, 객체 자체는 `error.detail` 로 노출.
+  - `startSandbox({attemptSynthesis})` 추가, `synthesizeSandbox()` helper 추가.
+  - `NoLabDetail` 타입 + `isNoLabDetail()` 가드.
+  - 중복 export 정리 (파일 끝의 `export { ApiError }` 제거).
+- `components/cve/SandboxPanel.tsx`
+  - start mutation 에 `{attemptSynthesis?}` 옵션 받도록.
+  - `noLabDetail` 추출 → 빨간 에러 박스 대신 amber consent 박스로 렌더 ("AI 합성으로 시도" + "취소").
+  - 합성 진행 중에는 "AI 합성 진행 중 — Dockerfile/앱 코드 생성 + 빌드 + 검증 (수십초~수분 소요)…" 표시.
+
+#### 4. 검증
+
+```
+$ curl -X POST http://localhost:8000/api/v1/sandbox/sessions \
+  -H 'Content-Type: application/json' -d '{"cveId":"CVE-2026-0081"}'
+HTTP/1.1 422
+{"detail":{"code":"no_lab","canSynthesize":true,
+  "message":"이 CVE 에 대응하는 등록된 lab 이 없습니다. ..."}}
+
+$ docker compose exec -T postgres psql -U kestrel -d kestrel -c "\d cve_lab_mappings"
+... last_synthesis_attempt_at | timestamp with time zone ✓
+```
+
+프론트 빌드 통과 후 `/cve/CVE-2026-0081` 에서 amber consent 박스가 정상 렌더되는 것을 시각 확인 (수동 단계). End-to-end 합성 토큰 소모 실측은 Kali 배포본에서 active credential 로.
+
+---
+
 ## Step 9 — 다음 PR 예고
 
-### PR9-E (resolver 자동 fallback + UI consent)
-
-- `lab_resolver.resolve_lab` 에 4번째 단계로 "AI 합성 자동 실행" 추가. 단, 무조건 호출하지 말고:
-  - 사용자가 명시적으로 fallback 동의했을 때만 (UI 에서 "AI 합성으로 시도" 버튼).
-  - 한 CVE 당 일정 시간(예: 24h) 한 번만 자동 시도.
-- UI: sandbox 세션 시작 시 "이 CVE 는 등록된 lab 이 없습니다 — AI 합성으로 시도하시겠습니까?" 모달.
-- `cve_lab_mappings` 에 `last_synthesis_attempt_at` 컬럼 추가.
+PR 9-F (예정): 합성된 lab 의 image 캐시 정리 정책 (LRU / 디스크 사용량 ceiling), `/sandbox/synthesize` 응답 streaming(SSE) 으로 빌드/검증 진행 상황 실시간 표시.
 
 ---
 

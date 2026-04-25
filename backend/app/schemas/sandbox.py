@@ -13,6 +13,10 @@ class SandboxStartRequest(CamelModel):
     cve_id: str = Field(min_length=1, max_length=32)
     # Optional override — when caller knows better than the classifier.
     lab_kind: str | None = Field(default=None, max_length=128)
+    # User-consent flag (PR9-E). When True the resolver may invoke the AI
+    # synthesizer if no curated/generic lab covers this CVE. Defaults False
+    # so a stray click never burns LLM tokens or build minutes.
+    attempt_synthesis: bool = False
 
 
 class InjectionPointOut(CamelModel):

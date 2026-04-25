@@ -161,18 +161,29 @@ async def resolve_lab(
     vuln: Vulnerability,
     *,
     forced_kind: str | None = None,
+    attempt_synthesis: bool = False,
 ) -> ResolvedLab | None:
     """Walk the resolver chain and return the best ResolvedLab for *vuln*.
 
     ``forced_kind`` lets the caller bypass the classifier and force a
     specific generic-class lab (e.g. user picked one from a dropdown).
+
+    ``attempt_synthesis`` is the user-consent flag (PR9-E). When True and
+    every prior chain step misses, the resolver triggers the AI synthesizer
+    inline. The synthesizer enforces a 24h cooldown per CVE so consecutive
+    consented calls don't burn tokens on persistent failures. When False
+    (the default), the resolver behaves exactly as before.
     """
     cve_id = vuln.cve_id
 
-    # 1. Curated CVE-specific mappings (vulhub > synthesized).
+    # 1. Curated CVE-specific mappings (vulhub > synthesized). Unverified
+    #    synthesized rows are rate-limit placeholders, not runnable labs —
+    #    skip them so the resolver doesn't return an empty spec.
     for kind in (LabSourceKind.VULHUB, LabSourceKind.SYNTHESIZED):
         mapping = await _find_mapping(db, cve_id, kind)
         if mapping is None:
+            continue
+        if kind == LabSourceKind.SYNTHESIZED and not mapping.verified:
             continue
         spec = _spec_from_mapping(mapping)
         log.info(
@@ -219,7 +230,35 @@ async def resolve_lab(
                 else None,
             )
 
-    # 3. (PR9-D will plug AI synthesis here.)
+    # 3. AI synthesis fallback — only when caller explicitly consented.
+    #    Imported lazily so the resolver module stays importable without the
+    #    docker SDK (synthesizer pulls in the manager which pulls in docker).
+    if attempt_synthesis:
+        from app.services.sandbox.synthesizer import synthesize
+
+        log.info("sandbox.resolve.synthesize_attempt", cve_id=cve_id)
+        result = await synthesize(db, vuln)
+        if result.verified and result.mapping_id is not None:
+            mapping = await db.get(CveLabMapping, result.mapping_id)
+            if mapping is not None:
+                spec = _spec_from_mapping(mapping)
+                log.info(
+                    "sandbox.resolve.synthesize_hit",
+                    cve_id=cve_id,
+                    lab_kind=mapping.lab_kind,
+                )
+                return ResolvedLab(
+                    spec=spec,
+                    source=LabSourceKind.SYNTHESIZED,
+                    verified=True,
+                    mapping_id=mapping.id,
+                    cached_payload=mapping.known_good_payload,
+                )
+        log.info(
+            "sandbox.resolve.synthesize_failed",
+            cve_id=cve_id,
+            error=result.error,
+        )
 
     # 4. No lab fits.
     log.info("sandbox.resolve.miss", cve_id=cve_id)

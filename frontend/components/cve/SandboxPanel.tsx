@@ -20,7 +20,9 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   ApiError,
   api,
+  isNoLabDetail,
   type LabSourceKind,
+  type NoLabDetail,
   type SandboxExecResponse,
   type SandboxSession,
 } from "@/lib/api";
@@ -172,7 +174,11 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
   });
 
   const start = useMutation({
-    mutationFn: () => api.startSandbox({ cveId }),
+    mutationFn: (opts?: { attemptSynthesis?: boolean }) =>
+      api.startSandbox({
+        cveId,
+        attemptSynthesis: opts?.attemptSynthesis,
+      }),
     onSuccess: (s: SandboxSession) => {
       setSessionId(s.id);
       setLastResult(null);
@@ -203,6 +209,17 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
   const isKeyMissing =
     (execError instanceof ApiError && execError.status === 400) ||
     (startError instanceof ApiError && startError.status === 400);
+  // Backend returns 422 with `{code, canSynthesize, message}` when no
+  // curated/generic lab covers this CVE. We render an inline consent prompt
+  // (not a modal — keeps the panel layout intact) before spending tokens.
+  const noLabDetail: NoLabDetail | null =
+    startError instanceof ApiError &&
+    startError.status === 422 &&
+    isNoLabDetail(startError.detail)
+      ? (startError.detail as NoLabDetail)
+      : null;
+  const synthAttemptInFlight =
+    start.isPending && start.variables?.attemptSynthesis === true;
 
   return (
     <Card>
@@ -238,7 +255,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
             </p>
             <Button
               type="button"
-              onClick={() => start.mutate()}
+              onClick={() => start.mutate(undefined)}
               size="md"
               className="mt-1"
             >
@@ -251,11 +268,50 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
         {start.isPending && (
           <div className="flex items-center gap-2 py-2 text-sm text-neutral-400">
             <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-            랩 컨테이너 시작 중…
+            {synthAttemptInFlight
+              ? "AI 합성 진행 중 — Dockerfile/앱 코드 생성 + 빌드 + 검증 (수십초~수분 소요)…"
+              : "랩 컨테이너 시작 중…"}
           </div>
         )}
 
-        {startError && (
+        {/* Consent gate: backend says no curated lab exists — invite the user
+            to opt into AI synthesis. Separate from the generic error block so
+            the choice is obvious and the wording isn't alarming red. */}
+        {noLabDetail && noLabDetail.code === "no_lab" && noLabDetail.canSynthesize && (
+          <div className="space-y-2 rounded border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+            <div className="flex items-center gap-1.5 text-amber-200">
+              <Sparkles className="h-3.5 w-3.5" />
+              <span className="font-medium">등록된 lab 이 없습니다</span>
+            </div>
+            <p className="text-amber-100/90">{noLabDetail.message}</p>
+            <p className="text-amber-100/60">
+              합성은 LLM 토큰을 사용하고 빌드 시간이 걸립니다. 24시간 내 합성에 실패하면
+              같은 CVE 에 대해 자동 재시도가 차단됩니다 (캐시 보존).
+            </p>
+            <div className="flex gap-2 pt-1">
+              <Button
+                type="button"
+                onClick={() => start.mutate({ attemptSynthesis: true })}
+                size="md"
+                className="bg-amber-500 text-black hover:bg-amber-400"
+              >
+                <Sparkles className="mr-1.5 h-4 w-4" />
+                AI 합성으로 시도
+              </Button>
+              <Button
+                type="button"
+                onClick={() => start.reset()}
+                size="md"
+                variant="ghost"
+                className="text-amber-200/70"
+              >
+                취소
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {startError && !noLabDetail && (
           <div className="space-y-1 rounded border border-red-500/30 bg-red-500/10 p-3 text-xs">
             <div className="flex items-center gap-1.5 text-red-300">
               <AlertCircle className="h-3.5 w-3.5" />

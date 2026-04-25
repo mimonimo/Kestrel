@@ -53,6 +53,12 @@ class CveLabMapping(Base):
     last_verified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Stamped every time the resolver kicks off an AI synthesis attempt for
+    # this CVE — even if the attempt fails. Drives the 24h rate limit so a
+    # persistently un-synthesizable CVE doesn't burn LLM tokens on repeat.
+    last_synthesis_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

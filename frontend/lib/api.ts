@@ -4,8 +4,14 @@ import type { SearchFilters, SearchResponse, StatusReport, Vulnerability } from 
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
-class ApiError extends Error {
-  constructor(public status: number, message: string) {
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+    // FastAPI 422 detail can be an object — sandbox uses
+    // `{ code, canSynthesize, message }` to drive the consent flow.
+    public detail?: unknown,
+  ) {
     super(message);
     this.name = "ApiError";
   }
@@ -19,13 +25,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     let message = `API ${path} failed: ${res.status}`;
+    let detail: unknown;
     try {
       const body = await res.json();
-      if (body?.detail) message = body.detail;
+      detail = body?.detail;
+      if (typeof detail === "string") {
+        message = detail;
+      } else if (detail && typeof detail === "object" && "message" in detail) {
+        message = String((detail as { message?: unknown }).message ?? message);
+      }
     } catch {
       /* ignore */
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, detail);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
@@ -213,8 +225,17 @@ export const api = {
       method: "POST",
     }),
 
-  startSandbox: (body: { cveId: string; labKind?: string }) =>
+  startSandbox: (body: {
+    cveId: string;
+    labKind?: string;
+    attemptSynthesis?: boolean;
+  }) =>
     request<SandboxSession>(`/sandbox/sessions`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  synthesizeSandbox: (body: { cveId: string; forceRegenerate?: boolean }) =>
+    request<SynthesizeResponse>(`/sandbox/synthesize`, {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -363,6 +384,32 @@ export interface SandboxExecResponse {
   verdict: SandboxVerdict;
 }
 
+export interface SynthesizeResponse {
+  cveId: string;
+  imageTag: string;
+  verified: boolean;
+  mappingId: number | null;
+  attempts: number;
+  error: string | null;
+  spec: Record<string, unknown> | null;
+  payload: Record<string, unknown> | null;
+  buildLogTail: string[];
+  responseStatus: number | null;
+  responseBodyPreview: string | null;
+}
+
+export interface NoLabDetail {
+  code: "no_lab" | "synthesis_failed";
+  canSynthesize?: boolean;
+  message: string;
+}
+
+export function isNoLabDetail(detail: unknown): detail is NoLabDetail {
+  if (!detail || typeof detail !== "object") return false;
+  const code = (detail as { code?: unknown }).code;
+  return code === "no_lab" || code === "synthesis_failed";
+}
+
 export interface CommunityPost {
   id: number;
   title: string;
@@ -415,5 +462,3 @@ export interface TicketListResponse {
   total: number;
   counts: Record<TicketStatus, number>;
 }
-
-export { ApiError };

@@ -26,7 +26,7 @@ import re
 import shutil
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlalchemy import select
@@ -349,6 +349,9 @@ async def _verify(spec: LabSpec, parsed: dict) -> tuple[bool, dict]:
 # ---------------------------------------------------------------------------
 
 
+_ATTEMPT_COOLDOWN = timedelta(hours=24)
+
+
 async def synthesize(
     db: AsyncSession,
     vuln: Vulnerability,
@@ -357,30 +360,80 @@ async def synthesize(
 ) -> SynthesisResult:
     """End-to-end: prompt → parse → build → verify → cache (on success).
 
-    When ``force_regenerate`` is False and a verified ``synthesized`` mapping
-    already exists for this CVE, return that without spending tokens.
+    Rate limiting:
+      * If a verified ``synthesized`` mapping exists, return it without
+        spending tokens (unless ``force_regenerate``).
+      * If a *failed* attempt row exists and is younger than 24h, refuse
+        the call with a rate-limit error so persistently-broken CVEs don't
+        burn tokens on repeat (unless ``force_regenerate``).
+      * Every attempt — success or failure — stamps
+        ``last_synthesis_attempt_at`` on the row, so the cooldown survives
+        process restarts.
     """
     settings = get_settings()
     cve_id = vuln.cve_id
+    now = datetime.now(timezone.utc)
 
-    if not force_regenerate:
-        existing = await db.scalar(
-            select(CveLabMapping).where(
-                CveLabMapping.cve_id == cve_id,
-                CveLabMapping.kind == LabSourceKind.SYNTHESIZED,
-                CveLabMapping.verified.is_(True),
-            )
+    existing = await db.scalar(
+        select(CveLabMapping).where(
+            CveLabMapping.cve_id == cve_id,
+            CveLabMapping.kind == LabSourceKind.SYNTHESIZED,
         )
-        if existing is not None:
+    )
+
+    if existing is not None and existing.verified and not force_regenerate:
+        return SynthesisResult(
+            cve_id=cve_id,
+            image_tag=str((existing.spec or {}).get("image", "")),
+            verified=True,
+            mapping_id=existing.id,
+            attempts=0,
+            spec_dict=existing.spec or {},
+            payload=existing.known_good_payload,
+        )
+
+    if (
+        existing is not None
+        and not existing.verified
+        and not force_regenerate
+        and existing.last_synthesis_attempt_at is not None
+    ):
+        age = now - existing.last_synthesis_attempt_at
+        if age < _ATTEMPT_COOLDOWN:
+            remaining = _ATTEMPT_COOLDOWN - age
+            hours = int(remaining.total_seconds() // 3600) + 1
             return SynthesisResult(
                 cve_id=cve_id,
-                image_tag=str((existing.spec or {}).get("image", "")),
-                verified=True,
+                image_tag="",
+                verified=False,
                 mapping_id=existing.id,
                 attempts=0,
-                spec_dict=existing.spec or {},
-                payload=existing.known_good_payload,
+                error=(
+                    f"이 CVE 는 최근 24시간 내에 합성에 실패했습니다 — "
+                    f"약 {hours}시간 후 재시도 가능합니다 "
+                    "(즉시 재시도하려면 forceRegenerate=true)."
+                ),
             )
+
+    # Stamp the attempt start so concurrent calls / process restarts respect
+    # the cooldown even before the LLM returns.
+    if existing is None:
+        attempt_row = CveLabMapping(
+            cve_id=cve_id,
+            kind=LabSourceKind.SYNTHESIZED,
+            lab_kind=f"synthesized/{cve_id}/pending",
+            spec={},
+            verified=False,
+            last_synthesis_attempt_at=now,
+            notes="합성 시도 진행 중...",
+        )
+        db.add(attempt_row)
+        await db.flush()
+        attempt_mapping_id = attempt_row.id
+    else:
+        existing.last_synthesis_attempt_at = now
+        attempt_mapping_id = existing.id
+    await db.commit()
 
     user_prompt = _USER_TEMPLATE.format(
         cve_id=cve_id,
@@ -471,17 +524,28 @@ async def synthesize(
                 continue
 
             payload_dict = _payload_dict_for_mapping(parsed)
-            mapping = CveLabMapping(
-                cve_id=cve_id,
-                kind=LabSourceKind.SYNTHESIZED,
-                lab_kind=spec.lab_kind,
-                spec=spec_dict,
-                known_good_payload=payload_dict,
-                verified=True,
-                last_verified_at=datetime.now(timezone.utc),
-                notes=f"AI 합성, attempts={attempts}, sha={sha}",
-            )
-            db.add(mapping)
+            mapping = await db.get(CveLabMapping, attempt_mapping_id)
+            if mapping is None:
+                # Should never happen — we just inserted it. Fall back to a
+                # fresh insert so the result is still cached.
+                mapping = CveLabMapping(
+                    cve_id=cve_id,
+                    kind=LabSourceKind.SYNTHESIZED,
+                    lab_kind=spec.lab_kind,
+                    spec=spec_dict,
+                    known_good_payload=payload_dict,
+                    verified=True,
+                    last_verified_at=datetime.now(timezone.utc),
+                    notes=f"AI 합성, attempts={attempts}, sha={sha}",
+                )
+                db.add(mapping)
+            else:
+                mapping.lab_kind = spec.lab_kind
+                mapping.spec = spec_dict
+                mapping.known_good_payload = payload_dict
+                mapping.verified = True
+                mapping.last_verified_at = datetime.now(timezone.utc)
+                mapping.notes = f"AI 합성, attempts={attempts}, sha={sha}"
             await db.flush()
             await db.commit()
             log.info(
@@ -505,11 +569,22 @@ async def synthesize(
         finally:
             _cleanup_build_context(ctx_dir)
 
+    # Every attempt failed — leave the attempt row with verified=False and
+    # the cooldown stamp so the next caller is rate-limited. Drop a brief
+    # note so operators can see why the row exists.
+    failure_note = (
+        f"AI 합성 시도 실패, attempts={attempts}, "
+        f"마지막 오류: {(last_error or '')[:240]}"
+    )
+    failure_row = await db.get(CveLabMapping, attempt_mapping_id)
+    if failure_row is not None:
+        failure_row.notes = failure_note
+        await db.commit()
     return SynthesisResult(
         cve_id=cve_id,
         image_tag="",
         verified=False,
-        mapping_id=None,
+        mapping_id=attempt_mapping_id,
         attempts=attempts,
         error=last_error or "알 수 없는 실패",
         build_log_tail=last_logs,
