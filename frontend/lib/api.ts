@@ -239,6 +239,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  getSynthesizerCache: () =>
+    request<SynthesizeCacheReport>(`/sandbox/synthesize/cache`),
+  triggerSynthesizerGc: (
+    body?: {
+      targetTotalMb?: number;
+      targetMaxCount?: number;
+      targetMaxAgeDays?: number;
+    },
+  ) =>
+    request<SynthesizeGcResponse>(`/sandbox/synthesize/gc`, {
+      method: "POST",
+      body: JSON.stringify(body ?? {}),
+    }),
   getSandbox: (sessionId: string) =>
     request<SandboxSession>(`/sandbox/sessions/${encodeURIComponent(sessionId)}`),
   stopSandbox: (sessionId: string) =>
@@ -396,6 +409,47 @@ export interface SynthesizeResponse {
   buildLogTail: string[];
   responseStatus: number | null;
   responseBodyPreview: string | null;
+}
+
+export interface SynthesizeCacheEntry {
+  cveId: string;
+  imageTag: string;
+  labKind: string;
+  sizeMb: number;
+  inUse: boolean;
+  imagePresent: boolean;
+  lastUsedAt: string | null;
+  lastVerifiedAt: string | null;
+  createdAt: string;
+  ageDays: number;
+}
+
+export interface SynthesizeCacheReport {
+  count: number;
+  totalMb: number;
+  inUseCount: number;
+  missingImageCount: number;
+  oldestLastUsedAt: string | null;
+  maxTotalMb: number;
+  maxCount: number;
+  maxAgeDays: number;
+  entries: SynthesizeCacheEntry[];
+}
+
+export interface EvictedImage {
+  cveId: string;
+  imageTag: string;
+  sizeMb: number;
+  reason: "age" | "count" | "total_size" | "image_missing" | string;
+}
+
+export interface SynthesizeGcResponse {
+  scanned: number;
+  evicted: EvictedImage[];
+  freedMb: number;
+  retainedCount: number;
+  retainedTotalMb: number;
+  skippedInUse: string[];
 }
 
 export interface NoLabDetail {

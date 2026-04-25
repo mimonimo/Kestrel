@@ -152,3 +152,30 @@ class SynthesizeGcResponse(CamelModel):
     retained_count: int
     retained_total_mb: int
     skipped_in_use: list[str] = []
+
+
+class SynthesizeCacheEntryOut(CamelModel):
+    cve_id: str
+    image_tag: str
+    lab_kind: str
+    size_mb: int
+    in_use: bool
+    image_present: bool
+    last_used_at: datetime | None
+    last_verified_at: datetime | None
+    created_at: datetime
+    age_days: int
+
+
+class SynthesizeCacheReport(CamelModel):
+    count: int
+    total_mb: int
+    in_use_count: int
+    missing_image_count: int
+    oldest_last_used_at: datetime | None = None
+    # Echo the configured ceilings so the UI can render utilization without
+    # a separate /settings call.
+    max_total_mb: int
+    max_count: int
+    max_age_days: int
+    entries: list[SynthesizeCacheEntryOut] = []

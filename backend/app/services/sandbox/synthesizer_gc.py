@@ -56,6 +56,32 @@ class GcStats:
     skipped_in_use: list[str] = field(default_factory=list)
 
 
+@dataclass
+class CacheEntry:
+    """Read-only view of one synthesized-image cache row + its docker state."""
+
+    cve_id: str
+    image_tag: str
+    lab_kind: str
+    size_mb: int
+    in_use: bool
+    image_present: bool  # False when docker no longer has the image
+    last_used_at: datetime | None
+    last_verified_at: datetime | None
+    created_at: datetime
+    age_days: int  # days since LRU key (last_used_at or created_at)
+
+
+@dataclass
+class CacheReport:
+    count: int
+    total_mb: int
+    in_use_count: int
+    missing_image_count: int  # rows whose image vanished from docker
+    oldest_last_used_at: datetime | None
+    entries: list[CacheEntry] = field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
 # Docker helpers (sync, run in a thread)
 # ---------------------------------------------------------------------------
@@ -261,3 +287,74 @@ async def gc_synthesized_images(
             retained_mb=stats.retained_total_mb,
         )
     return stats
+
+
+async def report_synthesized_cache(db: AsyncSession) -> CacheReport:
+    """Inspect the synthesized-image cache without evicting anything.
+
+    Drives the operator dashboard — same docker SDK calls as the GC sweep
+    (size + ancestor-container check) but read-only. Sorted oldest-LRU
+    first so the UI can show what *would* be evicted next.
+    """
+    rows = (
+        await db.scalars(
+            select(CveLabMapping).where(
+                CveLabMapping.kind == LabSourceKind.SYNTHESIZED,
+                CveLabMapping.verified.is_(True),
+            )
+        )
+    ).all()
+    rows_sorted = sorted(rows, key=_lru_key)
+    now = datetime.now(timezone.utc)
+
+    async def _inspect(row: CveLabMapping) -> tuple[CveLabMapping, int | None, bool]:
+        tag = str((row.spec or {}).get("image", ""))
+        if not tag:
+            return row, None, False
+        size, in_use = await asyncio.to_thread(_image_size_and_in_use, tag)
+        return row, size, in_use
+
+    inspected = await asyncio.gather(*[_inspect(r) for r in rows_sorted])
+
+    entries: list[CacheEntry] = []
+    total_bytes = 0
+    in_use_count = 0
+    missing_count = 0
+    oldest_last_used: datetime | None = None
+
+    for row, size, in_use in inspected:
+        present = size is not None
+        size_bytes = size or 0
+        total_bytes += size_bytes
+        if in_use:
+            in_use_count += 1
+        if not present:
+            missing_count += 1
+        lru = _lru_key(row)
+        age_days = max(0, (now - lru).days) if lru else 0
+        if row.last_used_at is not None:
+            if oldest_last_used is None or row.last_used_at < oldest_last_used:
+                oldest_last_used = row.last_used_at
+        entries.append(
+            CacheEntry(
+                cve_id=row.cve_id,
+                image_tag=str((row.spec or {}).get("image", "")),
+                lab_kind=row.lab_kind,
+                size_mb=size_bytes // (1024 * 1024),
+                in_use=in_use,
+                image_present=present,
+                last_used_at=row.last_used_at,
+                last_verified_at=row.last_verified_at,
+                created_at=row.created_at,
+                age_days=age_days,
+            )
+        )
+
+    return CacheReport(
+        count=len(entries),
+        total_mb=total_bytes // (1024 * 1024),
+        in_use_count=in_use_count,
+        missing_image_count=missing_count,
+        oldest_last_used_at=oldest_last_used,
+        entries=entries,
+    )

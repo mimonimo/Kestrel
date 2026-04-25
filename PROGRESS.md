@@ -820,9 +820,59 @@ $ curl -sX POST http://localhost:8000/api/v1/sandbox/synthesize/gc \
 
 ---
 
+### Step 9-G — 합성 캐시 운영자 대시보드 ✅ 완료
+
+PR 9-F 가 회수 정책을 깔았으니, 운영자가 *무엇이* 회수될지 미리 보고 즉시 sweep 도 누를 수 있는 UI 가 필요. 수치만 노출하는 read-only 엔드포인트 + 기존 GC 엔드포인트를 묶은 작은 패널을 settings 페이지에 추가.
+
+#### 1. 백엔드 — read-only 캐시 리포트
+
+`synthesizer_gc.report_synthesized_cache(db) → CacheReport(count, total_mb, in_use_count, missing_image_count, oldest_last_used_at, entries: list[CacheEntry])`
+
+기존 GC sweep 과 동일한 docker SDK 호출(`_image_size_and_in_use`)을 재사용하되 evict 는 안 함. `entries` 는 LRU 키((last_used_at NULLS FIRST, created_at)) 기준 오래된 순으로 정렬되어 — UI 가 다음 회수 후보를 위에서부터 보여줄 수 있게.
+
+`CacheEntry`: cve_id, image_tag, lab_kind, size_mb, in_use, image_present, last_used_at, last_verified_at, created_at, age_days.
+
+#### 2. 신규 엔드포인트
+
+- `GET /api/v1/sandbox/synthesize/cache` → `SynthesizeCacheReport` (camelCase). 응답에 설정값 ceiling(`maxTotalMb`, `maxCount`, `maxAgeDays`) 함께 동봉 — UI 가 별도 settings round-trip 없이 utilization 게이지 렌더 가능.
+
+#### 3. 프론트엔드 — 운영자 패널
+
+- `lib/api.ts`: `getSynthesizerCache()`, `triggerSynthesizerGc(body?)`, `SynthesizeCacheReport`, `SynthesizeCacheEntry`, `EvictedImage`, `SynthesizeGcResponse` 타입 추가.
+- `components/settings/SynthesizerCachePanel.tsx`:
+  - React Query 로 `/cache` 폴링(staleTime 10s) → 두 개의 진행률 바(디스크 / 개수, 70%/90% 임계에 amber/rose).
+  - 메타라인: 최대 보관 기간, 사용 중 개수, 사라진 이미지 row 수(있으면 amber 경고), 가장 오래된 last_used_at relative.
+  - 액션 두 개: "새로고침"(refetch), "지금 GC 실행"(POST /synthesize/gc) — GC 결과는 emerald 배너로 회수 항목/MB/reason 까지 inline 표시.
+  - LRU 정렬 테이블: CVE / image / size / 마지막 사용(relative + age days) / 상태 뱃지(이미지 없음 / 사용 중 / 대기).
+  - 빈 상태 dashed placeholder.
+- `app/settings/page.tsx` — "내 자산" 섹션 다음에 "합성된 lab 캐시" 섹션으로 마운트.
+
+#### 4. 검증 (스모크)
+
+```
+$ docker compose up -d --build backend frontend
+$ curl -s http://localhost:8000/api/v1/sandbox/synthesize/cache | jq
+{
+  "count": 0, "totalMb": 0, "inUseCount": 0, "missingImageCount": 0,
+  "oldestLastUsedAt": null,
+  "maxTotalMb": 4096, "maxCount": 50, "maxAgeDays": 30,
+  "entries": []
+}
+$ curl -s http://localhost:8000/openapi.json | jq '.paths | keys[] | select(contains("synthesize"))'
+"/api/v1/sandbox/synthesize"
+"/api/v1/sandbox/synthesize/cache"   ← 신규
+"/api/v1/sandbox/synthesize/gc"
+$ curl -s http://localhost:3000/settings | grep -c "합성된 lab 캐시"
+1
+```
+
+frontend `next build` 통과(타입체크 포함). 실제 row 가 생긴 상태의 GC 동작 시각 확인은 LLM credential 이 살아있는 Kali 배포본에서 라이브 검증 예정.
+
+---
+
 ## Step 9 — 다음 PR 예고
 
-PR 9-G (예정): `/sandbox/synthesize` 응답 streaming(SSE) 으로 빌드/검증 진행 상황 실시간 표시. 운영자 대시보드 — 현재 캐시 상태(개수/MB/가장 오래된 row) 노출.
+PR 9-H (예정): `/sandbox/synthesize` 응답 SSE streaming — 빌드/검증 단계별 이벤트(`llm_called`, `parsed`, `building`, `built`, `lab_started`, `verifying`, `cached|failed`) 를 그대로 흘려보내 SandboxPanel 의 "AI 합성 진행 중" indicator 를 실시간 진행 바로 교체.
 
 ---
 

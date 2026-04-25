@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AiSettingsForm } from "@/components/settings/AiSettingsForm";
 import { ApiKeyField } from "@/components/settings/ApiKeyField";
 import { AssetsManager } from "@/components/settings/AssetsManager";
+import { SynthesizerCachePanel } from "@/components/settings/SynthesizerCachePanel";
 import { ThemeSwitcher } from "@/components/settings/ThemeSwitcher";
 
 export const metadata: Metadata = {
@@ -46,6 +47,13 @@ export default function SettingsPage() {
         description="등록한 벤더·제품은 파싱된 CVE의 CPE 정보와 매칭되어 대시보드 상단 '내 시스템 취약점'에 노출됩니다."
       >
         <AssetsManager />
+      </Section>
+
+      <Section
+        title="합성된 lab 캐시"
+        description="AI 합성으로 만든 docker 이미지의 캐시 상태입니다. 합성 호출 시 자동 LRU 회수가 돌지만, 지금 강제 정리도 가능합니다."
+      >
+        <SynthesizerCachePanel />
       </Section>
 
       <Section title="저장 위치" description="" muted>

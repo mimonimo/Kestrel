@@ -24,6 +24,8 @@ from app.schemas.sandbox import (
     SandboxExecResponse,
     SandboxSessionOut,
     SandboxStartRequest,
+    SynthesizeCacheEntryOut,
+    SynthesizeCacheReport,
     SynthesizeGcRequest,
     SynthesizeGcResponse,
     SynthesizeRequest,
@@ -36,6 +38,7 @@ from app.services.sandbox import (
     gc_synthesized_images,
     reap_expired_sessions,
     record_success_payload,
+    report_synthesized_cache,
     resolve_lab,
     synthesize,
     sync_vulhub,
@@ -190,6 +193,50 @@ async def synthesize_lab(
         build_log_tail=result.build_log_tail,
         response_status=result.response_status,
         response_body_preview=result.response_body_preview,
+    )
+
+
+@router.get(
+    "/synthesize/cache",
+    response_model=SynthesizeCacheReport,
+    response_model_by_alias=True,
+)
+async def synthesize_cache(
+    db: AsyncSession = Depends(get_db),
+) -> SynthesizeCacheReport:
+    """Read-only snapshot of the synthesized-image cache.
+
+    Drives the operator dashboard. Entries are sorted oldest-LRU first so
+    the UI can show what the next GC sweep would evict. Includes the
+    configured ceilings so the panel can render utilization without a
+    separate /settings round-trip.
+    """
+    settings = get_settings()
+    report = await report_synthesized_cache(db)
+    return SynthesizeCacheReport(
+        count=report.count,
+        total_mb=report.total_mb,
+        in_use_count=report.in_use_count,
+        missing_image_count=report.missing_image_count,
+        oldest_last_used_at=report.oldest_last_used_at,
+        max_total_mb=settings.sandbox_syn_image_max_total_mb,
+        max_count=settings.sandbox_syn_image_max_count,
+        max_age_days=settings.sandbox_syn_image_max_age_days,
+        entries=[
+            SynthesizeCacheEntryOut(
+                cve_id=e.cve_id,
+                image_tag=e.image_tag,
+                lab_kind=e.lab_kind,
+                size_mb=e.size_mb,
+                in_use=e.in_use,
+                image_present=e.image_present,
+                last_used_at=e.last_used_at,
+                last_verified_at=e.last_verified_at,
+                created_at=e.created_at,
+                age_days=e.age_days,
+            )
+            for e in report.entries
+        ],
     )
 
 
