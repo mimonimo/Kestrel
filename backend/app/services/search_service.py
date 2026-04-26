@@ -13,6 +13,16 @@ Step 5 tuning
   "allows", "attacker", "could", ...) to keep short queries sharp.
 - typoTolerance.minWordSizeForTypos lifted so short tokens (e.g. "CVE",
   "XSS", "RCE") match exactly. CVE numbers are disabled from typo entirely.
+
+PR-A (Step 10) sort/filter expansion
+------------------------------------
+- ``severityRank`` numeric facet so the dashboard's "심각도순" sort can be
+  pushed to the engine instead of re-sorting the current page on the
+  client (the previous behavior only sorted the 20 visible items, which
+  the user reported as broken sort across pages).
+- ``search()`` accepts ``sort`` + ``attributes_to_search_on`` so the API
+  layer can issue a cveId-restricted retry for queries like "44228" that
+  would otherwise compete with title/summary tokens for relevance.
 """
 from __future__ import annotations
 
@@ -49,6 +59,18 @@ TYPO_TOLERANCE = {
     "disableOnAttributes": ["cveId"],
 }
 
+SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+# Frontend SortKey → Meilisearch sort spec. When the user picks "심각도순",
+# break ties by recency so two equally-severe CVEs aren't shuffled
+# arbitrarily between page loads.
+SORT_SPECS: dict[str, list[str]] = {
+    "newest": ["publishedAt:desc"],
+    "oldest": ["publishedAt:asc"],
+    "severity": ["severityRank:desc", "publishedAt:desc"],
+    "cvss": ["cvssScore:desc", "publishedAt:desc"],
+}
+
 
 def _client() -> meilisearch.Client:
     s = get_settings()
@@ -69,7 +91,7 @@ def ensure_index() -> None:
     index.update_filterable_attributes(
         ["severity", "osFamilies", "types", "publishedAt", "source"]
     )
-    index.update_sortable_attributes(["publishedAt", "cvssScore"])
+    index.update_sortable_attributes(["publishedAt", "cvssScore", "severityRank"])
     index.update_searchable_attributes(["cveId", "title", "summary", "description"])
     index.update_ranking_rules(RANKING_RULES)
     index.update_stop_words(STOP_WORDS)
@@ -78,12 +100,14 @@ def ensure_index() -> None:
 
 
 def to_document(v: Vulnerability) -> dict[str, Any]:
+    sev = v.severity.value if v.severity else None
     return {
         "cveId": v.cve_id,
         "title": v.title,
         "summary": v.summary,
         "description": v.description,
-        "severity": v.severity.value if v.severity else None,
+        "severity": sev,
+        "severityRank": SEVERITY_RANK.get(sev, 0),
         "cvssScore": float(v.cvss_score) if v.cvss_score is not None else None,
         "publishedAt": int(v.published_at.timestamp()) if v.published_at else None,
         "source": v.source.value,
@@ -112,6 +136,8 @@ def search(
     to_ts: int | None = None,
     limit: int = 20,
     offset: int = 0,
+    sort: str = "newest",
+    attributes_to_search_on: list[str] | None = None,
 ) -> dict:
     client = _client()
     index = client.index(get_settings().meili_index)
@@ -128,15 +154,15 @@ def search(
     if to_ts is not None:
         filters.append(f"publishedAt <= {to_ts}")
 
-    return index.search(
-        query,
-        {
-            "limit": limit,
-            "offset": offset,
-            "filter": " AND ".join(filters) if filters else None,
-            "sort": ["publishedAt:desc"],
-        },
-    )
+    opts: dict[str, Any] = {
+        "limit": limit,
+        "offset": offset,
+        "filter": " AND ".join(filters) if filters else None,
+        "sort": SORT_SPECS.get(sort, SORT_SPECS["newest"]),
+    }
+    if attributes_to_search_on:
+        opts["attributesToSearchOn"] = attributes_to_search_on
+    return index.search(query, opts)
 
 
 def meili_healthy() -> bool:

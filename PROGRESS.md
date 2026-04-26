@@ -1003,6 +1003,51 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+## Step 10 — 대시보드 검색 UX 개선 (전역 sort · 부분 CVE-id · 카테고리/기간 세분화) 🚧
+
+> 사용자 보고: (1) 검색창에 "44228" 처럼 CVE 숫자만 쳐도 안 잡힌다, (2) sort 가 현재 페이지 20 건만 정렬한다 (pagination 전체에 적용 안 됨), (3) 심각도/OS/유형 카테고리가 너무 거칠다, (4) 기간 필터가 raw 날짜 입력 뿐이라 분류가 어렵다. 4가지 모두를 PR-A 한 묶음으로 출하 — 모두 search/list UX 의 "안정적 동작" 한 축이고 분리하면 churn.
+
+### PR 10-A — 검색 UX 4종 세트 (partial CVE-id · 전역 sort · 16 vuln-types · 날짜 프리셋) ✅
+
+**완료일:** 2026-04-26
+
+**Backend (`app/services/search_service.py`, `app/api/v1/search.py`)**
+- `SEVERITY_RANK = {critical:4, high:3, medium:2, low:1}` 추가 + `to_document()` 가 `severityRank` 필드를 항상 emit. Meili 문서 49,799 건 reindex 완료 (sortable attrs 에 `severityRank` 등록).
+- `SORT_SPECS` dict — 4 키 (`newest`/`oldest`/`severity`/`cvss`) 모두 명시적 spec, severity/cvss 는 `publishedAt:desc` tiebreak. 기본 fallback 은 newest. `search()` 가 `sort: str` 파라미터를 받아 page-aware Meili 쿼리에 그대로 전달 — 클라이언트의 페이지 단위 재정렬을 제거.
+- `_CVE_PARTIAL_RE = re.compile(r"^[0-9-]{3,}$")` + `_cve_id_ilike_pattern(q)` — `CVE-`/`CVE` 접두사 제거 후 숫자/대시 토큰만 남으면 `%CVE-%<safe>%` 패턴 반환, 그 외 generic 쿼리는 None (쓸데없는 ILIKE 부담 회피). `"44228"` → `%CVE-%44228%`, `"2021-44"` → `%CVE-%2021-44%`, `"log4j"` → None.
+- 페이지 1 에서만 `cve_id ILIKE pattern` LIMIT pageSize 를 별도 쿼리해 Meili hit 앞에 prepend — pagination drift 회피 (페이지 2+ 는 Meili 결과만). PG fallback 은 `or_(text_cond, Vulnerability.cve_id.ilike(cve_pattern))` 로 한 쿼리에 묶음.
+- `_severity_rank_case()` SQLAlchemy CASE 식 + `_pg_order_by(sort)` — Meili 미가용 시 fallback 도 동일 sort 키 4 종을 ORDER BY 절로 변환 (severity 는 enum→정수 ordinal CASE).
+
+**Frontend**
+- `lib/types.ts` — `VulnType` 16 종으로 확장: RCE, XSS, SQLi, CSRF, XXE, SSRF, LFI, Path-Traversal, Deserialization, Open-Redirect, Privilege-Escalation, Info-Disclosure, Memory-Corruption, DoS, Auth, Other. backend 는 `vulnerability_types.name` 자유 문자열이라 마이그레이션 불필요.
+- `components/search/FilterPanel.tsx` — vuln-type 칩 16 종 노출 (긴 이름은 한국어 라벨을 `title` 툴팁으로). 기간 프리셋 6 종(`오늘 / 7일 / 30일 / 90일 / 1년 / 직접 입력`) — 클릭 시 `fromDate=todayIso() - N`, `toDate=""` 로 open-ended 적용, `오늘` 만 from=to=today 로 단일 날짜 좁힘. `customMode` 가 sticky — 한번 "직접 입력" 누르면 raw 입력이 우연히 프리셋과 일치해도 highlight 가 안 빠진다. `todayIso()`/`isoDaysAgo()` 모두 로컬 타임존 — KST 1AM 사용자가 "오늘" 눌러서 UTC 어제로 잡히는 사고 방지.
+- `lib/url-state.ts` — `sort: SortKey` 를 URL 1급 상태로 승격 (newest 가 아닐 때만 `?sort=...` 직렬화). `TYPE` 화이트리스트 16 종으로 확장.
+- `hooks/useCveSearch.ts` — `sort` 를 4번째 인자 + queryKey 에 포함 → sort 변경 시 React Query 가 새 페치를 트리거.
+- `app/page.tsx` — 로컬 `useState<SortKey>` 제거, `url.sort` 가 단일 source-of-truth. `SortSelect onChange` → `url.set({sort, page:1})`. 검색 결과는 server-sorted 라 client `sortVulnerabilities` 호출을 제거 — 북마크 모드(arbitrary 순서로 batch-fetch) 만 client-sort 유지.
+
+**검증 (`backend/scripts/smoke_search.py` — 신규, 13 + 4 + 4 케이스)**
+- A. `_cve_id_ilike_pattern` 13 케이스: `"44228"`/`"2021-44228"`/`"CVE-2021"`/`"cve-2024-3"`/`"CVE2024"`/`"2021-44"`/`"  44228  "` 양성, `"log4j"`/`"apache struts"`/`"12"`/`""`/`"CVE-"`/`"100% off"` None 반환 — 모두 PASS.
+- B. `_pg_order_by` 4 키: 첫 ORDER BY 절이 각각 `published_at desc`/`asc`/`case when ... severity`/`cvss_score desc` 를 포함 — SQLAlchemy 렌더 문자열은 버전 따라 흔들리므로 정확 일치 대신 substring 검증.
+- C. `SORT_SPECS` 4 키 × 각 spec 모두 `:asc|:desc` 방향 suffix 보유 + severity spec 이 `severityRank` 참조 — PASS.
+- 결과: `OK — PR-A smoke green`. PR 9-L/9-M smoke 회귀도 동시 green.
+
+**라이브 동작 확인 (49,799 건 인덱스)**
+- `?q=44228` → `total:1`, `CVE-2021-44228` 단일 매치.
+- `?q=2021-44` → 16 건 (CVE-2021-44XXX 시리즈 prepend).
+- `?sort=severity&pageSize=5` → critical 5 건 (cvss 9.8/9.8/9.9/9.1/9.1) — severityRank desc 후 publishedAt desc tiebreak.
+- `?sort=cvss&pageSize=5` → cvss 10.0 critical 5 건 — cvssScore desc 후 publishedAt desc tiebreak.
+
+**왜 페이지 1 에서만 cve-id prepend 인가**
+- 페이지 2 이후에 prepend 를 깔면 같은 결과가 두 번 보이거나(Meili 가 같은 doc 을 페이지 2 에 다시 반환) total/offset 회계가 어그러진다. 페이지 1 에서만 prepend + 중복 제거 (`seen` set 으로 cveId 단위) 로 "전형적 사용자 흐름(첫 페이지에서 찾는다)" 만 보장하고 깊은 페이지는 Meili 단일 소스로 유지.
+
+**왜 Meili sort 를 클라이언트 재정렬 대신 쓰는가**
+- 기존 `sortVulnerabilities(items, sort)` 는 `useQuery` 가 반환한 페이지 1 건들 만 정렬했다 — 페이지 2 로 넘기면 sort 가 다시 깨졌다. Meili 가 sortable attribute 를 가지면 페이지/오프셋 무관하게 글로벌 sort 를 보장한다. 단 북마크 모드는 cveId 기반 batch-fetch 라서 sort 가 임의 순서 — 거기는 client sort 유지.
+
+**다음 PR 예고**
+- PR 10-B (예정): 도메인 카테고리 (audio / kernel / SSH / web / network / driver 등) — CVE 가 여러 도메인에 걸칠 수 있도록 (예: CVE-2026-22564 는 audio 취약점이지만 SSH 까지 위협). 현재 schema 에는 단일 vuln-type tag 만 있고 affected_products 도 vendor/product 수준 — domain 분류는 별도 정규화 테이블이 필요. spec 부터.
+
+---
+
 ### PR 9-M — backend probe 클래스 확장 (XXE / open-redirect / deserialization) ✅
 
 > PR 9-L 이 RCE / path-traversal / SSTI / XSS / time-based SQLi 5 종에 대해 backend ground-truth 검증을 깔았지만, 그 외 클래스(XXE, SSRF, deserialization, auth bypass, IDOR, open-redirect 등) 는 여전히 `llm_indicator_only` 약식 fallback 으로만 통과했다. 사용자 메모리 지시 — "verification 강화(음성 대조, side-channel 카나리, behavior-class probe, indicator strength gate) 가 feedback-loop 기능(다중 후보, best-of-N 등) 보다 우선" — 에 따라 best-of-N(PR 9-N) 보다 probe 클래스 확장을 먼저 출하. 한 번에 3 클래스(XXE / open-redirect / deserialization) 를 추가해 약식 fallback 에 머물던 vuln class 를 줄였다.

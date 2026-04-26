@@ -2,7 +2,27 @@ export type Severity = "critical" | "high" | "medium" | "low";
 
 export type OsFamily = "windows" | "linux" | "macos" | "android" | "ios" | "other";
 
-export type VulnType = "RCE" | "XSS" | "SQLi" | "CSRF" | "XXE" | "SSRF" | "LFI" | "DoS" | "Auth" | "Other";
+// Mechanism-class taxonomy. The backend keeps this as free-form
+// strings on `vulnerability_types.name`, so adding new chips here is a
+// frontend-only change — no migration. Domain/component categorization
+// (audio / SSH / kernel / browser / …) lives in PR-B with its own table.
+export type VulnType =
+  | "RCE"
+  | "XSS"
+  | "SQLi"
+  | "CSRF"
+  | "XXE"
+  | "SSRF"
+  | "LFI"
+  | "Path-Traversal"
+  | "Deserialization"
+  | "Open-Redirect"
+  | "Privilege-Escalation"
+  | "Info-Disclosure"
+  | "Memory-Corruption"
+  | "DoS"
+  | "Auth"
+  | "Other";
 
 export type Source = "nvd" | "exploit_db" | "github_advisory";
 

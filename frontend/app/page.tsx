@@ -17,7 +17,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { useUrlState } from "@/lib/url-state";
 import { useBookmarks } from "@/lib/bookmarks";
 import { api } from "@/lib/api";
-import { sortVulnerabilities, type SortKey } from "@/lib/sort";
+import { sortVulnerabilities } from "@/lib/sort";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 20;
@@ -27,7 +27,6 @@ function Dashboard() {
   const [queryInput, setQueryInput] = useState(url.query);
   const debouncedQuery = useDebounce(queryInput, 300);
   const [bookmarksOnly, setBookmarksOnly] = useState(false);
-  const [sort, setSort] = useState<SortKey>("newest");
   const bookmarks = useBookmarks();
 
   useEffect(() => {
@@ -48,6 +47,7 @@ function Dashboard() {
     },
     url.page,
     PAGE_SIZE,
+    url.sort,
   );
 
   const bookmarkIds = [...bookmarks.set];
@@ -136,7 +136,7 @@ function Dashboard() {
                 <Star className={cn("h-3.5 w-3.5", bookmarksOnly && "fill-amber-300")} />
                 즐겨찾기만 ({bookmarks.count})
               </button>
-              <SortSelect value={sort} onChange={setSort} />
+              <SortSelect value={url.sort} onChange={(next) => url.set({ sort: next, page: 1 })} />
             </div>
           </div>
 
@@ -159,7 +159,10 @@ function Dashboard() {
                   !bookmarksOnly && search.isPlaceholderData ? "opacity-60" : ""
                 }`}
               >
-                {sortVulnerabilities(activeData.items, sort).map((v) => (
+                {/* Search results are server-sorted; bookmarks come from a
+                    batch fetch in arbitrary order so we still client-sort
+                    them. */}
+                {(bookmarksOnly ? sortVulnerabilities(activeData.items, url.sort) : activeData.items).map((v) => (
                   <CveListItem key={v.cveId} vuln={v} />
                 ))}
               </div>

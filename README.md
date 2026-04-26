@@ -60,7 +60,10 @@ Kestrel은 공개 취약점 정보를 한 곳으로 모아 보안 엔지니어, 
 
 ### 검색 & 필터
 - Meilisearch(오타 허용, 팩싯, 랭킹) + PG tsvector 폴백.
-- URL 동기화 필터: `?q=log4j&severity=critical&os=linux&type=RCE&from=2026-01-01`.
+- URL 동기화 필터: `?q=log4j&severity=critical&os=linux&type=RCE&from=2026-01-01&sort=cvss`.
+- **부분 CVE-id 검색** — `"44228"`, `"2021-44"`, `"cve-2024-3"` 처럼 숫자/대시 단편만 쳐도 ILIKE 매칭으로 prepend (페이지 1 한정으로 pagination drift 회피).
+- **전역 sort** — `newest / oldest / severity / cvss` 4 키 모두 Meili sortable attribute(`severityRank`, `cvssScore`, `publishedAt`) 로 처리해 페이지 단위가 아닌 전체 결과 기준 정렬. severity/cvss 는 `publishedAt:desc` tiebreak.
+- **카테고리 세분화** — vuln-type 16 종(RCE/XSS/SQLi/CSRF/XXE/SSRF/LFI/Path-Traversal/Deserialization/Open-Redirect/Privilege-Escalation/Info-Disclosure/Memory-Corruption/DoS/Auth/Other), 기간 프리셋 6 종(`오늘 / 7일 / 30일 / 90일 / 1년 / 직접 입력`, KST 로컬 타임존 기준).
 - 디바운스 검색(300ms), `keepPreviousData`로 깜빡임 없는 전환.
 
 ### 사용자 경험

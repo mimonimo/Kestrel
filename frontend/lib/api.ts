@@ -1,5 +1,6 @@
 import type { Asset } from "./assets";
 import { getClientId } from "./clientId";
+import type { SortKey } from "./sort";
 import type { SearchFilters, SearchResponse, StatusReport, Vulnerability } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -134,7 +135,12 @@ export interface AssetCatalogResponse {
 }
 
 export const api = {
-  searchVulnerabilities: (filters: SearchFilters, page = 1, pageSize = 20) => {
+  searchVulnerabilities: (
+    filters: SearchFilters,
+    page = 1,
+    pageSize = 20,
+    sort: SortKey = "newest",
+  ) => {
     const params = new URLSearchParams();
     if (filters.query) params.set("q", filters.query);
     filters.severity?.forEach((s) => params.append("severity", s));
@@ -142,6 +148,7 @@ export const api = {
     filters.types?.forEach((t) => params.append("type", t));
     if (filters.fromDate) params.set("from", filters.fromDate);
     if (filters.toDate) params.set("to", filters.toDate);
+    if (sort && sort !== "newest") params.set("sort", sort);
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
     return request<SearchResponse>(`/search?${params.toString()}`);
