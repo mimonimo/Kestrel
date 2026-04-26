@@ -49,6 +49,13 @@ from app.services.sandbox.manager import (
     wait_ready,
 )
 from app.services.sandbox.synthesizer_gc import gc_synthesized_images
+from app.services.sandbox.synthesizer_probes import (
+    ProbeOutcome,
+    VerificationVerdict,
+    build_verdict,
+    known_kinds,
+    select_probes,
+)
 
 log = get_logger(__name__)
 
@@ -136,9 +143,14 @@ _USER_TEMPLATE = """\
    예: 명령 인젝션이라면 페이로드가 `; echo SYN_OK_AB12` → 앱이 그 stdout을 응답 본문에 노출.
    외부 호스트로 exfil 같은 건 격리 네트워크라 절대 동작하지 않습니다.
 2. 가능한 한 success_indicator는 본 페이로드에 직접 박힌 짧은 토큰(예: "SYN_OK_<랜덤6자>")으로 만드세요.
+   단, success_indicator가 files 본문에 그대로 들어 있으면 echo trap 으로 거부됩니다 — 페이로드를 통해서만 응답에 도달해야 합니다.
 3. 앱은 반드시 container_port에서 listen해야 합니다. 0.0.0.0 바인딩 필수.
 4. 빌드는 30~60초 안에 끝나야 하므로 가벼운 베이스 이미지 + 최소 의존성만 사용하세요.
 5. files[].path는 Dockerfile의 COPY 대상과 정확히 일치해야 합니다. 절대경로/상위경로(..) 금지.
+6. response_kind 는 다음 중 하나를 권장합니다 (backend probe 가 매칭됩니다): {known_kinds}.
+   다른 값도 허용되지만, 그 경우 probe 미적용으로 약식 검증(llm_indicator_only)으로만 통과되며 신뢰도가 낮게 표시됩니다.
+7. lab 은 단순히 입력을 그대로 echo 하기만 하는 형태(echo machine)면 backend probe 가 reject 합니다 —
+   실제 CVE 동작(명령 실행, 템플릿 평가, 파일 읽기, time-based SQLi 등)을 그대로 재현해야 합니다.
 """
 
 
@@ -222,6 +234,20 @@ async def _prior_attempts_block(
             f"- 결과: 합성 실패. 마지막 노트: {(existing.notes or '(노트 없음)')[:240]}"
         )
 
+    verification = spec.get("verification") or {}
+    if verification:
+        method = verification.get("method") or "(unknown)"
+        summary_lines.append(f"- 이전 검증 method: {method}")
+        if verification.get("rejection_reason"):
+            summary_lines.append(
+                f"  · 거부 사유: {str(verification['rejection_reason'])[:300]}"
+            )
+        for probe in (verification.get("probes") or [])[:5]:
+            mark = "PASS" if probe.get("passed") else "FAIL"
+            summary_lines.append(
+                f"  · probe[{probe.get('name')}] {mark} — {str(probe.get('rationale') or '')[:240]}"
+            )
+
     # Pull a few down-vote notes so the LLM sees the human reasoning.
     notes = (
         await db.execute(
@@ -266,7 +292,18 @@ def _spec_hash(parsed: dict) -> str:
 
 
 def _validate_parsed(parsed: dict) -> str | None:
-    """Return None if shape is fine, otherwise a short error string."""
+    """Return None if shape is fine, otherwise a short error string.
+
+    Beyond shape, this gate rejects shapes that are *structurally* set up
+    to pass verification trivially:
+      * indicator shorter than 8 chars (collision-prone)
+      * indicator equal to payload (closed echo loop)
+      * indicator literally present in any file the LLM emitted (the lab
+        can return it without ever evaluating the payload — classic echo
+        trap), and
+      * missing/empty ``response_kind`` (backend probes need it to pick
+        the right probe class).
+    """
     for key in ("dockerfile", "files", "container_port", "target_path", "injection_point", "payload_example", "success_indicator"):
         if key not in parsed:
             return f"필수 필드 누락: {key}"
@@ -286,10 +323,26 @@ def _validate_parsed(parsed: dict) -> str | None:
     for key in ("method", "path", "parameter", "location"):
         if key not in ip:
             return f"injection_point.{key} 누락"
+    response_kind = str(ip.get("response_kind") or "").strip()
+    if not response_kind:
+        return "injection_point.response_kind 누락 — 어떤 종류의 취약점인지 명시 필요"
     if not isinstance(parsed["container_port"], int):
         return "container_port는 정수"
     if not isinstance(parsed["success_indicator"], str) or not parsed["success_indicator"].strip():
         return "success_indicator 비어 있음"
+    indicator = parsed["success_indicator"].strip()
+    if len(indicator) < 8:
+        return f"success_indicator 가 너무 짧음 (len={len(indicator)}, 최소 8자) — 우연 일치 가능성"
+    payload_example = str(parsed.get("payload_example") or "").strip()
+    if indicator == payload_example:
+        return "success_indicator 가 payload_example 와 동일 — 단순 echo 검증이라 의미 없음"
+    for i, f in enumerate(parsed["files"]):
+        content = str(f.get("content") or "")
+        if indicator in content:
+            return (
+                f"success_indicator '{indicator}' 가 files[{i}] ({f.get('path')}) 본문에 포함됨 — "
+                "lab 이 payload 와 무관하게 indicator 를 노출하는 echo trap"
+            )
     return None
 
 
@@ -417,23 +470,60 @@ def _payload_dict_for_mapping(parsed: dict) -> dict:
     }
 
 
-async def _verify(spec: LabSpec, parsed: dict) -> tuple[bool, dict]:
-    """Spawn one ephemeral lab from *spec*, replay payload, check indicator.
+def _verification_dict(verdict: VerificationVerdict) -> dict:
+    """Serialize the verdict for persistence inside spec/notes JSONB.
 
-    Returns ``(success, exchange)``. The lab is always reaped before return.
+    Stored verbatim on the mapping so PR9-K's ``_prior_attempts_block``
+    can surface concrete probe rationales on the next retry instead of
+    having to re-derive them. Evidence is JSON-friendly by construction
+    (probes only stash dict/str/int/float into ``ProbeOutcome.evidence``).
+    """
+    return {
+        "method": verdict.method,
+        "passed": verdict.passed,
+        "rejection_reason": verdict.rejection_reason,
+        "probes": [
+            {
+                "name": r.name,
+                "kind": r.kind,
+                "passed": r.passed,
+                "rationale": r.rationale,
+                "evidence": r.evidence,
+            }
+            for r in verdict.probe_results
+        ],
+    }
+
+
+async def _verify(spec: LabSpec, parsed: dict) -> tuple[VerificationVerdict, dict]:
+    """Spawn one ephemeral lab, run backend probes + legacy check.
+
+    Returns ``(verdict, exchange)``. The lab is always reaped before
+    return. The exchange is the legacy LLM-payload roundtrip kept around
+    for the UI; it is **not** the truth signal anymore. The truth signal
+    is ``verdict.passed`` from ``synthesizer_probes.build_verdict``.
+
+    Why we still run the legacy check: when a lab declares a
+    ``response_kind`` the probe registry doesn't recognise yet, we need
+    *something* to gate on. ``build_verdict`` will use the legacy result
+    only as a last-resort fallback (``method=llm_indicator_only``) and
+    log a warning — operators should add a probe class for that kind.
     """
     session_id = uuid.uuid4()
     handle = await start_lab(spec, session_id)
     try:
         await wait_ready(handle.target_url, spec)
         ip = _injection_point_from(parsed)
+
+        # Legacy LLM-payload check — captured for UI display + fallback.
         payload = str(parsed["payload_example"])
         params = data = json_body = headers = None
-        if ip.location == "form":
+        loc = (ip.location or "query").lower()
+        if loc == "form":
             data = {ip.parameter: payload}
-        elif ip.location == "json":
+        elif loc == "json":
             json_body = {ip.parameter: payload}
-        elif ip.location == "header":
+        elif loc == "header":
             headers = {ip.parameter: payload}
         else:
             params = {ip.parameter: payload}
@@ -446,15 +536,42 @@ async def _verify(spec: LabSpec, parsed: dict) -> tuple[bool, dict]:
             json=json_body,
             headers=headers,
         )
+        indicator = str(parsed["success_indicator"])
+        legacy_passed = indicator in (exchange.get("body") or "")
+
+        # Backend-built probes own the truth signal.
+        probes = select_probes(ip.response_kind)
+        probe_results: list[ProbeOutcome] = []
+        for probe in probes:
+            try:
+                outcome = await probe.run(handle=handle, ip=ip)
+            except Exception as e:  # noqa: BLE001 — one failing probe shouldn't halt the rest
+                log.warning(
+                    "synthesizer.probe_exception",
+                    probe=probe.name,
+                    error=str(e),
+                )
+                outcome = ProbeOutcome(
+                    name=probe.name,
+                    kind=str(probe.applies_to[0] if probe.applies_to else "unknown"),
+                    passed=False,
+                    rationale=f"probe 실행 중 예외: {e}",
+                    evidence={"exception": str(e)},
+                )
+            probe_results.append(outcome)
+
+        verdict = build_verdict(
+            ip.response_kind,
+            probe_results,
+            fallback_passed=legacy_passed,
+        )
     finally:
         try:
             await stop_lab(handle.container_name)
         except Exception as e:  # noqa: BLE001 — best-effort cleanup
             log.warning("synthesizer.stop_failed", error=str(e))
 
-    indicator = str(parsed["success_indicator"])
-    body = exchange.get("body") or ""
-    return (indicator in body), exchange
+    return verdict, exchange
 
 
 # ---------------------------------------------------------------------------
@@ -614,6 +731,7 @@ async def synthesize(
         description=vuln.description,
         references=_references_block(vuln),
         prior_attempts=("\n" + prior_block) if prior_block else "",
+        known_kinds=", ".join(sorted(set(known_kinds()))),
     )
 
     last_error: str | None = None
@@ -681,9 +799,9 @@ async def synthesize(
                 build_hint=spec_dict["build_hint"],
             )
 
-            await emit("lab_started", "검증용 컨테이너 기동 + 페이로드 전송", None)
+            await emit("lab_started", "검증용 컨테이너 기동 + backend probe 실행", None)
             try:
-                ok, exchange = await _verify(spec, parsed)
+                verdict, exchange = await _verify(spec, parsed)
             except SandboxError as e:
                 last_error = f"검증 단계 실패: {e}"
                 log.warning("synthesizer.verify_failed", cve_id=cve_id, error=str(e))
@@ -692,26 +810,56 @@ async def synthesize(
 
             body_preview = (exchange.get("body") or "")[:400]
             status_code = exchange.get("status_code")
+            verification = _verification_dict(verdict)
+            spec_dict["verification"] = verification
 
-            if not ok:
+            if not verdict.passed:
                 last_error = (
-                    f"success_indicator '{parsed['success_indicator']}'가 응답 본문에 없음 "
-                    f"(status={status_code})"
+                    f"검증 실패 (method={verdict.method}): "
+                    f"{verdict.rejection_reason or '(사유 없음)'}"
                 )
                 log.info(
-                    "synthesizer.indicator_missing",
+                    "synthesizer.verify_rejected",
                     cve_id=cve_id,
+                    method=verdict.method,
                     status=status_code,
-                    body_head=body_preview[:120],
+                    probe_count=len(verdict.probe_results),
                 )
                 await emit(
                     "verify_failed",
                     last_error,
-                    {"status": status_code, "bodyPreview": body_preview[:200]},
+                    {
+                        "status": status_code,
+                        "bodyPreview": body_preview[:200],
+                        "method": verdict.method,
+                        "probes": [
+                            {"name": r.name, "passed": r.passed, "rationale": r.rationale}
+                            for r in verdict.probe_results
+                        ],
+                    },
                 )
                 await remove_image(image_tag)
                 continue
-            await emit("verify_ok", "success_indicator 응답 본문에서 확인됨", {"status": status_code})
+            await emit(
+                "verify_ok",
+                f"검증 통과 (method={verdict.method})",
+                {
+                    "status": status_code,
+                    "method": verdict.method,
+                    "probes": [
+                        {"name": r.name, "passed": r.passed, "rationale": r.rationale}
+                        for r in verdict.probe_results
+                    ],
+                },
+            )
+
+            if verdict.method == "llm_indicator_only":
+                digest = (
+                    digest
+                    + " — ⚠️ backend probe 미적용 (response_kind 미인식), "
+                    "LLM-indicator-only 약식 검증"
+                )
+                spec_dict["digest"] = digest
 
             payload_dict = _payload_dict_for_mapping(parsed)
             mapping = await db.get(CveLabMapping, attempt_mapping_id)

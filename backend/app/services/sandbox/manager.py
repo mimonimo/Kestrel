@@ -350,6 +350,54 @@ async def reap_expired() -> int:
     return len(names)
 
 
+async def exec_in_lab(
+    container_name: str,
+    cmd: list[str],
+    *,
+    user: str | None = None,
+    timeout_seconds: float = 10.0,
+) -> tuple[int, bytes]:
+    """Run *cmd* inside the lab container, return ``(exit_code, stdout+stderr)``.
+
+    Used by the backend probe library to plant canary files (``echo X >
+    /tmp/Y``) and to read process state without going through the HTTP
+    surface — the LLM cannot influence either side of this channel, so
+    probes built on top of it stay honest even when the lab itself is a
+    fake echo machine.
+
+    Both stdout and stderr are merged because most canary commands either
+    succeed silently (we only care about exit_code) or surface a useful
+    error on stderr that we want to log alongside stdout. Container must be
+    running; ``SandboxError`` is raised on any docker-side failure so the
+    caller can decide whether to abort verification or continue with the
+    remaining probes.
+    """
+
+    def _do() -> tuple[int, bytes]:
+        cli = _client()
+        try:
+            container = cli.containers.get(container_name)
+        except NotFound as e:
+            raise SandboxError(f"컨테이너 '{container_name}'를 찾을 수 없습니다.") from e
+        except APIError as e:
+            raise SandboxError(f"docker daemon 오류: {e}") from e
+        try:
+            res = container.exec_run(
+                cmd,
+                user=user or "",
+                stdout=True,
+                stderr=True,
+                demux=False,
+                tty=False,
+            )
+        except APIError as e:
+            raise SandboxError(f"exec 실패: {e}") from e
+        output = res.output if isinstance(res.output, (bytes, bytearray)) else b""
+        return int(res.exit_code or 0), bytes(output)
+
+    return await asyncio.wait_for(asyncio.to_thread(_do), timeout=timeout_seconds)
+
+
 async def proxy_request(
     target_url: str,
     method: str,

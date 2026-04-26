@@ -999,7 +999,59 @@ OpenAPI: `LabInfoOut.properties` 에 `digest` 필드 등록 확인. `next build`
 
 ## Step 9 — 다음 PR 예고
 
-PR 9-L (예정): 합성 lab 의 다중 후보 보존 + best-of-N 선택. 같은 CVE 의 여러 성공 spec 을 보관하고 평가가 가장 높은 것을 우선 매핑.
+PR 9-M (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L 이 lab-자체 검증을 강화한 위에서, 같은 CVE 에 대해 검증 통과한 후보를 N 개까지 병렬 보관하고 평가/probe 점수가 가장 높은 것을 우선 매핑. 사용자 평가는 보조 신호로만 활용 (truth oracle 은 backend probe 가 유지).
+
+---
+
+### PR 9-L — 백엔드 ground-truth 검증 (echo machine 거부) ✅
+
+> PR 9-K 가 자기개선 루프를 만들었지만 검증은 여전히 LLM 폐쇄 루프였다 — payload, success_indicator, 응답 처리 모두 LLM 이 만들고 LLM 이 짠 lab 이 그대로 echo 만 해도 통과. 사용자 👍/👎 는 lagging 신호이고, 그걸 검증의 주된 truth signal 로 삼을 수는 없다("진짜 CVE 구현이 핵심임 user feedback 좋아요 누르는걸로는 대체가 안됨"). PR 9-L 은 검증 자체를 backend 가 만들어낸 probe + canary 로 대체한다 — LLM 이 어떤 verification 보조 자료(예: negative control)를 제공해도 일절 신뢰하지 않는다("거짓으로 된걸로 치는건 의미가 없음").
+
+**새 모듈 `backend/app/services/sandbox/synthesizer_probes.py`**
+- `BackendProbe` 베이스 + 5 종 구현, 모든 페이로드/카나리/예상 substring/음성 대조를 백엔드가 직접 만든다 (LLM 입력 0). 각 probe 는 양성 시도 + benign nonce 음성 대조로 echo 트랩을 자체 거부.
+- `RceCanaryProbe` (rce/command-exec/...) — `exec_in_lab` 으로 `/tmp/kestrel_canary_<랜덤>` 에 `KESTREL_RCE_OK_<랜덤>` 을 stamp 한 뒤 7가지 shell injection 셰이프(`; cat`, `|cat`, `&&`, ``` ` ``` , `$()`, newline, raw) 로 카나리 읽기 시도. 응답에 카나리 값이 보이면 양성, 같은 nonce 길이의 benign 입력에서도 보이면 echo 트랩으로 거부.
+- `PathTraversalCanaryProbe` (path-traversal/lfi/file-read/...) — 동일 카나리, 6가지 traversal 셰이프(절대경로, `../*8`, `..%2f` 인코딩, `....//`, `file://`). 음성 대조 = 존재하지 않는 경로.
+- `SstiArithmeticProbe` (ssti/template-injection) — 8개 엔진 별 산술식(jinja2/twig `{{7*191}}`→`1337`, freemarker `${...}`, erb `<%= ... %>`, smarty `{...}`, velocity `#set`, razor `@(...)`, 등). 실제 SSTI 는 평가 결과가 응답에 등장하면서 원식 자체는 등장하지 않음 — 둘 다 등장하면 단순 reflect 이므로 거부.
+- `XssReflectProbe` (xss/html-reflect/json-reflect/stored-xss) — 두 개의 backend nonce(`KXSS_<rand>`) 를 각각 보내 자기 응답에만 reflect 되는지 확인. 두 번째 응답에 첫 nonce 가 보이면 입력과 무관한 하드코딩 영역이 있다고 판정해 거부.
+- `SqliTimeBlindProbe` (sqli/sql-injection/blind-sqli) — 3 회 baseline 측정 후 6 종 sleep 페이로드(PG `pg_sleep`, MySQL `SLEEP`, MSSQL `WAITFOR`, SQLite `randomblob`) 시도. baseline + sleep×0.7 이상이면 양성. 양성 직후 다시 baseline 을 재서 일시적 전체 슬로우다운을 배제(post-baseline rule).
+- `select_probes(response_kind)` / `known_kinds()` / `build_verdict(...)` 디스패치. verdict 정책: 적용된 probe 가 하나라도 통과 → `method=backend_probe`, 모두 실패 → `rejected` (legacy LLM 검증이 통과해도 구제하지 않음 — PR 9-L 의 핵심 의도). probe 가 0 개 적용 → 모르는 response_kind, legacy 결과로 fallback `method=llm_indicator_only` (warning 로그). 모르면 약식이라는 사실을 mapping 에 명시.
+
+**`manager.exec_in_lab` (`backend/app/services/sandbox/manager.py`)**
+- `docker exec` 헬퍼. probe 가 lab 컨테이너 안에 카나리를 stamp 하기 위한 채널. HTTP 표면(LLM 이 lab 코드를 통해 영향을 줄 수 있는 면)을 우회한다 — 카나리는 docker daemon 을 거쳐서만 들어가고, LLM 은 docker socket 에 접근할 수 없으므로 위조가 불가능.
+- stdout+stderr 합쳐 `(exit_code, bytes)` 반환. `asyncio.wait_for` + `to_thread` 로 docker SDK 의 동기 호출을 안전하게 wrap.
+
+**`synthesize()` 검증 경로 재작성 (`synthesizer.py`)**
+- `_verify(spec, parsed)` 가 `(VerificationVerdict, exchange)` 를 반환하도록 시그니처 변경. lab 한 번 spawn → wait_ready → legacy LLM-payload 한 번 (UI 표시 + fallback 용으로만) → 적용 가능한 모든 probe 순차 실행 → `build_verdict` 로 종합 → 단일 `stop_lab` 으로 reap.
+- probe 결과를 `spec_dict["verification"]` 에 `{method, passed, rejection_reason, probes:[{name, kind, passed, rationale, evidence}]}` 형태로 직렬화해 매핑 row 의 spec JSONB 에 영구 저장. PR 9-K 의 `_prior_attempts_block` 가 다음 시도 프롬프트에 그대로 surface — LLM 은 "지난 시도에서 어떤 probe 가 왜 reject 했는지" 를 정확히 보고 다른 접근을 잡는다.
+- 약식 검증 통과(`llm_indicator_only`) 일 때는 digest 에 ⚠️ 마커를 붙여 매핑 카드에서 신뢰도 차이를 시각적으로 구분.
+- progress 콜백 (`verify_failed`/`verify_ok`) payload 에 `method` + `probes[]` (name/passed/rationale) 추가. UI 가 어떤 probe 가 왜 reject 됐는지 한눈에 보일 수 있게.
+
+**`_validate_parsed` 강화 — echo trap 을 빌드 전에 차단 (`synthesizer.py`)**
+- `success_indicator` < 8 자 → 우연 일치 가능성으로 거부.
+- `success_indicator == payload_example` → 닫힌 echo 루프이므로 거부.
+- `success_indicator` 가 `files[*].content` 안에 그대로 박혀 있음 → lab 이 페이로드와 무관하게 indicator 를 노출하는 echo trap 으로 거부 (가장 흔한 실패 모드).
+- `injection_point.response_kind` 가 비어 있음 → backend probe 디스패치 불가, 거부. 프롬프트에도 권장 enum 을 `known_kinds()` 로 동적으로 주입.
+
+**프롬프트 변경 (`_USER_TEMPLATE`)**
+- `{known_kinds}` 슬롯으로 backend probe 가 매칭되는 모든 alias 를 나열 — LLM 이 자유 문자열 대신 매칭되는 kind 를 고르도록 유도.
+- "echo machine 형태(입력만 그대로 echo)는 backend probe 가 reject" 규칙을 명시. success_indicator 가 files 본문에 들어가면 echo trap 으로 거부된다는 규칙도 추가.
+
+**검증 (`backend/scripts/smoke_pr9l.py`)**
+- pure-python smoke. `proxy_request`/`exec_in_lab` 을 monkey-patch 해 docker 없이 probe 라이브러리 동작을 검증.
+- (A) `_validate_parsed` 가 깨끗한 shape 는 통과시키고 4 가지 echo-trap 셰이프(짧은 indicator / indicator==payload / indicator-in-files / 누락 response_kind) 를 모두 거부.
+- (B) `select_probes` 가 12 개 response_kind alias 를 정확한 probe 로 디스패치, 모르는 kind 는 0 개 매칭.
+- (C) 가짜 lab 시나리오 3종:
+  - 진짜 RCE 흉내(payload 가 카나리 경로를 포함하면 카나리 값을 응답) → `method=backend_probe`, 통과.
+  - echo machine(항상 입력 그대로 응답) → `method=rejected`, 거부.
+  - 모르는 response_kind + legacy 통과 → `method=llm_indicator_only` fallback.
+- 결과: `OK — PR 9-L smoke green`. PR 9-K smoke 도 동시 회귀 — 세 시나리오 그대로 통과.
+
+**왜 LLM 이 만든 verification 자료는 일절 신뢰하지 않는가**
+- 사용자 명시 지적: "거짓으로 된걸로 치는건 의미가 없음". LLM 은 echo machine 에 대해서도 자기-일관된 (positive payload, negative control, behavior probe) 트리플을 통째로 만들 수 있다. 따라서 negative control 페이로드, behavior probe template, expected substring 모두 backend 가 직접 만들고, 카나리는 docker exec 채널로만 stamp 한다. 이렇게 해야 lab 의 HTTP 응답 단 하나에서 카나리 값이 등장하는 사건이 실제 익스플로잇이라는 보장이 생긴다.
+
+**알려진 한계 / 다음 PR 으로 넘김**
+- probe 가 커버하는 vuln class 는 5 개(rce/path-traversal/ssti/xss/sqli) — XXE, SSRF, deserialization, auth bypass, IDOR 등은 아직 fallback (`llm_indicator_only`) 경로로만 통과한다. 새 클래스 추가는 `BackendProbe` 서브클래스 한 개 + `_PROBE_CLASSES` 등록 한 줄.
+- 다중 후보 보존(best-of-N)은 PR 9-M 으로 분리 — backend probe 통과한 후보 중 가장 신호가 강한 것을 우선 매핑하는 정책은 검증이 신뢰할 만해진 지금에서야 의미가 있다.
 
 ---
 
