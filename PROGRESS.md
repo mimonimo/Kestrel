@@ -999,7 +999,39 @@ OpenAPI: `LabInfoOut.properties` 에 `digest` 필드 등록 확인. `next build`
 
 ## Step 9 — 다음 PR 예고
 
-PR 9-M (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L 이 lab-자체 검증을 강화한 위에서, 같은 CVE 에 대해 검증 통과한 후보를 N 개까지 병렬 보관하고 평가/probe 점수가 가장 높은 것을 우선 매핑. 사용자 평가는 보조 신호로만 활용 (truth oracle 은 backend probe 가 유지).
+PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 lab-자체 검증을 강화한 위에서, 같은 CVE 에 대해 검증 통과한 후보를 N 개까지 병렬 보관하고 probe 점수가 가장 높은 것을 우선 매핑. 사용자 평가는 보조 신호로만 활용 (truth oracle 은 backend probe 가 유지).
+
+---
+
+### PR 9-M — backend probe 클래스 확장 (XXE / open-redirect / deserialization) ✅
+
+> PR 9-L 이 RCE / path-traversal / SSTI / XSS / time-based SQLi 5 종에 대해 backend ground-truth 검증을 깔았지만, 그 외 클래스(XXE, SSRF, deserialization, auth bypass, IDOR, open-redirect 등) 는 여전히 `llm_indicator_only` 약식 fallback 으로만 통과했다. 사용자 메모리 지시 — "verification 강화(음성 대조, side-channel 카나리, behavior-class probe, indicator strength gate) 가 feedback-loop 기능(다중 후보, best-of-N 등) 보다 우선" — 에 따라 best-of-N(PR 9-N) 보다 probe 클래스 확장을 먼저 출하. 한 번에 3 클래스(XXE / open-redirect / deserialization) 를 추가해 약식 fallback 에 머물던 vuln class 를 줄였다.
+
+**`synthesizer_probes.py` 신규 probe 3종**
+- `XxeCanaryProbe` (xxe / xml-external-entity / xml_external_entity / xml-injection) — `exec_in_lab` 으로 `/tmp/kestrel_canary_<랜덤>` 에 카나리 stamp 후 3가지 XML 셰이프(인라인 SYSTEM entity, parameter entity 우회, DOCTYPE-only 헤더 누락) 로 `file://` 외부 엔티티 인용 시도. 음성 대조 = entity 가 없는 benign XML — 같은 카나리가 그래도 보이면 echo trap 으로 거부. requires_exec=True (lab 안에 카나리 stamp 필수).
+- `OpenRedirectProbe` (open-redirect / open_redirect / redirect-to / url-redirect / openredirect) — backend 가 만든 nonce(`https://kestrel-redirect-<rand>.example/`) 를 redirect 파라미터로 보내고 응답이 `301/302/303/307/308` 이면서 `Location` 헤더에 그 nonce 가 그대로 들어가는지 확인. `httpx.AsyncClient(follow_redirects=False)` 직접 호출로 Location 을 보존. 음성 대조 = benign 상대 경로 — 그래도 nonce 가 Location 에 보이면 입력과 무관한 하드코딩 redirect 이므로 거부 (3xx 자체는 약하므로 nonce 일치를 truth signal 로).
+- `DeserializationCanaryProbe` (deserialization / deser / insecure-deserialization / unsafe-deser / pickle / object-injection) — Python pickle `__reduce__` 가젯이 `os.system("printf %s <카나리값> > <카나리경로>")` 를 호출하도록 만든 `_PickleCanary` 를 base64 인코딩해 보냄. pre-flight 으로 `test ! -e <경로>` 확인, 음성 대조 = benign nonce 보낸 뒤 카나리 파일 부재 재확인, 양성 = base64 가젯 보내고 0.2 s 대기 후 `cat <경로>` 가 카나리 값을 반환하는지 확인. 가젯 실행이 lab 안의 파일 시스템 부수 효과로 표출되므로 HTTP 응답 셰이프와 무관하게 deserialization 의 코드 실행을 직접 검증. requires_exec=True.
+- 셋 다 `_PROBE_CLASSES` 에 등록 → `select_probes(response_kind)` 가 자동 디스패치 + `known_kinds()` 가 LLM 프롬프트에 새 alias 들을 노출.
+
+**검증 (`backend/scripts/smoke_pr9l.py` — PR 9-M 시나리오 추가)**
+- 섹션 B (alias dispatch) 에 6 개 alias 추가 (xxe, xml-external-entity, open-redirect, url-redirect, deserialization, pickle) — 모두 통과.
+- 섹션 C (fake-lab probe 실행 + verdict 종합) 에 5 개 시나리오 추가:
+  - **real-XXE** — XML 페이로드의 `SYSTEM "file://<경로>"` 를 파싱해 stamp 된 카나리 값을 응답에 인라인하는 가짜 lab → `method=backend_probe` 통과.
+  - **real-open-redirect** — `Location: <payload>` 그대로 302 응답하는 lab → `method=backend_probe` 통과.
+  - **hardcoded-redirect (rejected)** — 항상 같은 URL 로 302, payload 무관 → `method=rejected` (Location 에 backend nonce 부재).
+  - **real-deserialization** — base64 디코드 + pickle.loads 호출하는 가짜 lab. `os.system` 을 (그리고 pickle 이 실제로 resolve 하는 `posix.system` underlying module 도) 패치해 가젯의 `printf %s ... > ...` 명령을 캡처, 그 명령을 in-memory exec mock 의 stamp 채널로 적용 → `method=backend_probe` 통과.
+  - **inert-deserialization (rejected)** — 페이로드는 받아 길이만 echo, 실제 pickle.loads 호출 없음 → 카나리 파일 부재 → `method=rejected`.
+- 결과: 9/9 시나리오 통과 (`OK — PR 9-L smoke green`). PR 9-K smoke 회귀도 동시 green (`ALL SMOKE PASSED`).
+
+**왜 deserialization 의 truth signal 이 stdout 이 아니라 file 카나리인가**
+- pickle 가젯이 `os.system` 을 부르면 stdout 은 lab 컨테이너의 표준출력으로 빠지고 HTTP 응답 본문에는 나타나지 않는다. response 본문에 카나리를 박는 형태(`echo`, ``"$(...)`"` 등)도 만들 수 있지만 그건 사실상 RCE probe 와 같은 셰이프 — deserialization 고유의 신호가 아니다. 파일에 stamp 한 뒤 `docker exec` 로 read 하면 (1) HTTP 표면을 거치지 않으므로 LLM 이 lab 코드로 위조 불가, (2) pickle.loads 가 실제로 호출되었는지(=insecure deserialization 이 실제로 일어났는지) 의 ground-truth 가 file 의 존재로 환원된다.
+
+**왜 XXE 도 file:// 만 쓰고 OOB 채널은 안 썼는가**
+- 외부 인터넷 차단(`internal: true` bridge) 상태에서는 OOB DNS/HTTP 으로 카나리 exfil 이 동작하지 않는다. 거꾸로 그 격리가 lab 의 안전 보장이기도 하다 — XXE probe 는 이 격리를 깨지 않고 file:// 만으로 ground-truth 를 만들도록 설계.
+
+**알려진 한계 / 다음 PR 으로 넘김**
+- 여전히 fallback 경로(`llm_indicator_only`) 로만 통과되는 클래스: SSRF (외부 인터넷 차단으로 OOB callback 어려움 — 사이드카 callback 서버 구상 필요), auth-bypass (CVE 별로 인증 모델이 너무 다양해 일반 probe 가 어려움), IDOR (자원 모델 의존), JNDI/log4shell (별도 LDAP 사이드카 필요).
+- best-of-N (PR 9-N) 으로 분리 — probe 7 종으로 truth signal 이 충분히 다각화된 다음에 후보 점수화/선택을 깐다.
 
 ---
 

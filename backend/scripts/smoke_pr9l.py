@@ -120,6 +120,12 @@ def _section_b() -> bool:
         "json-reflect": "xss_reflect_nonce",
         "sqli": "sqli_time_blind",
         "sql-injection": "sqli_time_blind",
+        "xxe": "xxe_canary_read",
+        "xml-external-entity": "xxe_canary_read",
+        "open-redirect": "open_redirect_nonce",
+        "url-redirect": "open_redirect_nonce",
+        "deserialization": "deser_pickle_canary_write",
+        "pickle": "deser_pickle_canary_write",
     }
     all_ok = True
     for rk, expected_name in expected.items():
@@ -151,14 +157,26 @@ class FakeHandle:
 
 
 def _patch_proxy(reply_fn):
-    """Replace ``probes.proxy_request`` with a callable returning the
-    body that ``reply_fn(payload)`` produces. Returns the original so
-    the caller can restore."""
+    """Replace ``probes.proxy_request`` with a callable returning what
+    ``reply_fn(payload)`` produces.
+
+    ``reply_fn`` may return either a string (treated as body, no headers)
+    or a dict with explicit ``body``, ``status_code``, and
+    ``response_headers`` keys — the latter form is what redirect-style
+    fakes use.
+    """
 
     async def _fake(target_url, method, path, *, params=None, data=None, json=None, headers=None):
         bag = params or data or json or headers or {}
         payload = next(iter(bag.values())) if bag else ""
-        return {"status_code": 200, "body": reply_fn(str(payload))}
+        out = reply_fn(str(payload))
+        if isinstance(out, dict):
+            return {
+                "status_code": int(out.get("status_code", 200)),
+                "body": str(out.get("body", "")),
+                "response_headers": dict(out.get("response_headers") or {}),
+            }
+        return {"status_code": 200, "body": str(out), "response_headers": {}}
 
     orig = probes.proxy_request
     probes.proxy_request = _fake  # type: ignore[assignment]
@@ -166,25 +184,40 @@ def _patch_proxy(reply_fn):
 
 
 def _patch_exec(stamps: dict[str, str]):
-    """Replace ``probes.exec_in_lab`` with one that records canary writes
-    into *stamps* (path → value) and returns exit_code=0. Returns the
-    original so the caller can restore."""
+    """Replace ``probes.exec_in_lab`` with a small in-memory shell that
+    handles the three command shapes our probes actually issue:
+
+      * ``printf %s 'value' > 'path'`` → stamps[path] = value
+      * ``test ! -e 'path'`` → exit 0 if path absent, 1 if present
+      * ``cat 'path' …`` → stdout = stamps.get(path, "")
+
+    Anything else returns exit 0 with empty output. Returns the original
+    so callers can restore it.
+    """
 
     async def _fake(container_name, cmd, *, user=None, timeout_seconds=10.0):
         if len(cmd) >= 3 and cmd[0] == "sh" and cmd[1] == "-c":
-            line = cmd[2]
-            # Parse `printf %s 'value' > 'path'`
-            try:
-                value_start = line.index("printf %s ") + len("printf %s ")
-                rest = line[value_start:]
-                gt = rest.rindex(" > ")
-                value_q = rest[:gt].strip()
-                path_q = rest[gt + 3 :].strip()
-                value = value_q.strip("'")
-                path = path_q.strip("'")
-                stamps[path] = value
-            except ValueError:
-                pass
+            line = cmd[2].strip()
+            if "printf %s " in line and " > " in line:
+                try:
+                    value_start = line.index("printf %s ") + len("printf %s ")
+                    rest = line[value_start:]
+                    gt = rest.rindex(" > ")
+                    value = rest[:gt].strip().strip("'")
+                    path = rest[gt + 3 :].strip().strip("'")
+                    stamps[path] = value
+                except ValueError:
+                    pass
+                return 0, b""
+            if line.startswith("test ! -e "):
+                path = line[len("test ! -e ") :].strip().strip("'")
+                return (0 if path not in stamps else 1), b""
+            if line.startswith("cat "):
+                rest = line[len("cat ") :].strip()
+                path = rest.split(" ", 1)[0].strip().strip("'")
+                if path in stamps:
+                    return 0, stamps[path].encode()
+                return 1, b""
         return 0, b""
 
     orig = probes.exec_in_lab
@@ -254,23 +287,219 @@ async def _scenario_unknown_kind_fallback() -> tuple[bool, probes.VerificationVe
     return verdict.passed and verdict.method == "llm_indicator_only", verdict
 
 
+async def _scenario_real_xxe() -> tuple[bool, probes.VerificationVerdict]:
+    """Lab parses XML and inlines `file://` SYSTEM entity contents into
+    the response — i.e., a real XXE-vulnerable parser."""
+    import re as _re
+    stamps: dict[str, str] = {}
+    orig_exec = _patch_exec(stamps)
+    try:
+        file_re = _re.compile(r'SYSTEM\s+"file://([^"]+)"')
+
+        def reply(payload: str) -> str:
+            m = file_re.search(payload)
+            if m and m.group(1) in stamps:
+                return f"<r>{stamps[m.group(1)]}</r>"
+            return "<r>nothing</r>"
+
+        orig_proxy = _patch_proxy(reply)
+        try:
+            ip = InjectionPoint(
+                name="x", method="POST", path="/", parameter="xml",
+                location="form", response_kind="xxe", notes="",
+            )
+            handle = FakeHandle(container_name="lab_xxe")
+            results = []
+            for probe in probes.select_probes("xxe"):
+                results.append(await probe.run(handle=handle, ip=ip))
+            verdict = probes.build_verdict("xxe", results, fallback_passed=False)
+            return verdict.passed and verdict.method == "backend_probe", verdict
+        finally:
+            probes.proxy_request = orig_proxy  # type: ignore[assignment]
+    finally:
+        probes.exec_in_lab = orig_exec  # type: ignore[assignment]
+
+
+async def _scenario_real_open_redirect() -> tuple[bool, probes.VerificationVerdict]:
+    """Lab returns 302 with the user-supplied URL in the Location header."""
+    def reply(payload: str) -> dict[str, Any]:
+        return {
+            "status_code": 302,
+            "body": "",
+            "response_headers": {"Location": payload},
+        }
+    orig_proxy = _patch_proxy(reply)
+    try:
+        ip = InjectionPoint(
+            name="r", method="GET", path="/redirect", parameter="next",
+            location="query", response_kind="open-redirect", notes="",
+        )
+        handle = FakeHandle(container_name="lab_redir")
+        results = []
+        for probe in probes.select_probes("open-redirect"):
+            results.append(await probe.run(handle=handle, ip=ip))
+        verdict = probes.build_verdict("open-redirect", results, fallback_passed=False)
+        return verdict.passed and verdict.method == "backend_probe", verdict
+    finally:
+        probes.proxy_request = orig_proxy  # type: ignore[assignment]
+
+
+async def _scenario_hardcoded_redirect() -> tuple[bool, probes.VerificationVerdict]:
+    """Lab redirects to a hardcoded URL regardless of input — must be
+    rejected (3xx but Location does not include backend nonce)."""
+    def reply(payload: str) -> dict[str, Any]:
+        return {
+            "status_code": 302,
+            "body": "",
+            "response_headers": {"Location": "https://always-the-same.example/"},
+        }
+    orig_proxy = _patch_proxy(reply)
+    try:
+        ip = InjectionPoint(
+            name="r", method="GET", path="/redirect", parameter="next",
+            location="query", response_kind="open-redirect", notes="",
+        )
+        handle = FakeHandle(container_name="lab_redir_fake")
+        results = []
+        for probe in probes.select_probes("open-redirect"):
+            results.append(await probe.run(handle=handle, ip=ip))
+        verdict = probes.build_verdict("open-redirect", results, fallback_passed=True)
+        return (not verdict.passed) and verdict.method == "rejected", verdict
+    finally:
+        probes.proxy_request = orig_proxy  # type: ignore[assignment]
+
+
+async def _scenario_real_deserialization() -> tuple[bool, probes.VerificationVerdict]:
+    """Lab base64-decodes the parameter and calls `pickle.loads()` on
+    it — running the gadget's `__reduce__` → `os.system`, which (in a
+    real container) writes the canary file. We don't want to actually
+    spawn a real shell on the test runner, so we monkey-patch
+    ``os.system`` for the duration of the unpickle call: the patched
+    version captures the command, parses out the canary path/value,
+    and stamps our in-memory exec mock — exactly the visible side
+    effect a real Python lab would produce."""
+    import base64 as _b64
+    import os as _os
+    import pickle as _pickle
+    stamps: dict[str, str] = {}
+    orig_exec = _patch_exec(stamps)
+    try:
+        def _stamp_from_cmd(cmd: str) -> None:
+            # Mirrors the parser in _patch_exec — handles both
+            # ``printf %s value > path`` (shlex.quote skipped because the
+            # token has no shell metacharacters) and the quoted variant.
+            line = cmd.strip()
+            if "printf %s " not in line or " > " not in line:
+                return
+            try:
+                value_start = line.index("printf %s ") + len("printf %s ")
+                rest = line[value_start:]
+                gt = rest.rindex(" > ")
+                value = rest[:gt].strip().strip("'")
+                path = rest[gt + 3 :].strip().strip("'")
+            except ValueError:
+                return
+            stamps[path] = value
+
+        def reply(payload: str) -> str:
+            try:
+                raw = _b64.b64decode(payload)
+            except Exception:
+                return "decode failed"
+            # Pickle resolves `os.system` to its real underlying module
+            # at unpickle time (`posix.system` on Unix, `nt.system` on
+            # Windows), not via the `os` re-export — patch both spots so
+            # the gadget's call lands on our fake regardless.
+            import sys as _sys
+            real_system = _os.system
+            underlying_mod = _sys.modules.get(_os.name) or _os
+            real_underlying = getattr(underlying_mod, "system", real_system)
+            captured: list[str] = []
+
+            def fake_system(cmd):  # signature mirrors os.system
+                captured.append(str(cmd))
+                return 0
+
+            _os.system = fake_system  # type: ignore[assignment]
+            if underlying_mod is not _os:
+                underlying_mod.system = fake_system  # type: ignore[attr-defined]
+            try:
+                _pickle.loads(raw)  # noqa: S301 — intentional in-test gadget exec
+            except Exception:
+                pass
+            finally:
+                _os.system = real_system  # type: ignore[assignment]
+                if underlying_mod is not _os:
+                    underlying_mod.system = real_underlying  # type: ignore[attr-defined]
+            for cmd in captured:
+                _stamp_from_cmd(cmd)
+            return "ok"
+
+        orig_proxy = _patch_proxy(reply)
+        try:
+            ip = InjectionPoint(
+                name="d", method="POST", path="/", parameter="blob",
+                location="form", response_kind="deserialization", notes="",
+            )
+            handle = FakeHandle(container_name="lab_deser")
+            results = []
+            for probe in probes.select_probes("deserialization"):
+                results.append(await probe.run(handle=handle, ip=ip))
+            verdict = probes.build_verdict("deserialization", results, fallback_passed=False)
+            return verdict.passed and verdict.method == "backend_probe", verdict
+        finally:
+            probes.proxy_request = orig_proxy  # type: ignore[assignment]
+    finally:
+        probes.exec_in_lab = orig_exec  # type: ignore[assignment]
+
+
+async def _scenario_inert_deserialization() -> tuple[bool, probes.VerificationVerdict]:
+    """Lab takes the param, returns it (or anything), but doesn't actually
+    call pickle.loads — canary file never appears, must be rejected."""
+    stamps: dict[str, str] = {}
+    orig_exec = _patch_exec(stamps)
+    try:
+        def reply(payload: str) -> str:
+            return f"received {len(payload)} bytes"
+        orig_proxy = _patch_proxy(reply)
+        try:
+            ip = InjectionPoint(
+                name="d", method="POST", path="/", parameter="blob",
+                location="form", response_kind="deserialization", notes="",
+            )
+            handle = FakeHandle(container_name="lab_deser_inert")
+            results = []
+            for probe in probes.select_probes("deserialization"):
+                results.append(await probe.run(handle=handle, ip=ip))
+            verdict = probes.build_verdict("deserialization", results, fallback_passed=True)
+            return (not verdict.passed) and verdict.method == "rejected", verdict
+        finally:
+            probes.proxy_request = orig_proxy  # type: ignore[assignment]
+    finally:
+        probes.exec_in_lab = orig_exec  # type: ignore[assignment]
+
+
 def _section_c() -> bool:
     async def _run() -> bool:
         ok = True
-        passed, v = await _scenario_real_rce()
-        print(f"  {'PASS' if passed else 'FAIL'} — real-RCE fake lab → method={v.method} reason={v.rejection_reason}")
-        ok = ok and passed
-
-        passed, v = await _scenario_echo_machine()
-        print(f"  {'PASS' if passed else 'FAIL'} — echo-machine fake lab → method={v.method}")
-        if not passed:
-            for r in v.probe_results:
-                print(f"      probe[{r.name}] passed={r.passed} :: {r.rationale[:120]}")
-        ok = ok and passed
-
-        passed, v = await _scenario_unknown_kind_fallback()
-        print(f"  {'PASS' if passed else 'FAIL'} — unknown response_kind → method={v.method}")
-        ok = ok and passed
+        scenarios = [
+            ("real-RCE fake lab", _scenario_real_rce),
+            ("echo-machine fake lab", _scenario_echo_machine),
+            ("unknown response_kind fallback", _scenario_unknown_kind_fallback),
+            ("real-XXE fake lab", _scenario_real_xxe),
+            ("real open-redirect fake lab", _scenario_real_open_redirect),
+            ("hardcoded redirect (rejected)", _scenario_hardcoded_redirect),
+            ("real-deserialization fake lab", _scenario_real_deserialization),
+            ("inert deserialization (rejected)", _scenario_inert_deserialization),
+        ]
+        for label, scen in scenarios:
+            passed, v = await scen()
+            print(f"  {'PASS' if passed else 'FAIL'} — {label} → method={v.method}"
+                  + (f" reason={v.rejection_reason}" if v.rejection_reason else ""))
+            if not passed:
+                for r in v.probe_results:
+                    print(f"      probe[{r.name}] passed={r.passed} :: {r.rationale[:160]}")
+            ok = ok and passed
         return ok
 
     return asyncio.run(_run())
