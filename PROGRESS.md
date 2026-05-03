@@ -1109,6 +1109,37 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 9-N — backend SSRF probe + 합성 클래스 편향 해소 (모든 lab 이 XSS 로 수렴하던 문제) ✅
+
+**완료일:** 2026-05-03
+
+> 두 가지 동시 출하: (1) PR 9-L/9-M 에서 빠져 있던 SSRF 클래스에 대해 backend probe 추가, (2) 사용자 보고 "모든 lab 이 XSS 만 나옴" — synthesizer prompt 가 XSS 로 강하게 anchor 돼 있었고 fallback 기본값까지 `html-reflect` 였음. NVD/Exploit-DB 에서 수집된 어떤 CVE 라도 그 *원본 클래스* 그대로 재현하도록 prompt 와 정규화 양쪽을 분리 수정.
+
+**`synthesizer_probes.py` — SsrfCanaryProbe**
+- aliases: `ssrf / server-side-request-forgery / url-fetch / remote-fetch / url-include / outbound-fetch`.
+- 동작: `_ssrf_canary` async context manager 가 `python:3.12-alpine` + 인라인 stdlib HTTP server 를 `kestrel_sandbox_net` 위에 띄움 (호스트 포트 노출 X — 다른 lab 들과 동일한 격리 토폴로지). 모든 GET 을 `/tmp/hits.log` 에 append. lab 에 `http://<canary-name>/<positive_token>` 을 보낸 뒤 `exec_in_lab` 으로 로그를 읽어 토큰 일치 확인. 캐너리는 spec 직후 `--rm` 으로 정리.
+- 음성 대조: 위와 동시에 `http://nonexistent-<negative_token>.invalid/<negative_token>` 도 송신 — 캐너리 로그에 *어느 토큰이든* 보이면 lab 이 입력 URL 무시하고 항상 캐너리를 호출하는 패턴이라 reject. 진짜 SSRF 는 양성 URL 만 hit 가 남는다.
+- 캐너리 cap: 64 MB / 0.25 CPU / 64 PIDs / cap_drop=ALL / no-new-privileges / tmpfs(4 MB) — lab 들과 동일한 sandbox 정책.
+
+**Synthesizer prompt 클래스 편향 해소 (`synthesizer.py`)**
+- `_USER_TEMPLATE` 의 schema 예시에서 `"html-reflect" | "json-reflect" | "command-exec" | ..."` 같이 XSS 가 첫 두 자리에 박혀 있던 enumeration 을 빼고, **9 클래스 가이드 블록** 으로 교체 — command-exec / path-traversal / ssti / html-reflect / sqli / xxe / open-redirect / deserialization / ssrf 각각의 *어떤 동작* + *어떤 indicator 모양* 인지 한 줄씩. **"가장 흔한 실수: 모든 CVE 를 html-reflect (XSS) 로 만드는 것. 원본 CVE 가 RCE / SQLi / SSRF / path-traversal 이라면 그 클래스 그대로 재현하세요"** 명시.
+- "매우 중요한 규칙 #1" 의 예시도 XSS 한 종류에서 4 종 (command-exec, path-traversal, ssti, html-reflect) 으로 확장. side-channel 또는 결정적 출력 (예: SSTI 의 `49`, path-traversal 의 `root:x:`) 도 valid indicator 로 인정.
+- `_to_injection_point()` 에서 `response_kind` 의 `html-reflect` 폴백 제거 — `_validate_parsed` 가 이미 비어있으면 reject 하므로 폴백은 *실수로 모든 미선언 lab 이 XSS 가 되는* 두 번째 편향 원인이었음.
+
+**검증 (`backend/scripts/smoke_pr9n.py` — 신규 4 블록)**
+- A. `select_probes` dispatch — 6 SSRF aliases 가 모두 `ssrf_inbound_canary` 로 라우팅.
+- B. real-SSRF fake lab (URL fetch 시뮬) → 양성 토큰이 캐너리 로그에 등장 → probe pass.
+- C. echo-trap lab (payload 본문에 echo 만, fetch 안 함) → "토큰이 없음" rationale 로 reject.
+- D. always-pings-canary 패혹로지 lab → 음성 토큰까지 캐너리 로그에 등장 → "음성 대조" rationale 로 reject.
+- 결과: `OK — PR 9-N smoke green`. PR 9-L 회귀도 동시 green (echo-machine reject + open-redirect nonce + deserialization canary 모두 PASS 유지).
+
+**알려진 한계 / 다음 PR 으로 넘김**
+- auth-bypass 는 backend-stamped canary 가 어렵다 (보호된 응답 본문에 backend 토큰을 심을 방법 없음). status-differential 식 약식 probe 는 false-positive/negative 위험으로 PR 9-N 에서 제외, 별도 설계로 분리.
+- best-of-N (PR 9-O 가 될 가능성) 은 probe 9 종으로 truth signal 이 충분히 두꺼워진 다음에 후보 점수화/선택을 깐다 — 사용자 메모리 정합 ("verification 강화 > feedback-loop 기능") 유지.
+- prompt 변경의 효과는 라이브 합성 데이터로만 측정 가능 — 다음 합성 N 회 후 `cve_lab_mappings.lab_kind` 분포로 검증 예정.
+
+---
+
 ### PR 9-M — backend probe 클래스 확장 (XXE / open-redirect / deserialization) ✅
 
 > PR 9-L 이 RCE / path-traversal / SSTI / XSS / time-based SQLi 5 종에 대해 backend ground-truth 검증을 깔았지만, 그 외 클래스(XXE, SSRF, deserialization, auth bypass, IDOR, open-redirect 등) 는 여전히 `llm_indicator_only` 약식 fallback 으로만 통과했다. 사용자 메모리 지시 — "verification 강화(음성 대조, side-channel 카나리, behavior-class probe, indicator strength gate) 가 feedback-loop 기능(다중 후보, best-of-N 등) 보다 우선" — 에 따라 best-of-N(PR 9-N) 보다 probe 클래스 확장을 먼저 출하. 한 번에 3 클래스(XXE / open-redirect / deserialization) 를 추가해 약식 fallback 에 머물던 vuln class 를 줄였다.

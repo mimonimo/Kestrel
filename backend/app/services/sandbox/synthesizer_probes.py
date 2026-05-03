@@ -43,9 +43,14 @@ import shlex
 import string
 import time
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Iterable
 
+import docker
+from docker.errors import APIError, NotFound
+
+from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.services.sandbox.catalog import InjectionPoint
 from app.services.sandbox.manager import (
@@ -885,7 +890,218 @@ class OpenRedirectProbe(BackendProbe):
 
 
 # ---------------------------------------------------------------------------
-# 8. Insecure deserialization probe — Python pickle gadget that writes canary
+# 8. SSRF probe — backend HTTP canary on the sandbox network
+# ---------------------------------------------------------------------------
+
+
+# Image used for the throwaway canary listener. Alpine python is small
+# (~50 MB) and warm-pulls quickly; the container only runs the inline
+# stdlib HTTP server so we don't need anything else on top.
+_SSRF_CANARY_IMAGE = "python:3.12-alpine"
+
+# Inline server: every GET writes the request path + a UTC timestamp to
+# /tmp/hits.log, then returns a tiny "OK" body. Stdlib only — no pip
+# install — so the container starts in seconds. We bind 0.0.0.0:80 so
+# the lab can address us via the docker DNS name on the sandbox network.
+_SSRF_CANARY_SCRIPT = (
+    "import http.server,datetime,sys\n"
+    "class H(http.server.BaseHTTPRequestHandler):\n"
+    " def do_GET(s):\n"
+    "  open('/tmp/hits.log','a').write(datetime.datetime.utcnow().isoformat()+' '+s.path+'\\n')\n"
+    "  s.send_response(200);s.end_headers();s.wfile.write(b'OK')\n"
+    " def log_message(s,*a,**k):pass\n"
+    "http.server.HTTPServer(('0.0.0.0',80),H).serve_forever()\n"
+)
+
+
+@asynccontextmanager
+async def _ssrf_canary():
+    """Spin a one-shot HTTP canary on the sandbox network and tear it down.
+
+    The canary records every inbound GET to ``/tmp/hits.log`` so the probe
+    can read hits via ``exec_in_lab``. We use docker DNS — the lab can
+    reach the canary by its container name on ``settings.sandbox_network``
+    without any host-side port mapping (so the canary stays unreachable
+    from the host the way the labs themselves are).
+    """
+    settings = get_settings()
+    name = f"kestrel-ssrf-canary-{secrets.token_hex(4)}"
+
+    def _spawn() -> None:
+        cli = docker.from_env()
+        cli.containers.run(
+            image=_SSRF_CANARY_IMAGE,
+            name=name,
+            detach=True,
+            remove=False,
+            network=settings.sandbox_network,
+            command=["python", "-c", _SSRF_CANARY_SCRIPT],
+            mem_limit="64m",
+            memswap_limit="64m",
+            nano_cpus=int(0.25 * 1_000_000_000),
+            pids_limit=64,
+            cap_drop=["ALL"],
+            security_opt=["no-new-privileges:true"],
+            tmpfs={"/tmp": "rw,size=4m"},
+            labels={"kestrel.sandbox.kind": "ssrf-canary"},
+        )
+
+    def _kill() -> None:
+        cli = docker.from_env()
+        try:
+            c = cli.containers.get(name)
+        except NotFound:
+            return
+        try:
+            c.kill()
+        except APIError:
+            pass
+        try:
+            c.remove(force=True)
+        except APIError:
+            pass
+
+    try:
+        await asyncio.to_thread(_spawn)
+    except APIError as e:
+        raise SandboxError(f"SSRF 캐너리 컨테이너 생성 실패: {e}") from e
+
+    # The HTTP server starts within ~1s on python:alpine; the lab's first
+    # SSRF request typically happens after probe payload send anyway, so
+    # this short wait covers both image-cached cold-start and a warm-pull
+    # case where docker run returns before the entrypoint binds the port.
+    await asyncio.sleep(1.5)
+    try:
+        yield name
+    finally:
+        try:
+            await asyncio.to_thread(_kill)
+        except Exception:  # noqa: BLE001 — cleanup is best-effort
+            log.warning("ssrf_canary.cleanup_failed", name=name)
+
+
+class SsrfCanaryProbe(BackendProbe):
+    """SSRF — force the lab to fetch a backend-controlled URL on the
+    sandbox network and verify the canary saw the request.
+
+    Why this stays honest: the canary's hostname is generated per-probe
+    and never reachable from outside ``kestrel_sandbox_net``. The unique
+    path token is constructed by the backend and never appears in the
+    LLM's spec — a fake echo lab that just reflects the URL into its
+    response cannot "fake" a hit because the hit is read from the
+    canary's filesystem, not from the lab's response body.
+
+    Negative control: a second request asks the lab to fetch a literal
+    ``http://nonexistent-NONCE.invalid/`` URL. If the lab is genuinely
+    fetching, no hit appears in the canary log; if the lab pings the
+    canary regardless of input, the negative-token request also produces
+    a canary hit and we reject as "always pings canary" pathology.
+    """
+
+    name = "ssrf_inbound_canary"
+    applies_to = (
+        "ssrf", "server-side-request-forgery", "url-fetch", "remote-fetch",
+        "url-include", "outbound-fetch",
+    )
+
+    async def run(self, *, handle: LaunchedLab, ip: InjectionPoint) -> ProbeOutcome:
+        try:
+            async with _ssrf_canary() as canary_name:
+                pos_token = _token("ssrf_pos")
+                neg_token = _token("ssrf_neg")
+
+                pos_url = f"http://{canary_name}/{pos_token}"
+                neg_url = f"http://nonexistent-{neg_token}.invalid/{neg_token}"
+
+                # Fire negative control FIRST so a hit-on-negative is
+                # observable before the positive request muddies the log.
+                try:
+                    await _send(handle, ip, neg_url)
+                except SandboxError:
+                    pass  # benign — only the canary side-channel matters
+
+                # Brief settle — apps that fetch URLs in a worker thread
+                # may not finish by the time we check the log.
+                await asyncio.sleep(0.5)
+
+                code_neg, out_neg = await exec_in_lab(
+                    canary_name,
+                    ["sh", "-c", "cat /tmp/hits.log 2>/dev/null; true"],
+                    timeout_seconds=5.0,
+                )
+                neg_log = out_neg.decode("utf-8", errors="replace")
+                if pos_token in neg_log or neg_token in neg_log:
+                    return ProbeOutcome(
+                        name=self.name, kind="ssrf", passed=False,
+                        rationale=(
+                            "음성 대조 후 캐너리 로그에 토큰 흔적 — lab 이 입력 URL "
+                            "을 무시하고 canary 를 무조건 호출하는 패턴."
+                        ),
+                        evidence={
+                            "neg_url": neg_url,
+                            "neg_log_head": _truncate(neg_log, 200),
+                        },
+                    )
+
+                # Positive: send the canary URL with backend-chosen token.
+                try:
+                    pos_ex = await _send(handle, ip, pos_url)
+                except SandboxError as e:
+                    return ProbeOutcome(
+                        name=self.name, kind="ssrf", passed=False,
+                        rationale=f"SSRF 페이로드 송신 실패 ({e}).",
+                        evidence={"pos_url": pos_url, "send_error": str(e)},
+                    )
+
+                await asyncio.sleep(0.5)
+
+                code_pos, out_pos = await exec_in_lab(
+                    canary_name,
+                    ["sh", "-c", "cat /tmp/hits.log 2>/dev/null; true"],
+                    timeout_seconds=5.0,
+                )
+                pos_log = out_pos.decode("utf-8", errors="replace")
+
+                if pos_token not in pos_log:
+                    return ProbeOutcome(
+                        name=self.name, kind="ssrf", passed=False,
+                        rationale=(
+                            "SSRF URL 송신 후에도 캐너리 로그에 토큰이 없음 — "
+                            "lab 이 URL 을 fetch 하지 않음 (출력에 URL 을 단순 echo "
+                            "하거나 무시)."
+                        ),
+                        evidence={
+                            "pos_url": pos_url,
+                            "pos_status": pos_ex.get("status_code"),
+                            "pos_body_head": _truncate(pos_ex.get("body") or "", 160),
+                            "canary_log_head": _truncate(pos_log, 200),
+                        },
+                    )
+
+                return ProbeOutcome(
+                    name=self.name, kind="ssrf", passed=True,
+                    rationale=(
+                        f"backend SSRF canary '{canary_name}' 가 path='/{pos_token}' "
+                        "로 inbound GET 을 받음 — lab 이 입력 URL 을 실제로 fetch 함."
+                    ),
+                    evidence={
+                        "canary_name": canary_name,
+                        "pos_token": pos_token,
+                        "neg_token": neg_token,
+                        "pos_status": pos_ex.get("status_code"),
+                        "canary_log_head": _truncate(pos_log, 200),
+                    },
+                )
+        except SandboxError as e:
+            return ProbeOutcome(
+                name=self.name, kind="ssrf", passed=False,
+                rationale=f"SSRF 캐너리 인프라 오류 ({e}).",
+                evidence={"infra_error": str(e)},
+            )
+
+
+# ---------------------------------------------------------------------------
+# 9. Insecure deserialization probe — Python pickle gadget that writes canary
 # ---------------------------------------------------------------------------
 
 
@@ -1051,6 +1267,7 @@ _PROBE_CLASSES: tuple[type[BackendProbe], ...] = (
     SqliTimeBlindProbe,
     XxeCanaryProbe,
     OpenRedirectProbe,
+    SsrfCanaryProbe,
     DeserializationCanaryProbe,
 )
 

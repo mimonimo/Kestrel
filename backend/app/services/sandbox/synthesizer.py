@@ -125,32 +125,54 @@ _USER_TEMPLATE = """\
   "container_port": 8080,
   "target_path": "/",
   "injection_point": {{
-    "name": "주입 지점 짧은 식별자 (예: 'echo_msg')",
+    "name": "주입 지점 짧은 식별자 (예: 'cmd_param')",
     "method": "GET" | "POST",
     "path": "/...",
     "parameter": "...",
     "location": "query" | "form" | "json" | "header" | "path",
-    "response_kind": "html-reflect" | "json-reflect" | "command-exec" | ...,
+    "response_kind": "<아래 known_kinds 중 하나 — CVE 의 실제 취약점 클래스에 맞춰 선택>",
     "notes": "응답에 어떻게 흔적이 남는지"
   }},
   "payload_example": "위 injection_point에 보낼 실제 값 (이스케이프된 문자열)",
   "success_indicator": "응답 본문에 반드시 등장하는 짧고 고유한 문자열 — payload가 트리거되면 본문에 그대로 나와야 함"
 }}
 
+## response_kind 선택 가이드 — CVE 의 실제 취약점 클래스에 맞춰 고르세요
+
+다음 응답 클래스만 backend probe 가 ground-truth 로 검증합니다 (그 외 값은 약식 검증으로 통과되어 신뢰도 낮음 표시):
+
+  * **command-exec / rce** — 입력 문자열이 셸/exec 컨텍스트에서 실행되어 시스템 명령 출력이 응답에 나옴
+  * **path-traversal / lfi** — 입력이 파일 경로로 사용되어 임의 파일 내용이 응답에 나옴
+  * **ssti / template-injection** — 입력이 템플릿 엔진에 평가되어 식의 결과(예: 7*7=49)가 응답에 나옴
+  * **html-reflect / json-reflect** — XSS 류, 입력이 응답 본문에 escape 없이 그대로 박힘
+  * **sqli** — 입력이 SQL 쿼리에 합쳐져 동작 (특히 time-based: `' OR SLEEP(5) --` 류로 응답이 지연됨)
+  * **xxe** — 입력이 XML parser 에 들어가 외부 엔티티가 평가되어 파일 내용이 응답에 나옴
+  * **open-redirect** — 입력 URL 이 그대로 Location 헤더에 들어가 3xx redirect 가 일어남
+  * **deserialization / pickle** — base64 pickle 페이로드가 deserialize 되어 임의 코드 실행
+  * **ssrf / url-fetch** — 입력 URL 을 lab 이 실제로 outbound HTTP 요청으로 fetch
+
+가장 흔한 실수: 모든 CVE 를 html-reflect (XSS) 로 만드는 것. 원본 CVE 가 RCE / SQLi / SSRF / path-traversal 이라면
+**그 클래스 그대로** 재현하세요 — XSS 로 환원하면 backend probe 가 다른 probe 를 적용해 reject 하고 사용자에게는
+다른 lab 이 노출되지 않습니다. CVE 가 명백한 XSS 일 때만 html-reflect 를 고르세요.
+
 ## 매우 중요한 규칙
-1. payload_example를 위 injection_point에 그대로 보냈을 때, success_indicator가 응답 본문에 **그대로** 나타나야 합니다.
-   예: payload가 `<script>alert('SYN_OK_AB12')</script>` 라면 success_indicator는 `SYN_OK_AB12` (응답 HTML에 그대로 echo).
-   예: 명령 인젝션이라면 페이로드가 `; echo SYN_OK_AB12` → 앱이 그 stdout을 응답 본문에 노출.
+1. payload_example를 위 injection_point에 그대로 보냈을 때, success_indicator가 응답 본문(또는 side-channel — RCE/path-trav/XXE
+   라면 명령 출력 / 파일 내용 / 평가 결과)에 **그대로** 나타나야 합니다.
+   예 (command-exec): payload `; echo SYN_OK_AB12` → success_indicator `SYN_OK_AB12` (앱이 stdout 을 응답에 노출)
+   예 (path-traversal): payload `../../etc/passwd` → success_indicator `root:x:` (passwd 파일의 알려진 토큰)
+   예 (ssti, jinja2): payload `{{{{7*7}}}}` → success_indicator `49`
+   예 (html-reflect): payload `<x>SYN_OK_AB12</x>` → success_indicator `SYN_OK_AB12`
    외부 호스트로 exfil 같은 건 격리 네트워크라 절대 동작하지 않습니다.
-2. 가능한 한 success_indicator는 본 페이로드에 직접 박힌 짧은 토큰(예: "SYN_OK_<랜덤6자>")으로 만드세요.
-   단, success_indicator가 files 본문에 그대로 들어 있으면 echo trap 으로 거부됩니다 — 페이로드를 통해서만 응답에 도달해야 합니다.
+2. success_indicator 는 짧고 고유한 토큰이거나 (예: `SYN_OK_<랜덤6자>`), 클래스 고유의 결정적 출력
+   (예: SSTI 의 `49`, path-traversal 의 `root:x:`) 이어야 합니다.
+   단, success_indicator 가 files 본문에 그대로 들어 있으면 echo trap 으로 거부됩니다 —
+   페이로드 또는 backend 가 만든 input 을 통해서만 응답에 도달해야 합니다.
 3. 앱은 반드시 container_port에서 listen해야 합니다. 0.0.0.0 바인딩 필수.
 4. 빌드는 30~60초 안에 끝나야 하므로 가벼운 베이스 이미지 + 최소 의존성만 사용하세요.
 5. files[].path는 Dockerfile의 COPY 대상과 정확히 일치해야 합니다. 절대경로/상위경로(..) 금지.
-6. response_kind 는 다음 중 하나를 권장합니다 (backend probe 가 매칭됩니다): {known_kinds}.
-   다른 값도 허용되지만, 그 경우 probe 미적용으로 약식 검증(llm_indicator_only)으로만 통과되며 신뢰도가 낮게 표시됩니다.
+6. response_kind 는 위 가이드 중 정확히 하나의 alias 를 (전체 허용 목록: {known_kinds}).
 7. lab 은 단순히 입력을 그대로 echo 하기만 하는 형태(echo machine)면 backend probe 가 reject 합니다 —
-   실제 CVE 동작(명령 실행, 템플릿 평가, 파일 읽기, time-based SQLi 등)을 그대로 재현해야 합니다.
+   실제 CVE 동작(명령 실행, 템플릿 평가, 파일 읽기, time-based SQLi, 외부 fetch 등)을 그대로 재현해야 합니다.
 """
 
 
@@ -392,13 +414,17 @@ def _cleanup_build_context(path: Path) -> None:
 
 def _injection_point_from(parsed: dict) -> InjectionPoint:
     ip = parsed["injection_point"]
+    # response_kind 는 _validate_parsed 가 위에서 비어있으면 reject 했기에
+    # 여기서 기본값을 채우지 않는다. 옛 코드는 "html-reflect" 로 폴백해 모든
+    # 미선언 lab 이 자동으로 XSS 가 됐었음 — 그게 클래스 편향의 일부였다.
+    response_kind = str(ip.get("response_kind") or "").strip()
     return InjectionPoint(
         name=str(ip.get("name", "syn_default")),
         method=str(ip.get("method", "GET")).upper(),
         path=str(ip.get("path", "/")),
         parameter=str(ip.get("parameter", "")),
         location=str(ip.get("location", "query")),
-        response_kind=str(ip.get("response_kind", "html-reflect")),
+        response_kind=response_kind,
         notes=str(ip.get("notes", "")),
     )
 
