@@ -15,15 +15,73 @@ from app.models import Vulnerability
 # CWE IDs that map to each lab kind. Only the most common ones are listed —
 # anything else falls through to keyword matching.
 _CWE_TO_KIND: dict[str, str] = {
+    # XSS family
     "CWE-79": "xss",  # Improper Neutralization of Input During Web Page Generation
     "CWE-80": "xss",
     "CWE-83": "xss",
     "CWE-87": "xss",
+    # Command injection / RCE
+    "CWE-77": "rce",  # Improper Neutralization of Special Elements used in a Command
+    "CWE-78": "rce",  # OS Command Injection
+    "CWE-94": "rce",  # Improper Control of Generation of Code
+    # SQL injection
+    "CWE-89": "sqli",  # SQL Injection
+    "CWE-564": "sqli",  # SQL Injection: Hibernate
+    # Server-Side Template Injection
+    "CWE-1336": "ssti",
+    "CWE-95": "ssti",  # Eval Injection (close cousin)
+    # Path traversal / LFI
+    "CWE-22": "path-traversal",  # Path Traversal
+    "CWE-23": "path-traversal",  # Relative Path Traversal
+    "CWE-36": "path-traversal",  # Absolute Path Traversal
+    "CWE-73": "path-traversal",  # External Control of File Name or Path
+    # SSRF
+    "CWE-918": "ssrf",  # Server-Side Request Forgery
 }
 
-# Keyword patterns (lowercased substrings) per lab kind. Order in the dict
-# is the lookup priority when multiple match.
+# Keyword patterns (lowercased substrings) per lab kind. Lookup order
+# matters when a CVE description matches multiple — we prefer the more
+# *specific* class first (e.g. "command injection" before "injection"),
+# so list the most-specific kinds first.
 _KEYWORDS: dict[str, tuple[str, ...]] = {
+    "rce": (
+        "command injection",
+        "os command",
+        "remote code execution",
+        "rce",
+        "shell injection",
+        "code execution",
+        "arbitrary command",
+    ),
+    "sqli": (
+        "sql injection",
+        "sqli",
+        "blind sql",
+        "boolean-based sql",
+        "time-based sql",
+        "union-based sql",
+    ),
+    "ssti": (
+        "template injection",
+        "ssti",
+        "jinja",
+        "twig template",
+        "freemarker",
+    ),
+    "path-traversal": (
+        "path traversal",
+        "directory traversal",
+        "lfi",
+        "local file inclusion",
+        "arbitrary file read",
+        "../../",
+    ),
+    "ssrf": (
+        "server-side request forgery",
+        "server side request forgery",
+        "ssrf",
+        "blind ssrf",
+    ),
     "xss": (
         "cross-site scripting",
         "cross site scripting",

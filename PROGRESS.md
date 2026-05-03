@@ -1109,6 +1109,43 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 9-O — generic lab 카탈로그 6 클래스 확장 (XSS-only → RCE / SQLi / SSTI / path-traversal / SSRF 추가) ✅
+
+**완료일:** 2026-05-03
+
+> 사용자 보고: "샌드박스 생성 누르면 lab 이 항상 xss 로 네이밍되고 step 도 저수준". 원인 — `LAB_CATALOG` / `classifier` / `sandbox-labs/` 모두 XSS 단일 항목. resolver 가 vulhub 매핑 없고 합성도 안 되면 폴백 generic lab 을 고르는데, classifier 매핑도 사실상 XSS 로만 가는 구조. PR 9-N 에서 합성 prompt 편향은 풀었지만 *합성 자체가 안 되는 / 시도하지 않는* 케이스는 여전히 XSS 로 수렴.
+
+**`sandbox-labs/` 신규 5 개 generic lab (`python:3.12-slim + flask + gunicorn` 공유 베이스)**
+- `rce-flask` — `/ping?host=` + `/lookup?domain=` (subprocess shell=True 합성, RceCanaryProbe 로 `; printf %s VALUE > PATH` 류 카나리 검증).
+- `sqli-flask` — `/users?id=` + `/search?name=` (sqlite, raw concat — boolean-blind / UNION / `randomblob()` time-blind 모두 도달 가능, SqliTimeBlindProbe 의 6종 페이로드 중 sqlite 변형이 통과).
+- `ssti-flask` — `/greet?name=` + `/render?tpl=` (`render_template_string` 직접 평가, `{{7*7}}` → 49 SstiArithmeticProbe 매칭).
+- `path-flask` — `/file?name=` + `/view?p=` (`os.path.join` 정규화 X, `Dockerfile` 빌드 시 `/var/secret/flag.txt` 카나리 사전 배치).
+- `ssrf-flask` — `/fetch?url=` + `/preview?target=` (`requests.get` 직접 호출, SsrfCanaryProbe 의 inbound 캐너리 매칭).
+
+**`sandbox-labs/build_all.sh` — 6 이미지 일괄 빌드**
+- 매니페스트 배열 (kind|context dir) 으로 6 이미지 (`xss/rce/sqli/ssti/path/ssrf`) 빌드. 공유 base layer 라 첫 빌드 ~3-5 분 / 재빌드 <30s. 결과 listing 자동 출력.
+
+**`backend/app/services/sandbox/catalog.py` — 5 신규 LabDefinition**
+- 각 kind 마다 2개씩 InjectionPoint 정의 (총 12 신규 + 기존 3 XSS = 15). `response_kind` 는 backend probe 매칭되는 alias (command-exec / sqli / ssti / path-traversal / ssrf), `notes` 에 어떤 syntax 가 트리거되는지 한 줄 설명.
+
+**`backend/app/services/sandbox/classifier.py` — CWE + 키워드 매핑 확장**
+- `_CWE_TO_KIND` — 기존 4 (CWE-79/80/83/87 → xss) 에 13 추가:
+  - CWE-77/78/94 → rce, CWE-89/564 → sqli, CWE-1336/95 → ssti,
+  - CWE-22/23/36/73 → path-traversal, CWE-918 → ssrf.
+- `_KEYWORDS` — 6 클래스 모두 한국어/영어 정규화 키워드 5-7개씩. dict 순서가 우선순위 — `rce > sqli > ssti > path-traversal > ssrf > xss` 로 *더 specific 한* 클래스가 먼저 매칭 (XSS 가 더 이상 default 가 아님).
+
+**검증 (`backend/scripts/smoke_lab_catalog.py` — 신규 3 블록)**
+- A. catalog 가 6 kinds 모두 커버: PASS.
+- B. classifier 12 케이스 (6 CWE + 6 키워드) — 모두 expected kind 반환. "OS command injection in foo" → rce, "directory traversal" → path-traversal, "blind SSRF" → ssrf 등.
+- C. 13 InjectionPoint 모두 response_kind 가 backend probe 레지스트리에 있음 (fallback llm_indicator_only 모드로 빠지지 않음): PASS.
+- 결과: `OK — lab catalog smoke green`.
+
+**알려진 한계 / 다음 PR 으로 넘김**
+- XXE / open-redirect / deserialization 클래스 generic lab 은 추가 안 함 — backend probe 는 있으나 generic lab 은 합성 vs vulhub 비율이 충분히 높아 미충족 수요가 작음. 필요 시 추후 같은 패턴으로 추가.
+- classifier 가 *키워드 우선순위* 만 보고 정확히 한 kind 만 선택 — 한 CVE 가 RCE+SSTI 같이 두 클래스에 걸치면 첫 매치 (rce) 만 사용. multi-kind labelling 은 도메인 분류 (PR 10-B) 와 합쳐 향후 검토.
+
+---
+
 ### PR 9-N — backend SSRF probe + 합성 클래스 편향 해소 (모든 lab 이 XSS 로 수렴하던 문제) ✅
 
 **완료일:** 2026-05-03
