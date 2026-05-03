@@ -272,13 +272,77 @@ async def _call_anthropic_text(cred: AiCredential, system: str, user: str) -> st
     return content
 
 
-async def _call_claude_cli_text(cred: AiCredential, system: str, user: str) -> str:
+_CLI_SELF_UPGRADE_TRIED = False
+
+
+async def _claude_cli_version() -> str:
+    """Return ``claude --version`` first line, or 'unknown' on any failure."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "claude", "--version",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+        return out.decode("utf-8", errors="replace").strip().splitlines()[0] or "unknown"
+    except Exception:
+        return "unknown"
+
+
+async def _try_self_upgrade_claude_cli() -> tuple[bool, str]:
+    """Best-effort one-shot ``npm install -g @anthropic-ai/claude-code@latest``.
+
+    Container CLI is pinned to the npm version installed at image build time.
+    Host CLI auto-updates and may write the auth file in a newer format the
+    container CLI can't read — symptom is silent ``exit 0 + empty stdout``
+    or 401 against a freshly-refreshed host token. Bumping the in-container
+    CLI to latest at runtime recovers without rebuild.
+
+    Idempotent across the worker process — only runs once per startup so a
+    repeated client retry doesn't reinstall every call.
+    """
+    global _CLI_SELF_UPGRADE_TRIED
+    if _CLI_SELF_UPGRADE_TRIED:
+        return False, "이번 프로세스에서 이미 시도함"
+    _CLI_SELF_UPGRADE_TRIED = True
+    if shutil.which("npm") is None:
+        return False, "npm 미설치 — INSTALL_CLAUDE_CLI=1 로 빌드된 이미지가 아닙니다."
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "npm", "install", "-g", "@anthropic-ai/claude-code@latest",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=180)
+    except asyncio.TimeoutError:
+        return False, "npm install 시간 초과 (180s) — 네트워크 확인 필요"
+    except Exception as e:
+        return False, f"npm install 예외: {e}"
+    if proc.returncode != 0:
+        diag = (err_b or out_b).decode("utf-8", errors="replace").strip()[:200]
+        return False, f"npm install 실패 (exit={proc.returncode}): {diag}"
+    return True, "npm install 성공"
+
+
+async def _call_claude_cli_text(
+    cred: AiCredential,
+    system: str,
+    user: str,
+    *,
+    _retried_after_upgrade: bool = False,
+) -> str:
     """Invoke the local Claude Code CLI in headless mode.
 
     Uses the host's Claude Code authentication (mounted via ``~/.claude``),
     so the user's existing subscription is used instead of a separate
     Anthropic API key / billing. The CLI binary must be on PATH inside the
     backend container — see README section "AI 심층 분석 — Claude Code CLI".
+
+    Failure-handling: any failure (non-zero exit OR exit 0 + empty stdout)
+    triggers a one-shot in-container CLI self-upgrade and ONE retry. This
+    transparently recovers from version drift between host CLI (which auto-
+    updates and may write a newer auth-file format) and container CLI
+    (pinned to image build time).
     """
     if shutil.which("claude") is None:
         raise HTTPException(
@@ -321,7 +385,31 @@ async def _call_claude_cli_text(cred: AiCredential, system: str, user: str) -> s
         ) from e
     stdout_text = stdout_bytes.decode("utf-8", errors="replace").strip()
     stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
-    if proc.returncode != 0:
+
+    failed_exit = proc.returncode != 0
+    failed_empty = (not failed_exit) and not stdout_text
+
+    if (failed_exit or failed_empty) and not _retried_after_upgrade:
+        prev_version = await _claude_cli_version()
+        ok, msg = await _try_self_upgrade_claude_cli()
+        if ok:
+            new_version = await _claude_cli_version()
+            log.info(
+                "claude_cli.self_upgraded",
+                prev_version=prev_version,
+                new_version=new_version,
+                trigger="exit_nonzero" if failed_exit else "empty_stdout",
+            )
+            return await _call_claude_cli_text(
+                cred, system, user, _retried_after_upgrade=True
+            )
+        log.warning(
+            "claude_cli.self_upgrade_skipped",
+            reason=msg,
+            cli_version=prev_version,
+        )
+
+    if failed_exit:
         # claude CLI는 인증/모델 오류 같은 사용자 메시지를 stdout으로 내보내는
         # 경우가 많아서, stdout과 stderr를 둘 다 합쳐 보여줘야 진단이 가능합니다.
         diag = (stderr_text or stdout_text or "(출력 없음)")[:600]
@@ -329,10 +417,10 @@ async def _call_claude_cli_text(cred: AiCredential, system: str, user: str) -> s
             status_code=502,
             detail=f"claude CLI 실행 실패 (exit={proc.returncode}). 오류: {diag}{_claude_cli_auth_hint(diag)}",
         )
-    if not stdout_text:
-        # exit 0 + empty stdout 도 종종 인증/구독 만료의 silent failure 모드.
-        # stderr 가 비어있더라도 hint 를 같이 띄워 사용자가 OAuth 토큰을
-        # 의심할 수 있게 함.
+    if failed_empty:
+        # exit 0 + empty stdout 도 종종 CLI 버전 drift 또는 인증/구독 만료의
+        # silent failure 모드. self-upgrade 가 못 고쳤다면 사용자에게 OAuth
+        # 갱신 + 빌드 옵션을 다 알려준다.
         raise HTTPException(
             status_code=502,
             detail=f"claude CLI 응답이 비어 있습니다.{_claude_cli_auth_hint(stderr_text)}",
@@ -343,15 +431,23 @@ async def _call_claude_cli_text(cred: AiCredential, system: str, user: str) -> s
 def _claude_cli_auth_hint(diag: str) -> str:
     """Return a Korean hint when the CLI output looks auth/credential-shaped.
 
-    The hint differentiates two distinct failure modes that look similar to
-    end users but require different fixes:
+    Three failure modes need different fixes:
 
-      * "not logged in" / "/login" → docker overlay (mount) missing
-      * 401 / invalid credentials / expired → host OAuth token expired,
-        run ``claude /login`` (or any ``claude`` command) on the host to
-        refresh; the read-only mount picks up the new file automatically
+      * "not logged in" / "/login" → docker overlay (mount) missing.
+      * 401 / invalid credentials / expired → host OAuth token expired
+        OR (most common on macOS) host CLI now stores tokens in macOS
+        Keychain instead of ``~/.claude/.credentials.json``. Container CLI
+        (Linux) can't read Keychain so falls back to the stale legacy file.
+        Workaround: run ``backend/scripts/sync_claude_creds_from_keychain.sh``
+        on the host to mirror the Keychain token into ``.credentials.json``.
+      * Unrecognised diag → no hint (avoid noise).
     """
     lower = diag.lower()
+    if "hit your limit" in lower or "rate limit" in lower or "usage limit" in lower:
+        return (
+            " — Claude 구독 사용량 한도 도달. 한도 reset 시각 이후 재시도하거나 "
+            "API key 방식의 다른 provider 로 일시 전환하세요. 인증 자체는 정상."
+        )
     if "not logged in" in lower or "/login" in lower:
         return (
             " — 컨테이너 안의 claude CLI가 호스트 로그인을 보지 못합니다. "
@@ -367,10 +463,15 @@ def _claude_cli_auth_hint(diag: str) -> str:
         or not diag  # empty stdout/stderr — assume silent auth degradation
     ):
         return (
-            " — 호스트 ~/.claude/.credentials.json 의 OAuth 토큰이 만료됐을 가능성이 큽니다. "
-            "호스트 별도 터미널에서 `claude` 한 번 실행하면 자동 갱신되며, "
-            "refresh token 도 만료됐다면 `claude /login` 으로 새 OAuth flow 를 진행하세요. "
-            "mount 가 read-only 라도 호스트가 파일을 새로 쓰면 컨테이너가 즉시 새 토큰을 읽습니다 (rebuild 불필요)."
+            " — claude CLI 인증 실패. macOS 호스트라면 새 CLI 가 OAuth 를 "
+            "Keychain('Claude Code-credentials') 에 저장해 컨테이너 mount 로 "
+            "공유 안 됩니다. 호스트에서 "
+            "`backend/scripts/sync_claude_creds_from_keychain.sh` 한 번 실행하면 "
+            "Keychain → ~/.claude/.credentials.json 으로 동기화되고 컨테이너가 "
+            "즉시 새 토큰을 읽습니다 (rebuild 불필요). Linux 호스트라면 토큰 "
+            "만료일 가능성이 크니 호스트에서 `claude` 한 번 실행하거나 "
+            "`claude /login` 으로 새 OAuth flow 를 진행하세요. 그래도 안 되면 "
+            "API key 방식의 다른 provider 로 전환하세요."
         )
     return ""
 

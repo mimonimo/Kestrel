@@ -375,14 +375,16 @@ claude login
 
 **2. (macOS만) 키체인의 OAuth 토큰을 파일로 내보내기**
 
-macOS의 Claude Code CLI는 OAuth 토큰을 **Keychain**에 저장하므로, `~/.claude` 를 그냥 마운트해도 Linux 컨테이너 안의 CLI는 `Not logged in` 상태가 됩니다. 아래 한 줄로 키체인 값을 컨테이너가 읽을 수 있는 형식의 파일로 내보냅니다. (Linux 호스트는 이 단계를 건너뛰세요.)
+macOS의 Claude Code CLI는 OAuth 토큰을 **Keychain**(`Claude Code-credentials`)에 저장하므로, `~/.claude` 를 그냥 마운트해도 Linux 컨테이너 안의 CLI는 만료된 legacy `~/.claude/.credentials.json` 으로 폴백해 401 또는 빈 응답이 됩니다. 동기화 헬퍼를 한 번 실행하세요. (Linux 호스트는 호스트 CLI 가 직접 파일을 갱신하므로 건너뛰세요.)
 
 ```bash
-security find-generic-password -s "Claude Code-credentials" -w > ~/.claude/.credentials.json
-chmod 600 ~/.claude/.credentials.json
+backend/scripts/sync_claude_creds_from_keychain.sh
+# → synced: /Users/<you>/.claude/.credentials.json (expiresAt=2026-05-03T21:56:41)
 ```
 
-> 이 파일은 호스트 전용입니다. `~/.claude` 는 이 저장소의 `.gitignore` 와 무관한 홈 디렉터리 경로이므로 커밋 대상이 아닙니다. 토큰이 만료/갱신되면 같은 명령을 다시 실행해 주세요.
+> 스크립트가 Keychain 페이로드의 JSON 모양을 검증한 뒤 원자적으로 `~/.claude/.credentials.json` 에 기록하고, 만료 시각을 출력합니다. 토큰이 만료되거나 401 이 다시 보이면 같은 스크립트를 한 번 더 돌리면 됩니다 (백엔드 재빌드 불필요 — read-only mount 가 호스트 파일의 새 내용을 바로 봅니다). 토큰 만료 패턴이 짧다면 `cron` 또는 macOS LaunchAgent 로 주기적 호출을 권장합니다.
+
+오류 메시지에 `claude CLI 인증 실패. macOS 호스트라면 ...` hint 가 같이 뜨므로 어떤 단계에서 막혔는지 바로 알 수 있고, 컨테이너 안 CLI 가 호스트보다 구버전이라 silent empty 가 발생하면 `_call_claude_cli_text()` 가 `npm install -g @anthropic-ai/claude-code@latest` 로 1회 자동 self-upgrade 후 재시도합니다 (역시 rebuild 불필요).
 
 **3. `.env` 에 플래그 설정**
 
