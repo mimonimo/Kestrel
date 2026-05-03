@@ -42,6 +42,7 @@ function Dashboard() {
       severity: url.filters.severity,
       osFamily: url.filters.osFamily,
       types: url.filters.types,
+      domains: url.filters.domains,
       fromDate: url.filters.fromDate || undefined,
       toDate: url.filters.toDate || undefined,
     },

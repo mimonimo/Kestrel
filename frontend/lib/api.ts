@@ -146,6 +146,7 @@ export const api = {
     filters.severity?.forEach((s) => params.append("severity", s));
     filters.osFamily?.forEach((o) => params.append("os", o));
     filters.types?.forEach((t) => params.append("type", t));
+    filters.domains?.forEach((d) => params.append("domain", d));
     if (filters.fromDate) params.set("from", filters.fromDate);
     if (filters.toDate) params.set("to", filters.toDate);
     if (sort && sort !== "newest") params.set("sort", sort);

@@ -2,7 +2,8 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo } from "react";
-import type { OsFamily, Severity, VulnType } from "./types";
+import type { Domain, OsFamily, Severity, VulnType } from "./types";
+import { DOMAINS } from "./types";
 import type { SortKey } from "./sort";
 import type { FilterState } from "@/components/search/FilterPanel";
 import { EMPTY_FILTERS } from "@/components/search/FilterPanel";
@@ -58,6 +59,7 @@ export function useUrlState(): UrlState & {
         severity: intersect(params.getAll("severity"), SEV),
         osFamily: intersect(params.getAll("os"), OS),
         types: intersect(params.getAll("type"), TYPE),
+        domains: intersect<Domain>(params.getAll("domain"), DOMAINS),
         fromDate: params.get("from") ?? "",
         toDate: params.get("to") ?? "",
       },
@@ -81,6 +83,7 @@ export function useUrlState(): UrlState & {
       next.filters.severity.forEach((s) => sp.append("severity", s));
       next.filters.osFamily.forEach((o) => sp.append("os", o));
       next.filters.types.forEach((t) => sp.append("type", t));
+      next.filters.domains.forEach((d) => sp.append("domain", d));
       if (next.filters.fromDate) sp.set("from", next.filters.fromDate);
       if (next.filters.toDate) sp.set("to", next.filters.toDate);
       if (next.page > 1) sp.set("page", String(next.page));

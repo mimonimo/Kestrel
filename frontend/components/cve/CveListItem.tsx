@@ -45,6 +45,11 @@ export function CveListItem({ vuln }: { vuln: Item }) {
                 {os}
               </Badge>
             ))}
+            {(vuln.domains ?? []).map((d) => (
+              <Badge key={d} variant="outline" className="text-cyan-300 border-cyan-900/60">
+                {d}
+              </Badge>
+            ))}
             {vuln.publishedAt && (
               <span className="ml-auto text-xs text-neutral-500">{timeAgo(vuln.publishedAt)}</span>
             )}

@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import type { OsFamily, Severity, VulnType } from "@/lib/types";
+import type { Domain, OsFamily, Severity, VulnType } from "@/lib/types";
+import { DOMAINS } from "@/lib/types";
 
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low"];
 const OS_FAMILIES: OsFamily[] = ["windows", "linux", "macos", "android", "ios", "other"];
@@ -47,6 +48,32 @@ const OS_LABELS: Record<OsFamily, string> = {
   android: "Android",
   ios: "iOS",
   other: "기타",
+};
+
+// Korean labels for the domain chips. The chip itself shows the label,
+// the underlying value sent to the API is the canonical lowercase
+// English string from `DOMAINS`. Keeping label and key separate so we
+// can rename the UI without churning URL state or backend filter
+// vocab.
+const DOMAIN_LABELS: Record<Domain, string> = {
+  kernel: "커널",
+  os: "OS",
+  browser: "브라우저",
+  "web-server": "웹서버",
+  "web-framework": "웹프레임워크",
+  database: "DB",
+  media: "미디어",
+  network: "네트워크",
+  mail: "메일",
+  auth: "인증",
+  crypto: "암호",
+  runtime: "런타임",
+  mobile: "모바일",
+  virtualization: "가상화",
+  office: "오피스",
+  enterprise: "엔터프라이즈",
+  iot: "IoT",
+  messaging: "메신저",
 };
 
 // Date presets. ``days`` is "from = today - N days, to = open-ended"; the
@@ -100,6 +127,7 @@ export interface FilterState {
   severity: Severity[];
   osFamily: OsFamily[];
   types: VulnType[];
+  domains: Domain[];
   fromDate: string;
   toDate: string;
 }
@@ -108,6 +136,7 @@ export const EMPTY_FILTERS: FilterState = {
   severity: [],
   osFamily: [],
   types: [],
+  domains: [],
   fromDate: "",
   toDate: "",
 };
@@ -118,7 +147,7 @@ interface Props {
 }
 
 export function FilterPanel({ value, onChange }: Props) {
-  const toggle = <K extends "severity" | "osFamily" | "types">(
+  const toggle = <K extends "severity" | "osFamily" | "types" | "domains">(
     key: K,
     item: FilterState[K][number],
   ) => {
@@ -154,6 +183,7 @@ export function FilterPanel({ value, onChange }: Props) {
     value.severity.length > 0 ||
     value.osFamily.length > 0 ||
     value.types.length > 0 ||
+    value.domains.length > 0 ||
     value.fromDate !== "" ||
     value.toDate !== "";
 
@@ -189,6 +219,19 @@ export function FilterPanel({ value, onChange }: Props) {
             title={VULN_TYPE_LABELS[t]}
           >
             {t}
+          </Chip>
+        ))}
+      </FilterGroup>
+
+      <FilterGroup title="도메인">
+        {DOMAINS.map((d) => (
+          <Chip
+            key={d}
+            active={value.domains.includes(d)}
+            onClick={() => toggle("domains", d)}
+            title={d}
+          >
+            {DOMAIN_LABELS[d]}
           </Chip>
         ))}
       </FilterGroup>

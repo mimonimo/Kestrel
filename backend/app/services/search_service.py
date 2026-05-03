@@ -89,7 +89,7 @@ def ensure_index() -> None:
 
     index = client.index(s.meili_index)
     index.update_filterable_attributes(
-        ["severity", "osFamilies", "types", "publishedAt", "source"]
+        ["severity", "osFamilies", "types", "publishedAt", "source", "domains"]
     )
     index.update_sortable_attributes(["publishedAt", "cvssScore", "severityRank"])
     index.update_searchable_attributes(["cveId", "title", "summary", "description"])
@@ -114,6 +114,7 @@ def to_document(v: Vulnerability) -> dict[str, Any]:
         "sourceUrl": v.source_url,
         "types": [t.name for t in v.types],
         "osFamilies": sorted({p.os_family.value for p in v.affected_products if p.os_family}),
+        "domains": list(v.domains or []),
     }
 
 
@@ -132,6 +133,7 @@ def search(
     severity: list[str] | None = None,
     os_family: list[str] | None = None,
     types: list[str] | None = None,
+    domains: list[str] | None = None,
     from_ts: int | None = None,
     to_ts: int | None = None,
     limit: int = 20,
@@ -149,6 +151,8 @@ def search(
         filters.append("osFamilies IN [" + ", ".join(f'"{o}"' for o in os_family) + "]")
     if types:
         filters.append("types IN [" + ", ".join(f'"{t}"' for t in types) + "]")
+    if domains:
+        filters.append("domains IN [" + ", ".join(f'"{d}"' for d in domains) + "]")
     if from_ts is not None:
         filters.append(f"publishedAt >= {from_ts}")
     if to_ts is not None:

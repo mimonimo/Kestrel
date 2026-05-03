@@ -1048,6 +1048,67 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-B — cross-domain 분류 (`vulnerabilities.domains TEXT[]` + 18 도메인 chip 그룹) ✅
+
+**완료일:** 2026-05-03
+
+> 사용자 보고 mid-PR-A: "예를들면 CVE-2026-22564 이거 같은경우에는 오디오 분야 취약점인데 SSH 까지 위협 받는거잖아 이런식으로 다양한 분야를 분석 할 수 있도록 세분화". 즉 한 CVE 가 여러 *기술 표면(technology surface)* 에 걸칠 수 있어야 한다 — vuln-type(RCE/XSS/...) 은 *메커니즘(weakness class)* 만 표현하고 surface 정보가 손실. 도메인을 별도 축으로 모델링.
+
+**스키마 (alembic 0015_vuln_domains)**
+- `vulnerabilities.domains TEXT[] NOT NULL DEFAULT '{}'` + GIN index `ix_vuln_domains_gin` — 18 controlled-vocab 으로 작아서 별도 normalize 테이블 보다 array overlap (`&&`) / contains (`@>`) 가 join 없이 빠르다.
+- 정규화 테이블을 안 쓴 이유: 도메인 set 이 small(~20)/거의 mutate 안 함/한 CVE 당 1-3 개. M:N 테이블은 매번 join 강제 + 빈 결과(uncategorized) 표현이 어색.
+
+**Classifier (`backend/app/services/domain_classifier.py`)**
+- `DOMAINS = (kernel, os, browser, web-server, web-framework, database, media, network, mail, auth, crypto, runtime, mobile, virtualization, office, enterprise, iot, messaging)` — 18 종 closed set.
+- 두 층 신호 union (신뢰도 내림차순):
+  1. `_PRODUCT_RULES` — `f"{vendor} {product}"` 매칭 18 정규식 (CPE-derived, strong)
+  2. `_TEXT_RULES` — `title + description` 매칭 17 정규식 (CPE 없는 케이스 + crossover)
+- `infer_domains(parsed)` (인제스션) + `infer_domains_from_row(title, desc, products)` (백필) — 동일 로직, 호출 모양만 다름.
+- **CWE 의도적 미사용**: CWE 는 weakness class 를 기술. CWE-787(out-of-bounds write) 은 audio 코덱과 kernel driver 에 모두 등장 — 도메인 추론에 쓰면 양쪽 모두 흐려짐.
+- 빈 list = "uncategorized" — chip 필터는 `&&` overlap 이라 빈 array 는 어떤 chip 에도 매치 안 됨. all-OR-nothing 잘못된 동작 회피.
+
+**모델/인제스션 배선**
+- `Vulnerability.domains: Mapped[list[str]]` (postgresql ARRAY of Text), `__table_args__` 에 `ix_vuln_domains_gin` GIN.
+- `ParsedVulnerability.domains: list[str]` field — 파서는 비워두고 `_upsert` 에서 `infer_domains(parsed)` 로 채워 insert/update 양쪽 경로에서 persist.
+- `VulnerabilityListItem.domains: list[str] = []` — Pydantic schema 에 추가해 GET 응답에 노출.
+
+**Meili 인덱스 + 검색 서비스**
+- `to_document()` 가 `"domains": list(v.domains or [])` emit.
+- `ensure_index().update_filterable_attributes(...)` 에 `"domains"` 추가.
+- `search_service.search()` 가 `domains: list[str] | None` 인자 받아 `domains IN [...]` 필터 절 추가.
+- 모든 75,005 docs 재인덱스 (큐 task 599 까지 enqueue, 즉시 drained).
+
+**API + PG fallback (`app/api/v1/search.py`)**
+- `domain: list[str] = Query(default=[], alias="domain")` 라우트 인자.
+- Meili 경로 → `search_service.search(..., domains=domain or None, ...)`.
+- PG fallback → `Vulnerability.domains.op("&&")(domain)` (TEXT[] overlap 연산자, GIN index hit).
+
+**Frontend**
+- `lib/types.ts` — `Domain` union type 18 종 + `DOMAINS` readonly array. `SearchFilters.domains?: Domain[]`, `VulnerabilityListItem.domains: string[]`.
+- `lib/url-state.ts` — `?domain=auth&domain=media` 다중값 직렬화/역직렬화 (whitelist intersect).
+- `components/search/FilterPanel.tsx` — 새 "도메인" chip 그룹 (한국어 라벨 매핑 `DOMAIN_LABELS`, value 는 canonical 영어 키). `EMPTY_FILTERS` / `hasFilters` / `toggle` 모두 domains 인지.
+- `components/cve/CveListItem.tsx` — 결과 카드에 cyan-tinted outline domain badge 추가 (vuln-type 칩 옆).
+- `app/page.tsx` + `lib/api.ts` — filter forwarding 한 줄씩.
+
+**백필 (`backend/scripts/backfill_domains.py`)**
+- 75,004 rows 처리 → 33,787 update / 41,214 uncategorized (55%) / 7,269 multi-domain (10%). PK 기반 cursor pagination 으로 OFFSET cost 회피.
+- 분포 (top 5): database 8665 / os 4664 / web-framework 4582 / browser 4089 / kernel 3132. 18 도메인 모두 정상 분포.
+
+**검증 (`backend/scripts/smoke_domains.py`)**
+- Fixture 9 케이스 PASS — kernel use-after-free / openssh / **audio→ssh crossover** / firefox / wordpress SQLi / openssl / vmware / qualcomm baseband / "no signal" 빈 결과.
+- 500-row 실 DB 샘플 분포 health-check (43% 분류, 8% multi-domain, 18 도메인 모두 발견).
+- PR-A regression (`smoke_search.py`) 동시 green.
+- 라이브 API: `GET /search?domain=auth` total 2110 / `?domain=auth&domain=kernel` total 5174 / `?domain=auth&domain=media` total 4472, 모든 hit 이 chip 매치 ✓.
+
+**왜 Edge / WordPress text rule 을 PR 9-K-style fix 로 추가했는가**
+- 첫 500-row 분포에서 "Microsoft Edge (Chromium-based) ..." 와 "plugin for WordPress" 같은 제목이 vendor 비어있고 text rule 도 키워드 부족으로 누락 → uncategorized 가 57% 까지 올라옴. browser 룰에 `microsoft edge|chromium-based`, web-framework 룰에 `wordpress|drupal|joomla|magento|typo3|phpmyadmin|plugin for wp|wp[- ]plugin|wp[- ]admin` 추가해 web-framework 가 15→19 / browser 가 21→25 (작은 표본의 분산 내) — 의도는 룰 누락의 *대표 케이스* 수정, 미세 튜닝은 후속.
+
+**알려진 한계 / 다음 PR 으로 넘김**
+- 55% uncategorized 는 niche/old CVE (NCSA httpd, Tenda router, Hassan Shopping Cart 등) 가 vendor 도 키워드도 안 잡혀 발생. 룰 추가는 churn 대비 가치 낮아 v1 출하. 향후 `domain` chip 클릭 시 "이 도메인은 X% 커버" 같은 transparency surface 가 더 가치.
+- 도메인 라벨 i18n 은 frontend `DOMAIN_LABELS` 한 군데에서 하드코딩 — 다국어 추가 시 별도 i18n 레이어가 필요하나 현 단계에선 over-engineering.
+
+---
+
 ### PR 9-M — backend probe 클래스 확장 (XXE / open-redirect / deserialization) ✅
 
 > PR 9-L 이 RCE / path-traversal / SSTI / XSS / time-based SQLi 5 종에 대해 backend ground-truth 검증을 깔았지만, 그 외 클래스(XXE, SSRF, deserialization, auth bypass, IDOR, open-redirect 등) 는 여전히 `llm_indicator_only` 약식 fallback 으로만 통과했다. 사용자 메모리 지시 — "verification 강화(음성 대조, side-channel 카나리, behavior-class probe, indicator strength gate) 가 feedback-loop 기능(다중 후보, best-of-N 등) 보다 우선" — 에 따라 best-of-N(PR 9-N) 보다 probe 클래스 확장을 먼저 출하. 한 번에 3 클래스(XXE / open-redirect / deserialization) 를 추가해 약식 fallback 에 머물던 vuln class 를 줄였다.

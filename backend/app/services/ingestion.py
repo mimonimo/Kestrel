@@ -18,6 +18,7 @@ from app.models import (
     VulnerabilityReference,
     VulnerabilityType,
 )
+from app.services.domain_classifier import infer_domains
 from app.services.parsers.base import BaseParser, ParsedVulnerability
 from app.services.search_service import index_many
 from app.services.summarizer import generate_summary
@@ -136,6 +137,7 @@ async def _upsert(session: AsyncSession, parsed: ParsedVulnerability) -> str:
     )
 
     summary = parsed.summary or generate_summary(parsed.title, parsed.description)
+    domains = infer_domains(parsed)
 
     if existing is None:
         type_rows = await _resolve_types(session, parsed.types)
@@ -166,6 +168,7 @@ async def _upsert(session: AsyncSession, parsed: ParsedVulnerability) -> str:
             source=parsed.source,
             source_url=parsed.source_url,
             raw_data=parsed.raw_data,
+            domains=domains,
             types=type_rows,
             affected_products=products,
             references=refs,
@@ -184,6 +187,7 @@ async def _upsert(session: AsyncSession, parsed: ParsedVulnerability) -> str:
         existing.severity = parsed.severity
         existing.modified_at = parsed.modified_at
         existing.raw_data = parsed.raw_data
+        existing.domains = domains
         await _replace_products(session, existing, parsed.affected_products)
         await _merge_references(session, existing, parsed.references, replace=True)
         await _merge_types(session, existing, parsed.types)

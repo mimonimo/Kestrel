@@ -47,6 +47,10 @@ class ParsedVulnerability:
     affected_products: list[ParsedProduct] = field(default_factory=list)
     references: list[ParsedReference] = field(default_factory=list)
     raw_data: dict = field(default_factory=dict)
+    # Populated by ingestion via app.services.domain_classifier.infer_domains.
+    # Parsers do not set this — kept here so the orchestrator has a single
+    # mutable spot to attach the inferred list before the upsert.
+    domains: list[str] = field(default_factory=list)
 
 
 class BaseParser(ABC):

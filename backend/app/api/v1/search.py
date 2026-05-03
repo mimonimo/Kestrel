@@ -109,6 +109,7 @@ async def search(
     severity: list[str] = Query(default=[], alias="severity"),
     os: list[str] = Query(default=[], alias="os"),
     type: list[str] = Query(default=[], alias="type"),
+    domain: list[str] = Query(default=[], alias="domain"),
     from_date: str | None = Query(default=None, alias="from"),
     to_date: str | None = Query(default=None, alias="to"),
     sort: SortKey = Query("newest"),
@@ -143,6 +144,7 @@ async def search(
             severity=severity or None,
             os_family=os or None,
             types=type or None,
+            domains=domain or None,
             from_ts=_parse_date_to_ts(from_date),
             to_ts=_parse_date_to_ts(to_date),
             limit=page_size,
@@ -166,7 +168,7 @@ async def search(
     except Exception as exc:
         log.warning("search.meili_fallback", error=str(exc))
         rows, total = await _pg_search(
-            db, q, severity, os, type, from_date, to_date, sort, page_size, offset, cve_pattern
+            db, q, severity, os, type, domain, from_date, to_date, sort, page_size, offset, cve_pattern
         )
         return SearchResponse(
             items=[VulnerabilityListItem.model_validate(v) for v in rows],
@@ -198,6 +200,7 @@ async def _pg_search(
     severity: list[str],
     os: list[str],
     type_: list[str],
+    domain: list[str],
     from_date: str | None,
     to_date: str | None,
     sort: SortKey,
@@ -241,6 +244,10 @@ async def _pg_search(
             )
         )
         conds.append(sub.exists())
+    if domain:
+        # domains is a TEXT[] with a GIN index; && (overlap) lets the
+        # planner use the index for "any of these chips matches".
+        conds.append(Vulnerability.domains.op("&&")(domain))
     if from_date:
         try:
             conds.append(

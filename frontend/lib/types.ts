@@ -24,6 +24,54 @@ export type VulnType =
   | "Auth"
   | "Other";
 
+// Cross-domain technology surface (PR 10-B). A CVE can carry multiple
+// — e.g. an audio codec parser bug embedded in an SSH client gets both
+// `media` and `auth`. Backend infers these at ingestion time and stores
+// them in `vulnerabilities.domains TEXT[]`. Frontend treats this as a
+// closed set so the chip group order is stable; mismatches between
+// frontend and backend domain vocab are intentionally invisible (chip
+// just won't render). Keep in sync with `app.services.domain_classifier.DOMAINS`.
+export type Domain =
+  | "kernel"
+  | "os"
+  | "browser"
+  | "web-server"
+  | "web-framework"
+  | "database"
+  | "media"
+  | "network"
+  | "mail"
+  | "auth"
+  | "crypto"
+  | "runtime"
+  | "mobile"
+  | "virtualization"
+  | "office"
+  | "enterprise"
+  | "iot"
+  | "messaging";
+
+export const DOMAINS: readonly Domain[] = [
+  "kernel",
+  "os",
+  "browser",
+  "web-server",
+  "web-framework",
+  "database",
+  "media",
+  "network",
+  "mail",
+  "auth",
+  "crypto",
+  "runtime",
+  "mobile",
+  "virtualization",
+  "office",
+  "enterprise",
+  "iot",
+  "messaging",
+] as const;
+
 export type Source = "nvd" | "exploit_db" | "github_advisory";
 
 export interface AffectedProduct {
@@ -62,6 +110,7 @@ export interface SearchFilters {
   severity?: Severity[];
   osFamily?: OsFamily[];
   types?: VulnType[];
+  domains?: Domain[];
   fromDate?: string;
   toDate?: string;
 }
@@ -76,6 +125,7 @@ export interface VulnerabilityListItem {
   source: Source;
   types: string[];
   osFamilies: string[];
+  domains: string[];
 }
 
 export interface SearchResponse {
