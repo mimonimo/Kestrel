@@ -325,24 +325,54 @@ async def _call_claude_cli_text(cred: AiCredential, system: str, user: str) -> s
         # claude CLI는 인증/모델 오류 같은 사용자 메시지를 stdout으로 내보내는
         # 경우가 많아서, stdout과 stderr를 둘 다 합쳐 보여줘야 진단이 가능합니다.
         diag = (stderr_text or stdout_text or "(출력 없음)")[:600]
-        hint = ""
-        lower = diag.lower()
-        if "not logged in" in lower or "/login" in lower:
-            hint = (
-                " — 컨테이너 안의 claude CLI가 호스트 로그인을 보지 못합니다. "
-                "docker compose에 `-f docker-compose.claude-cli.yml` 오버레이를 "
-                "포함해 다시 띄웠는지 확인하세요."
-            )
         raise HTTPException(
             status_code=502,
-            detail=(
-                f"claude CLI 실행 실패 (exit={proc.returncode}). "
-                f"오류: {diag}{hint}"
-            ),
+            detail=f"claude CLI 실행 실패 (exit={proc.returncode}). 오류: {diag}{_claude_cli_auth_hint(diag)}",
         )
     if not stdout_text:
-        raise HTTPException(status_code=502, detail="claude CLI 응답이 비어 있습니다.")
+        # exit 0 + empty stdout 도 종종 인증/구독 만료의 silent failure 모드.
+        # stderr 가 비어있더라도 hint 를 같이 띄워 사용자가 OAuth 토큰을
+        # 의심할 수 있게 함.
+        raise HTTPException(
+            status_code=502,
+            detail=f"claude CLI 응답이 비어 있습니다.{_claude_cli_auth_hint(stderr_text)}",
+        )
     return _parse_payload(stdout_text)
+
+
+def _claude_cli_auth_hint(diag: str) -> str:
+    """Return a Korean hint when the CLI output looks auth/credential-shaped.
+
+    The hint differentiates two distinct failure modes that look similar to
+    end users but require different fixes:
+
+      * "not logged in" / "/login" → docker overlay (mount) missing
+      * 401 / invalid credentials / expired → host OAuth token expired,
+        run ``claude /login`` (or any ``claude`` command) on the host to
+        refresh; the read-only mount picks up the new file automatically
+    """
+    lower = diag.lower()
+    if "not logged in" in lower or "/login" in lower:
+        return (
+            " — 컨테이너 안의 claude CLI가 호스트 로그인을 보지 못합니다. "
+            "docker compose에 `-f docker-compose.claude-cli.yml` 오버레이를 "
+            "포함해 다시 띄웠는지 확인하세요."
+        )
+    if (
+        "401" in lower
+        or "invalid authentication" in lower
+        or "authentication_error" in lower
+        or "expired" in lower
+        or "credentials" in lower
+        or not diag  # empty stdout/stderr — assume silent auth degradation
+    ):
+        return (
+            " — 호스트 ~/.claude/.credentials.json 의 OAuth 토큰이 만료됐을 가능성이 큽니다. "
+            "호스트 별도 터미널에서 `claude` 한 번 실행하면 자동 갱신되며, "
+            "refresh token 도 만료됐다면 `claude /login` 으로 새 OAuth flow 를 진행하세요. "
+            "mount 가 read-only 라도 호스트가 파일을 새로 쓰면 컨테이너가 즉시 새 토큰을 읽습니다 (rebuild 불필요)."
+        )
+    return ""
 
 
 def _extract_error(res: httpx.Response, provider: str) -> str:
