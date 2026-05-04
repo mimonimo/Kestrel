@@ -49,6 +49,12 @@ class LabInfoOut(CamelModel):
     # on the regular path. Surfaced so the UI can explain *why* the user
     # is being asked to consent to re-synthesis.
     degraded: bool = False
+    # Best-of-N (PR 9-S/9-T): how many synthesized candidates exist for
+    # this CVE and what rank the *currently-running* mapping holds. 1-based;
+    # rank=1 means "the best candidate". Both default to 0 for vulhub /
+    # generic labs (no candidate axis), so the UI hides the chip.
+    candidate_count: int = 0
+    candidate_rank: int = 0
 
 
 class SandboxSessionOut(CamelModel):

@@ -584,6 +584,14 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                   verified={session.verified}
                 />
                 <LabKindBadge labKind={session.labKind} />
+                {session.lab && session.lab.candidateCount > 1 && (
+                  <span
+                    className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-amber-200"
+                    title="동일 CVE 에 대해 합성된 후보 spec 수와 현재 사용 중인 후보 순위 (1=최우수). 👎 로 격하되면 자동으로 다음 후보로 폴백됩니다."
+                  >
+                    후보 {session.lab.candidateCount}개 중 {session.lab.candidateRank}번째
+                  </span>
+                )}
                 <span className="font-mono text-neutral-500">{session.labKind}</span>
                 {session.containerName && (
                   <span className="font-mono text-neutral-500">

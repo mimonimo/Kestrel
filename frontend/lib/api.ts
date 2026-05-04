@@ -442,6 +442,11 @@ export interface LabInfo {
   // refuse this mapping. UI uses this to flag a session whose lab was
   // voted down after starting.
   degraded: boolean;
+  // Best-of-N (PR 9-S/9-T): how many synthesized candidates exist for
+  // this CVE and which rank the running mapping holds. Both 0 for
+  // vulhub / generic labs (no candidate axis).
+  candidateCount: number;
+  candidateRank: number;
 }
 
 export interface SandboxLastRun {

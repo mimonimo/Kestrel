@@ -62,6 +62,7 @@ from app.services.sandbox.lab_resolver import (
     LabSpec,
     _spec_from_mapping,
     is_degraded,
+    list_synthesized_candidates,
     report_lab_kind_distribution,
 )
 from app.services.sandbox.manager import (
@@ -80,7 +81,12 @@ log = get_logger(__name__)
 
 
 def _spec_to_lab_out(
-    spec: LabSpec, *, my_vote: str | None = None, degraded: bool = False
+    spec: LabSpec,
+    *,
+    my_vote: str | None = None,
+    degraded: bool = False,
+    candidate_count: int = 0,
+    candidate_rank: int = 0,
 ) -> LabInfoOut:
     return LabInfoOut(
         kind=spec.lab_kind,
@@ -103,7 +109,26 @@ def _spec_to_lab_out(
         feedback_down=spec.feedback_down,
         my_vote=my_vote,
         degraded=degraded,
+        candidate_count=candidate_count,
+        candidate_rank=candidate_rank,
     )
+
+
+async def _candidate_position(
+    db: AsyncSession, cve_id: str, mapping_id: int | None
+) -> tuple[int, int]:
+    """Return ``(rank, total)`` of a synthesized mapping among its CVE's
+    candidates. (0, 0) for non-synthesized labs or when the mapping isn't
+    in the candidate list."""
+    if mapping_id is None or not cve_id:
+        return 0, 0
+    candidates = await list_synthesized_candidates(db, cve_id)
+    if not candidates:
+        return 0, 0
+    for i, m in enumerate(candidates, start=1):
+        if m.id == mapping_id:
+            return i, len(candidates)
+    return 0, len(candidates)
 
 
 async def _my_vote(
@@ -148,7 +173,16 @@ async def _session_to_out(
     if spec is not None:
         my_vote = await _my_vote(db, mapping_id, client_id)
         degraded = _degraded_from_counts(spec.feedback_up, spec.feedback_down)
-        lab_out = _spec_to_lab_out(spec, my_vote=my_vote, degraded=degraded)
+        cve_id_for_pos = (
+            (await db.scalar(select(Vulnerability.cve_id).where(Vulnerability.id == row.vulnerability_id)))
+            if row.vulnerability_id is not None
+            else ""
+        )
+        rank, total = await _candidate_position(db, cve_id_for_pos or "", mapping_id)
+        lab_out = _spec_to_lab_out(
+            spec, my_vote=my_vote, degraded=degraded,
+            candidate_count=total, candidate_rank=rank,
+        )
     elif row.vulnerability_id is not None:
         vuln = await db.scalar(
             select(Vulnerability).where(Vulnerability.id == row.vulnerability_id)
@@ -160,8 +194,12 @@ async def _session_to_out(
                 degraded = _degraded_from_counts(
                     resolved.spec.feedback_up, resolved.spec.feedback_down
                 )
+                rank, total = await _candidate_position(
+                    db, vuln.cve_id, resolved.mapping_id
+                )
                 lab_out = _spec_to_lab_out(
-                    resolved.spec, my_vote=my_vote, degraded=degraded
+                    resolved.spec, my_vote=my_vote, degraded=degraded,
+                    candidate_count=total, candidate_rank=rank,
                 )
             else:
                 # Resolver refused (e.g. synthesized mapping was degraded
@@ -181,8 +219,12 @@ async def _session_to_out(
                     degraded = _degraded_from_counts(
                         fallback_spec.feedback_up, fallback_spec.feedback_down
                     )
+                    rank, total = await _candidate_position(
+                        db, vuln.cve_id, mapping.id
+                    )
                     lab_out = _spec_to_lab_out(
-                        fallback_spec, my_vote=my_vote, degraded=degraded
+                        fallback_spec, my_vote=my_vote, degraded=degraded,
+                        candidate_count=total, candidate_rank=rank,
                     )
 
     return SandboxSessionOut(
