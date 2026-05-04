@@ -1267,6 +1267,226 @@ class DeserializationCanaryProbe(BackendProbe):
 
 
 # ---------------------------------------------------------------------------
+# 10. Auth-bypass probe — three-request differential, no backend canary
+# ---------------------------------------------------------------------------
+
+
+# Common bypass payloads tried in order. The first one whose response
+# breaks away from the anonymous baseline is taken as the candidate
+# bypass; the random control then has to NOT break away to confirm the
+# specific shape mattered. Order is roughly "least likely to false-
+# positive on benign labs" first.
+_AUTH_BYPASS_PAYLOADS: tuple[str, ...] = (
+    "admin",
+    "true",
+    "1",
+    "0",
+    "Bearer admin",
+    "Bearer kestrel-test-token",
+    "' OR '1'='1",
+)
+
+
+def _is_unauthorized_shape(status: int, body: str) -> bool:
+    """Heuristic: response 'looks like' an auth gate is denying."""
+    if status in (401, 403):
+        return True
+    if status in (301, 302, 303, 307, 308):
+        # Redirect to login page is the most common bypassable shape.
+        return True
+    lower = (body or "").lower()
+    for marker in (
+        "unauthorized", "forbidden", "access denied", "permission denied",
+        "login required", "please log in", "please sign in",
+        "권한", "로그인", "401", "403",
+    ):
+        if marker in lower:
+            return True
+    return False
+
+
+def _body_diff_score(a: str, b: str) -> float:
+    """Return 0..1 — 0 means identical, 1 means completely disjoint by
+    length. Cheap proxy for "the bypass response says something *new*".
+
+    We deliberately avoid Levenshtein/diff_match — those are O(n²) and
+    we only need a coarse signal. The size-ratio test catches the
+    common case where the protected page is meaningfully larger than
+    the login redirect.
+    """
+    la, lb = len(a or ""), len(b or "")
+    if max(la, lb) == 0:
+        return 0.0
+    return abs(la - lb) / max(la, lb)
+
+
+class AuthBypassDifferentialProbe(BackendProbe):
+    """Auth-bypass / broken-access-control. We can't stamp a canary into
+    the lab's protected response (the body is whatever the LLM wrote),
+    so we rely on a three-request differential:
+
+      * **Anonymous baseline** — empty parameter value. Should look
+        unauthorized: 401/403, redirect to login, or short body
+        containing a denial marker.
+      * **Bypass attempts** — try each known bypass shape in order. The
+        first one that returns 200 + a meaningfully different body
+        becomes the candidate.
+      * **Random control** — a benign random nonce. Must look like the
+        anonymous baseline (also unauthorized OR similar shape).
+        Catches the "any input bypasses" echo trap.
+
+    Pass = candidate bypass response differs from BOTH anonymous and
+    random controls (status or body length differs by >30%).
+
+    Why this is honest enough to ship: a fake echo lab returns the same
+    body for every input → bypass response equals random control →
+    rejected. A "always 200" lab returns identical content regardless of
+    input → bypass differential is 0 → rejected. A real auth-bypass
+    lab returns the protected page only when the bypass shape matches
+    → all three checks line up.
+    """
+
+    name = "auth_bypass_differential"
+    applies_to = (
+        "auth-bypass", "auth_bypass", "authentication-bypass",
+        "broken-auth", "missing-auth", "auth-skip",
+        "broken-access-control", "idor",
+    )
+
+    async def run(self, *, handle: LaunchedLab, ip: InjectionPoint) -> ProbeOutcome:
+        # 1. Anonymous baseline — empty value. Some apps short-circuit on
+        # empty before the auth check; those will look exactly like the
+        # random control below and we'll catch them via that comparison.
+        try:
+            anon = await _send(handle, ip, "")
+        except SandboxError as e:
+            return ProbeOutcome(
+                name=self.name, kind="auth-bypass", passed=False,
+                rationale=f"anonymous baseline 요청 실패 ({e}).",
+                evidence={"baseline_error": str(e)},
+            )
+        anon_status = int(anon.get("status_code") or 0)
+        anon_body = str(anon.get("body") or "")
+        anon_unauth = _is_unauthorized_shape(anon_status, anon_body)
+
+        # 2. Random control — must shape like the anonymous baseline.
+        # Picks up labs that 200 on any input regardless of value.
+        random_payload = _benign_nonce(12)
+        try:
+            random_ex = await _send(handle, ip, random_payload)
+        except SandboxError as e:
+            return ProbeOutcome(
+                name=self.name, kind="auth-bypass", passed=False,
+                rationale=f"음성 대조 (random) 요청 실패 ({e}).",
+                evidence={"random_payload": random_payload, "random_error": str(e)},
+            )
+        random_status = int(random_ex.get("status_code") or 0)
+        random_body = str(random_ex.get("body") or "")
+        random_unauth = _is_unauthorized_shape(random_status, random_body)
+
+        # If neither anon nor random looks gated, there's no auth surface
+        # here at all — we can't prove a bypass that has nothing to bypass.
+        if not anon_unauth and not random_unauth:
+            return ProbeOutcome(
+                name=self.name, kind="auth-bypass", passed=False,
+                rationale=(
+                    "anonymous + random 요청 모두 unauthorized shape 가 아님 "
+                    "(예: 401/403/login redirect/'denied' 본문 마커 없음) — "
+                    "이 엔드포인트는 인증 게이트 자체가 없는 것으로 보임."
+                ),
+                evidence={
+                    "anon_status": anon_status,
+                    "random_status": random_status,
+                    "anon_body_head": _truncate(anon_body, 160),
+                    "random_body_head": _truncate(random_body, 160),
+                },
+            )
+
+        # 3. Try each known bypass payload in order. Stop at the first
+        # one whose response (a) is 200 (b) differs significantly from
+        # the random control. Both checks are required because a label-
+        # echo lab might 200 on every input but always echo the input
+        # back — that fails the diff check.
+        attempts: list[dict] = []
+        winner: dict | None = None
+        for p in _AUTH_BYPASS_PAYLOADS:
+            try:
+                ex = await _send(handle, ip, p)
+            except SandboxError as e:
+                attempts.append({"payload": p, "error": str(e)})
+                continue
+            status = int(ex.get("status_code") or 0)
+            body = str(ex.get("body") or "")
+            diff_vs_random = _body_diff_score(body, random_body)
+            entry = {
+                "payload": p,
+                "status": status,
+                "body_len": len(body),
+                "diff_vs_random": round(diff_vs_random, 3),
+            }
+            attempts.append(entry)
+            looks_authorized = (
+                status == 200 and not _is_unauthorized_shape(status, body)
+            )
+            if looks_authorized and diff_vs_random > 0.30:
+                winner = entry
+                break
+
+        if winner is None:
+            return ProbeOutcome(
+                name=self.name, kind="auth-bypass", passed=False,
+                rationale=(
+                    f"{len(_AUTH_BYPASS_PAYLOADS)} 종 bypass 페이로드 모두 "
+                    "200 + random control 대비 의미 있는 본문 차이를 만들지 "
+                    "못함 — 인증 우회 동작 증거 없음."
+                ),
+                evidence={
+                    "anon_status": anon_status,
+                    "random_status": random_status,
+                    "attempts": attempts,
+                },
+            )
+
+        # 4. Final guard: winner body must also differ from anonymous
+        # baseline (otherwise the gate is bypassed by the empty value
+        # too — that's no bypass, the endpoint just has no real check).
+        winner_body_len = winner["body_len"]
+        anon_diff = abs(winner_body_len - len(anon_body)) / max(winner_body_len, len(anon_body), 1)
+        if anon_diff < 0.30:
+            return ProbeOutcome(
+                name=self.name, kind="auth-bypass", passed=False,
+                rationale=(
+                    "bypass 응답이 anonymous 응답과도 거의 동일 — "
+                    "anonymous 도 같은 콘텐츠가 노출되므로 인증 게이트 자체가 "
+                    "사실상 없는 셈."
+                ),
+                evidence={
+                    "winner": winner,
+                    "anon_status": anon_status,
+                    "anon_body_len": len(anon_body),
+                    "anon_diff": round(anon_diff, 3),
+                    "attempts": attempts,
+                },
+            )
+
+        return ProbeOutcome(
+            name=self.name, kind="auth-bypass", passed=True,
+            rationale=(
+                f"bypass payload '{winner['payload']}' 가 200 + random control 대비 "
+                f"{int(winner['diff_vs_random']*100)}% / anon 대비 {int(anon_diff*100)}% "
+                "본문 차이 — 특정 입력 모양으로만 보호된 자원에 도달했음."
+            ),
+            evidence={
+                "winner": winner,
+                "anon_status": anon_status,
+                "random_status": random_status,
+                "anon_diff": round(anon_diff, 3),
+                "attempts": attempts,
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
 # Probe registry + dispatch
 # ---------------------------------------------------------------------------
 
@@ -1281,6 +1501,7 @@ _PROBE_CLASSES: tuple[type[BackendProbe], ...] = (
     OpenRedirectProbe,
     SsrfCanaryProbe,
     DeserializationCanaryProbe,
+    AuthBypassDifferentialProbe,
 )
 
 
