@@ -37,6 +37,8 @@ from app.schemas.sandbox import (
     SandboxExecResponse,
     SandboxSessionOut,
     SandboxStartRequest,
+    LabKindStatsBucket,
+    LabKindStatsReport,
     SynthesizeCacheEntryOut,
     SynthesizeCacheReport,
     SynthesizeGcRequest,
@@ -56,7 +58,12 @@ from app.services.sandbox import (
     synthesize,
     sync_vulhub,
 )
-from app.services.sandbox.lab_resolver import LabSpec, _spec_from_mapping, is_degraded
+from app.services.sandbox.lab_resolver import (
+    LabSpec,
+    _spec_from_mapping,
+    is_degraded,
+    report_lab_kind_distribution,
+)
 from app.services.sandbox.manager import (
     LabImageMissing,
     SandboxError,
@@ -402,6 +409,41 @@ async def synthesize_cache(
                 age_days=e.age_days,
             )
             for e in report.entries
+        ],
+    )
+
+
+@router.get(
+    "/lab-kind-stats",
+    response_model=LabKindStatsReport,
+    response_model_by_alias=True,
+)
+async def lab_kind_stats(
+    db: AsyncSession = Depends(get_db),
+) -> LabKindStatsReport:
+    """Read-only distribution of cve_lab_mappings rows by source/lab kind.
+
+    Drives the operator dashboard panel that surfaces the effect of the
+    prompt-debias work (PR 9-N) and generic-catalog expansion (PR 9-O).
+    If XSS-bias regresses, by_kind shows it as a single dominant bucket.
+    """
+    stats = await report_lab_kind_distribution(db)
+    return LabKindStatsReport(
+        total=stats.total,
+        verified=stats.verified,
+        by_source=[
+            LabKindStatsBucket(
+                source=b.source, lab_kind=b.lab_kind,
+                count=b.count, verified_count=b.verified_count,
+            )
+            for b in stats.by_source
+        ],
+        by_kind=[
+            LabKindStatsBucket(
+                source=b.source, lab_kind=b.lab_kind,
+                count=b.count, verified_count=b.verified_count,
+            )
+            for b in stats.by_kind
         ],
     )
 

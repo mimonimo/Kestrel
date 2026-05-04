@@ -323,6 +323,8 @@ export const api = {
   ) => streamSse(`/sandbox/synthesize/stream`, body, onEvent, signal),
   getSynthesizerCache: () =>
     request<SynthesizeCacheReport>(`/sandbox/synthesize/cache`),
+  getLabKindStats: () =>
+    request<LabKindStatsReport>(`/sandbox/lab-kind-stats`),
   triggerSynthesizerGc: (
     body?: {
       targetTotalMb?: number;
@@ -587,6 +589,20 @@ export interface EvictedImage {
   imageTag: string;
   sizeMb: number;
   reason: "age" | "count" | "total_size" | "image_missing" | string;
+}
+
+export interface LabKindStatsBucket {
+  source: string;
+  labKind: string;
+  count: number;
+  verifiedCount: number;
+}
+
+export interface LabKindStatsReport {
+  total: number;
+  verified: number;
+  bySource: LabKindStatsBucket[];
+  byKind: LabKindStatsBucket[];
 }
 
 export interface SynthesizeGcResponse {

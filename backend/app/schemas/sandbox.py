@@ -209,3 +209,26 @@ class SynthesizeCacheReport(CamelModel):
     max_count: int
     max_age_days: int
     entries: list[SynthesizeCacheEntryOut] = []
+
+
+class LabKindStatsBucket(CamelModel):
+    """One row of the lab-kind distribution dashboard.
+
+    ``source`` is the provenance bucket (vulhub / generic / synthesized);
+    ``lab_kind`` is the catalog kind for generics or the
+    ``synthesized/<cve>/<sha>`` path for AI labs. ``count`` is the number
+    of cve_lab_mappings rows in that bucket; ``verified_count`` is how
+    many of those carry verified=true.
+    """
+
+    source: str
+    lab_kind: str
+    count: int
+    verified_count: int
+
+
+class LabKindStatsReport(CamelModel):
+    total: int
+    verified: int
+    by_source: list[LabKindStatsBucket] = []
+    by_kind: list[LabKindStatsBucket] = []

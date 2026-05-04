@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AiSettingsForm } from "@/components/settings/AiSettingsForm";
 import { ApiKeyField } from "@/components/settings/ApiKeyField";
 import { AssetsManager } from "@/components/settings/AssetsManager";
+import { LabKindStatsPanel } from "@/components/settings/LabKindStatsPanel";
 import { SynthesizerCachePanel } from "@/components/settings/SynthesizerCachePanel";
 import { ThemeSwitcher } from "@/components/settings/ThemeSwitcher";
 
@@ -54,6 +55,13 @@ export default function SettingsPage() {
         description="AI 합성으로 만든 docker 이미지의 캐시 상태입니다. 합성 호출 시 자동 LRU 회수가 돌지만, 지금 강제 정리도 가능합니다."
       >
         <SynthesizerCachePanel />
+      </Section>
+
+      <Section
+        title="CVE → lab 매핑 분포"
+        description="vulhub / generic / synthesized 각 provenance 와 lab kind 별 점유율. 한 클래스로 쏠려있다면 합성 prompt 또는 classifier 룰 편향 신호."
+      >
+        <LabKindStatsPanel />
       </Section>
 
       <Section title="저장 위치" description="" muted>

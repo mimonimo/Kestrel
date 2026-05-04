@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
@@ -359,3 +359,104 @@ async def record_success_payload(
         mapping_id=mapping.id,
     )
     return mapping
+
+
+# ---------------------------------------------------------------------------
+# Operator dashboard — distribution of cve_lab_mappings by source/kind.
+# Used to surface the effect of the prompt-debias work (PR 9-N) and the
+# generic-catalog expansion (PR 9-O) — if XSS is the dominant lab_kind,
+# the synthesizer is still defaulting to it and we have a regression.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class LabKindBucket:
+    source: str  # vulhub / generic / synthesized
+    lab_kind: str
+    count: int
+    verified_count: int
+
+
+@dataclass
+class LabKindStats:
+    total: int
+    verified: int
+    by_source: list[LabKindBucket] = field(default_factory=list)
+    by_kind: list[LabKindBucket] = field(default_factory=list)
+
+
+async def report_lab_kind_distribution(db: AsyncSession) -> LabKindStats:
+    """Aggregate cve_lab_mappings counts grouped by source kind and
+    by lab_kind (with synthesized labs collapsed under one bucket).
+
+    Why two buckets: ``by_source`` answers "how does the resolver chain
+    settle in practice?" (vulhub vs generic vs synthesized share).
+    ``by_kind`` answers "of the generic+synthesized rows, what classes
+    dominate?" — so we can detect XSS-bias regression even when the
+    source split looks fine.
+    """
+    total = await db.scalar(select(func.count()).select_from(CveLabMapping)) or 0
+    verified = (
+        await db.scalar(
+            select(func.count())
+            .select_from(CveLabMapping)
+            .where(CveLabMapping.verified.is_(True))
+        )
+        or 0
+    )
+
+    by_source_rows = (
+        await db.execute(
+            select(
+                CveLabMapping.kind,
+                func.count().label("count"),
+                func.sum(case((CveLabMapping.verified.is_(True), 1), else_=0)).label("verified"),
+            ).group_by(CveLabMapping.kind)
+        )
+    ).all()
+    by_source = [
+        LabKindBucket(
+            source=k.value if hasattr(k, "value") else str(k),
+            lab_kind="*",
+            count=int(c or 0),
+            verified_count=int(v or 0),
+        )
+        for k, c, v in by_source_rows
+    ]
+    by_source.sort(key=lambda b: b.count, reverse=True)
+
+    by_kind_rows = (
+        await db.execute(
+            select(
+                CveLabMapping.kind,
+                CveLabMapping.lab_kind,
+                func.count().label("count"),
+                func.sum(case((CveLabMapping.verified.is_(True), 1), else_=0)).label("verified"),
+            ).group_by(CveLabMapping.kind, CveLabMapping.lab_kind)
+        )
+    ).all()
+    # Collapse all synthesized rows under one bucket — per-CVE detail
+    # already lives in the synthesize-cache panel.
+    collapsed: dict[tuple[str, str], LabKindBucket] = {}
+    for k, lk, c, v in by_kind_rows:
+        src = k.value if hasattr(k, "value") else str(k)
+        kind_str = "synthesized/*" if src == "synthesized" else str(lk)
+        key = (src, kind_str)
+        bucket = collapsed.get(key)
+        if bucket is None:
+            collapsed[key] = LabKindBucket(
+                source=src, lab_kind=kind_str,
+                count=int(c or 0), verified_count=int(v or 0),
+            )
+        else:
+            bucket.count += int(c or 0)
+            bucket.verified_count += int(v or 0)
+    by_kind = sorted(collapsed.values(), key=lambda b: b.count, reverse=True)
+
+    return LabKindStats(
+        total=int(total),
+        verified=int(verified),
+        by_source=by_source,
+        by_kind=by_kind,
+    )
+
