@@ -26,6 +26,7 @@ const KIND_TINT: Record<string, string> = {
   ssti: "bg-purple-500/20 text-purple-200",
   "path-traversal": "bg-cyan-500/20 text-cyan-200",
   ssrf: "bg-blue-500/20 text-blue-200",
+  "auth-bypass": "bg-yellow-500/20 text-yellow-200",
   "synthesized/*": "bg-amber-500/20 text-amber-200",
 };
 

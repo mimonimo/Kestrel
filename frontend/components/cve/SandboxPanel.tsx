@@ -155,6 +155,10 @@ const LAB_KIND_META: Record<
     label: "SSRF · 외부 URL fetch",
     cls: "border-blue-500/40 bg-blue-500/10 text-blue-200",
   },
+  "auth-bypass": {
+    label: "Auth Bypass · 권한 우회",
+    cls: "border-yellow-500/40 bg-yellow-500/10 text-yellow-200",
+  },
 };
 
 function LabKindBadge({ labKind }: { labKind: string }) {

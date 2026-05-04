@@ -197,6 +197,36 @@ LAB_CATALOG: dict[str, LabDefinition] = {
             ),
         ],
     ),
+    "auth-bypass": LabDefinition(
+        kind="auth-bypass",
+        image="kestrel-lab-auth:latest",
+        description="Auth-bypass / broken-access-control — Flask 가 입력 role/id 만으로 보호된 자원을 노출.",
+        container_port=5000,
+        target_path="/",
+        build_hint=(
+            "docker build -t kestrel-lab-auth:latest sandbox-labs/auth-flask"
+        ),
+        injection_points=[
+            InjectionPoint(
+                name="admin_role",
+                method="GET",
+                path="/admin",
+                parameter="role",
+                location="query",
+                response_kind="auth-bypass",
+                notes="`role=admin` 이면 200 + 보호된 dashboard, 빈/임의 값은 401 — 3-요청 differential 로 검증.",
+            ),
+            InjectionPoint(
+                name="profile_id",
+                method="GET",
+                path="/profile",
+                parameter="id",
+                location="query",
+                response_kind="auth-bypass",
+                notes="IDOR — 임의 id 로 다른 사용자 프로필 (이름/이메일/SSN) 조회 가능.",
+            ),
+        ],
+    ),
     "ssrf": LabDefinition(
         kind="ssrf",
         image="kestrel-lab-ssrf:latest",

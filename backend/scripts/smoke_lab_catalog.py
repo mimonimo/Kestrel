@@ -39,7 +39,7 @@ class FakeVuln:
 
 def section_a() -> bool:
     """Catalog kinds vs. expected probes coverage."""
-    expected = {"xss", "rce", "sqli", "ssti", "path-traversal", "ssrf"}
+    expected = {"xss", "rce", "sqli", "ssti", "path-traversal", "ssrf", "auth-bypass"}
     actual = set(LAB_CATALOG.keys())
     missing = expected - actual
     extra = actual - expected
