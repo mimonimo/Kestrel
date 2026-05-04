@@ -39,6 +39,8 @@ from app.schemas.sandbox import (
     SandboxStartRequest,
     LabKindStatsBucket,
     LabKindStatsReport,
+    ShellExecRequest,
+    ShellExecResponse,
     SynthCandidateOut,
     SynthCandidatesResponse,
     SynthesizeCacheEntryOut,
@@ -70,6 +72,7 @@ from app.services.sandbox.lab_resolver import (
 from app.services.sandbox.manager import (
     LabImageMissing,
     SandboxError,
+    exec_in_lab,
     proxy_request,
     reap_expired,
     start_lab,
@@ -973,6 +976,77 @@ async def exec_payload(
 
 
 _VOTE_VALUES = {"up", "down"}
+
+
+_SHELL_OUTPUT_CAP = 16_384
+
+
+@router.post(
+    "/sessions/{session_id}/shell",
+    response_model=ShellExecResponse,
+    response_model_by_alias=True,
+)
+async def shell_exec(
+    session_id: UUID,
+    body: ShellExecRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ShellExecResponse:
+    """Run one shell command inside the lab container.
+
+    Single-shot; not a PTY. The user types `ls /`, `cat /etc/passwd`, or
+    `whoami` and gets back exit code + merged stdout/stderr (capped at
+    16 KiB). Same docker exec channel the backend probes use, so the
+    sandbox-net isolation policy applies — no container escape.
+
+    Real interactive shell (xterm.js + websocket pty) is queued as a
+    follow-up; this single-shot version covers most diagnostic needs
+    without any new infrastructure.
+    """
+    row = await db.scalar(
+        select(SandboxSession).where(SandboxSession.id == session_id)
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+    if row.status != SandboxStatus.RUNNING or not row.container_name:
+        raise HTTPException(
+            status_code=409,
+            detail=f"세션 상태가 {row.status.value} 입니다 — RUNNING 일 때만 셸 명령 가능합니다.",
+        )
+    started = datetime.now(timezone.utc)
+    try:
+        code, output_bytes = await exec_in_lab(
+            row.container_name,
+            ["sh", "-c", body.command],
+            timeout_seconds=15.0,
+        )
+    except SandboxError as e:
+        raise HTTPException(status_code=502, detail=f"셸 실행 실패: {e}") from e
+    except asyncio.TimeoutError as e:
+        raise HTTPException(
+            status_code=504,
+            detail="셸 명령 응답이 15초 내에 돌아오지 않았습니다.",
+        ) from e
+    elapsed_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+    text = output_bytes.decode("utf-8", errors="replace")
+    truncated = len(text) > _SHELL_OUTPUT_CAP
+    if truncated:
+        text = text[:_SHELL_OUTPUT_CAP]
+    log.info(
+        "sandbox.shell_exec",
+        session_id=str(session_id),
+        container=row.container_name,
+        exit_code=code,
+        output_bytes=len(output_bytes),
+        elapsed_ms=elapsed_ms,
+    )
+    return ShellExecResponse(
+        container_name=row.container_name,
+        command=body.command,
+        exit_code=code,
+        output=text,
+        truncated=truncated,
+        elapsed_ms=elapsed_ms,
+    )
 
 
 @router.post(

@@ -251,6 +251,21 @@ class LabKindStatsReport(CamelModel):
     by_kind: list[LabKindStatsBucket] = []
 
 
+class ShellExecRequest(CamelModel):
+    """Single-shot shell command for the running lab container."""
+
+    command: str = Field(min_length=1, max_length=8192)
+
+
+class ShellExecResponse(CamelModel):
+    container_name: str
+    command: str
+    exit_code: int
+    output: str
+    truncated: bool = False
+    elapsed_ms: int
+
+
 class SynthCandidateOut(CamelModel):
     """One synthesized candidate row exposed for manual pivot UI (PR 9-U)."""
 

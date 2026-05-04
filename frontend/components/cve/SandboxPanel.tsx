@@ -30,6 +30,7 @@ import {
   type NoLabDetail,
   type SandboxExecResponse,
   type SandboxSession,
+  type ShellExecResponse,
   type SynthesizePhase,
   type SynthesizeStreamEvent,
 } from "@/lib/api";
@@ -172,6 +173,161 @@ const LAB_KIND_META: Record<
     cls: "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200",
   },
 };
+
+// Inline single-shot shell. Each command runs as `sh -c "<cmd>"` inside
+// the lab container via the same docker exec channel the backend probes
+// use, so the sandbox-net isolation holds. Output is appended to a
+// scrollback area; up-arrow recalls the last command. Real interactive
+// PTY (xterm.js + websocket) is queued for a follow-up PR.
+interface ShellLine {
+  id: number;
+  command: string;
+  exitCode: number | null;
+  output: string;
+  truncated: boolean;
+  elapsedMs: number;
+  error: string | null;
+}
+
+function ShellTerminal({ sessionId }: { sessionId: string }) {
+  const [input, setInput] = useState("");
+  const [history, setHistory] = useState<ShellLine[]>([]);
+  const [running, setRunning] = useState(false);
+  const idRef = useRef(0);
+  const lastCommandRef = useRef<string>("");
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const submit = async () => {
+    const cmd = input.trim();
+    if (!cmd || running) return;
+    lastCommandRef.current = cmd;
+    setInput("");
+    setRunning(true);
+    const lineId = ++idRef.current;
+    setHistory((h) => [
+      ...h,
+      {
+        id: lineId,
+        command: cmd,
+        exitCode: null,
+        output: "",
+        truncated: false,
+        elapsedMs: 0,
+        error: null,
+      },
+    ]);
+    try {
+      const res: ShellExecResponse = await api.shellExecSandbox(sessionId, cmd);
+      setHistory((h) =>
+        h.map((l) =>
+          l.id === lineId
+            ? {
+                ...l,
+                exitCode: res.exitCode,
+                output: res.output,
+                truncated: res.truncated,
+                elapsedMs: res.elapsedMs,
+              }
+            : l,
+        ),
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "unknown error";
+      setHistory((h) =>
+        h.map((l) => (l.id === lineId ? { ...l, error: msg } : l)),
+      );
+    } finally {
+      setRunning(false);
+      // After paint, scroll to bottom so the latest output is visible.
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      });
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded border border-neutral-800 bg-black/40">
+      <div className="flex items-center justify-between gap-2 border-b border-neutral-800 px-3 py-1.5 text-xs text-neutral-400">
+        <span>컨테이너 셸 — sh -c &lt;명령&gt; (15초 timeout · 16KB 출력 cap)</span>
+        {history.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setHistory([])}
+            className="text-neutral-500 hover:text-neutral-200"
+            title="스크롤백 비우기"
+          >
+            clear
+          </button>
+        )}
+      </div>
+      <div
+        ref={scrollRef}
+        className="max-h-72 min-h-[6rem] overflow-y-auto px-3 py-2 font-mono text-[11px] leading-relaxed text-neutral-200"
+      >
+        {history.length === 0 && (
+          <p className="text-neutral-600">
+            예: <span className="text-neutral-400">ls /</span> ·{" "}
+            <span className="text-neutral-400">cat /etc/hostname</span> ·{" "}
+            <span className="text-neutral-400">env | sort</span>
+          </p>
+        )}
+        {history.map((l) => (
+          <div key={l.id} className="mb-1.5">
+            <div className="text-emerald-300">$ {l.command}</div>
+            {l.error ? (
+              <div className="whitespace-pre-wrap text-red-300">{l.error}</div>
+            ) : (
+              <>
+                <pre className="whitespace-pre-wrap text-neutral-300">
+                  {l.output || (l.exitCode === null ? "…" : "")}
+                </pre>
+                {l.exitCode !== null && (
+                  <div className="text-[10px] text-neutral-600">
+                    exit={l.exitCode} · {l.elapsedMs}ms
+                    {l.truncated && " · output truncated at 16KB"}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+        className="flex items-center gap-2 border-t border-neutral-800 px-3 py-2"
+      >
+        <span className="font-mono text-xs text-emerald-400">$</span>
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowUp" && !input && lastCommandRef.current) {
+              e.preventDefault();
+              setInput(lastCommandRef.current);
+            }
+          }}
+          placeholder="ls / 같은 한 줄 명령"
+          disabled={running}
+          className="flex-1 bg-transparent font-mono text-xs text-neutral-100 outline-none placeholder:text-neutral-600"
+        />
+        <button
+          type="submit"
+          disabled={running || !input.trim()}
+          className="rounded border border-neutral-700 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-neutral-500 hover:text-neutral-100 disabled:opacity-40"
+        >
+          {running ? "…" : "실행"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 
 function LabKindBadge({ labKind }: { labKind: string }) {
   // Synthesized labs have ``synthesized/<cve>/<sha>`` shape; vulhub labs
@@ -789,6 +945,9 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                     ))}
                   </ul>
                 </details>
+              )}
+              {session.status === "running" && (
+                <ShellTerminal sessionId={session.id} />
               )}
               {session.error && (
                 <p className="mt-2 text-red-300">오류: {session.error}</p>

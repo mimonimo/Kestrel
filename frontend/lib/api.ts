@@ -359,6 +359,15 @@ export const api = {
       `/sandbox/sessions/${encodeURIComponent(sessionId)}/exec`,
       { method: "POST", headers: clientHeaders(), body: JSON.stringify(body) },
     ),
+  shellExecSandbox: (sessionId: string, command: string) =>
+    request<ShellExecResponse>(
+      `/sandbox/sessions/${encodeURIComponent(sessionId)}/shell`,
+      {
+        method: "POST",
+        headers: clientHeaders(),
+        body: JSON.stringify({ command }),
+      },
+    ),
   submitLabFeedback: (
     sessionId: string,
     body: { vote: "up" | "down"; note?: string | null },
@@ -632,6 +641,15 @@ export interface SearchFacetsResponse {
   severities: FacetBucket[];
   sources: FacetBucket[];
   domains: FacetBucket[];
+}
+
+export interface ShellExecResponse {
+  containerName: string;
+  command: string;
+  exitCode: number;
+  output: string;
+  truncated: boolean;
+  elapsedMs: number;
 }
 
 export interface SynthCandidate {
