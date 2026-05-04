@@ -8,6 +8,8 @@ strict semver range checks server-side (CPE version_range is free-form text).
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 from sqlalchemy import desc, func, or_, select
@@ -31,6 +33,15 @@ class AssetInput(CamelModel):
 class MatchRequest(CamelModel):
     assets: list[AssetInput] = Field(default_factory=list, max_length=50)
     limit: int = Field(default=100, ge=1, le=500)
+
+
+class NotificationsRequest(CamelModel):
+    assets: list[AssetInput] = Field(default_factory=list, max_length=50)
+    # Default window is 14 days — long enough to catch a returning user
+    # who only opens the dashboard biweekly, short enough that the JOIN
+    # against affected_products + vulnerabilities stays cheap.
+    since_days: int = Field(default=14, ge=1, le=365)
+    limit: int = Field(default=50, ge=1, le=200)
 
 
 class CatalogEntry(CamelModel):
@@ -151,6 +162,59 @@ async def match_assets(req: MatchRequest, db: AsyncSession = Depends(get_db)) ->
     )
     rows = (await db.execute(stmt)).scalars().unique().all()
 
+    return SearchResponse(
+        items=[VulnerabilityListItem.model_validate(v) for v in rows],
+        total=len(rows),
+        page=1,
+        page_size=req.limit,
+    )
+
+
+@router.post(
+    "/notifications",
+    response_model=SearchResponse,
+    response_model_by_alias=True,
+)
+async def asset_notifications(
+    req: NotificationsRequest, db: AsyncSession = Depends(get_db),
+) -> SearchResponse:
+    """Recent CVEs (within last ``since_days``) that match the caller's
+    assets. Powers the in-app notification bell.
+
+    Same matching shape as ``/assets/match`` but adds the recency filter
+    on ``published_at`` so the bell surfaces *new* matches rather than
+    the entire historical set. Sorted newest first so the dropdown's
+    top entry is always the one the user hasn't seen yet.
+
+    Stateless — read state lives in the client's localStorage as a
+    ``lastSeenAt`` ISO string compared against each item's
+    ``publishedAt``.
+    """
+    if not req.assets:
+        return SearchResponse(items=[], total=0, page=1, page_size=req.limit)
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=req.since_days)
+    clauses = [
+        (AffectedProduct.vendor.ilike(a.vendor))
+        & (AffectedProduct.product.ilike(a.product))
+        for a in req.assets
+    ]
+    sub = select(AffectedProduct.vulnerability_id).where(or_(*clauses)).distinct()
+    stmt = (
+        select(Vulnerability)
+        .where(
+            Vulnerability.id.in_(sub),
+            Vulnerability.published_at.isnot(None),
+            Vulnerability.published_at >= cutoff,
+        )
+        .options(
+            selectinload(Vulnerability.types),
+            selectinload(Vulnerability.affected_products),
+        )
+        .order_by(Vulnerability.published_at.desc())
+        .limit(req.limit)
+    )
+    rows = (await db.execute(stmt)).scalars().unique().all()
     return SearchResponse(
         items=[VulnerabilityListItem.model_validate(v) for v in rows],
         total=len(rows),
