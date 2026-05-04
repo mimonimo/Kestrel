@@ -123,6 +123,60 @@ function SourceBadge({
   );
 }
 
+// Friendly per-class label + tinted chip for the generic LAB_CATALOG kinds.
+// The raw labKind string still appears (font-mono) for the operator who
+// needs to grep image tags / docker ps; the chip is for the reader who
+// just wants to know "what kind of lab am I in".
+const LAB_KIND_META: Record<
+  string,
+  { label: string; cls: string }
+> = {
+  xss: {
+    label: "XSS · 입력 reflect",
+    cls: "border-rose-500/40 bg-rose-500/10 text-rose-200",
+  },
+  rce: {
+    label: "RCE · 셸 명령 실행",
+    cls: "border-red-500/40 bg-red-500/10 text-red-200",
+  },
+  sqli: {
+    label: "SQLi · 쿼리 합성",
+    cls: "border-orange-500/40 bg-orange-500/10 text-orange-200",
+  },
+  ssti: {
+    label: "SSTI · 템플릿 평가",
+    cls: "border-purple-500/40 bg-purple-500/10 text-purple-200",
+  },
+  "path-traversal": {
+    label: "Path Traversal · 임의 파일 읽기",
+    cls: "border-cyan-500/40 bg-cyan-500/10 text-cyan-200",
+  },
+  ssrf: {
+    label: "SSRF · 외부 URL fetch",
+    cls: "border-blue-500/40 bg-blue-500/10 text-blue-200",
+  },
+};
+
+function LabKindBadge({ labKind }: { labKind: string }) {
+  // Synthesized labs have ``synthesized/<cve>/<sha>`` shape; vulhub labs
+  // use the vulhub directory path. Generic catalog labs are bare kind
+  // strings — we only friendly-label the latter.
+  if (!labKind || labKind.includes("/")) return null;
+  const meta = LAB_KIND_META[labKind.toLowerCase()];
+  if (!meta) return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium tracking-wide",
+        meta.cls,
+      )}
+      title={`generic lab class: ${labKind}`}
+    >
+      {meta.label}
+    </span>
+  );
+}
+
 function VerdictBadge({ ok, confidence }: { ok: boolean; confidence: string }) {
   return (
     <span
@@ -529,6 +583,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                   source={session.labSource}
                   verified={session.verified}
                 />
+                <LabKindBadge labKind={session.labKind} />
                 <span className="font-mono text-neutral-500">{session.labKind}</span>
                 {session.containerName && (
                   <span className="font-mono text-neutral-500">
