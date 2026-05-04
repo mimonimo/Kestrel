@@ -96,7 +96,12 @@ class CveLabMapping(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("cve_id", "kind", name="uq_cve_lab_mappings_cve_kind"),
+        # Wider key (cve_id, kind, lab_kind) for best-of-N synthesis: a CVE
+        # can carry multiple synthesized candidates (each with its own
+        # ``synthesized/<cve>/<sha>`` lab_kind) and the resolver picks the
+        # highest-scoring one. Vulhub and generic kinds use a fixed lab_kind
+        # per CVE so they're effectively still 1-per-CVE-per-kind.
+        UniqueConstraint("cve_id", "kind", "lab_kind", name="uq_cve_lab_mappings_cve_kind_labkind"),
         Index("ix_cve_lab_mappings_kind_verified", "kind", "verified"),
     )
 

@@ -38,7 +38,17 @@ from app.core.logging import get_logger
 from app.models import CveLabFeedback, CveLabMapping, LabSourceKind, Vulnerability
 from app.services.ai_analyzer import call_llm
 from app.services.sandbox.catalog import InjectionPoint
-from app.services.sandbox.lab_resolver import LabSpec, is_degraded
+from app.services.sandbox.lab_resolver import (
+    LabSpec,
+    is_degraded,
+    list_synthesized_candidates,
+)
+
+# Soft cap on simultaneous verified synthesized candidates per CVE. Above
+# this we trim the *lowest-scoring* row (degraded/older first) so disk +
+# image cache don't grow unbounded as users regenerate. Lower than this
+# defeats best-of-N's premise; higher and the cache panel/UI gets noisy.
+_BEST_OF_N_CAP = 3
 from app.services.sandbox.manager import (
     SandboxError,
     build_image,
@@ -663,12 +673,22 @@ async def synthesize(
     except Exception as e:  # noqa: BLE001 — best-effort housekeeping
         log.warning("synthesizer.gc_failed", error=str(e))
 
-    existing = await db.scalar(
-        select(CveLabMapping).where(
-            CveLabMapping.cve_id == cve_id,
-            CveLabMapping.kind == LabSourceKind.SYNTHESIZED,
-        )
+    # Best-of-N: there may be multiple synthesized rows per CVE — one
+    # cooldown placeholder (lab_kind="synthesized/<cve>/pending") plus up
+    # to ``_BEST_OF_N_CAP`` verified candidates with hash-suffixed
+    # lab_kinds. The cached-hit / degraded / cooldown logic below cares
+    # about *one* row each, so we project the multi-row state down to
+    # those two pointers.
+    candidates = await list_synthesized_candidates(db, cve_id)
+    placeholder_kind = f"synthesized/{cve_id}/pending"
+    placeholder = next(
+        (m for m in candidates if m.lab_kind == placeholder_kind), None
     )
+    verified_candidates = [m for m in candidates if m.verified]
+    # The "best" verified candidate per the resolver's score order. Used
+    # below for the cached-hit shortcut and cooldown timestamp lookup so
+    # the synthesizer behavior matches what resolve_lab() would pick.
+    existing = verified_candidates[0] if verified_candidates else placeholder
 
     # Cached-hit shortcut. Skip when:
     #   - caller asked to regenerate, OR
@@ -723,13 +743,16 @@ async def synthesize(
                 error=cooldown_msg,
             )
 
-    # Stamp the attempt start so concurrent calls / process restarts respect
-    # the cooldown even before the LLM returns.
-    if existing is None:
+    # Stamp the attempt start on the cooldown placeholder so concurrent
+    # calls / process restarts respect the 24h rate limit even before the
+    # LLM returns. The placeholder is shared across all candidates of a
+    # CVE — we never insert a second one and never roll it into a verified
+    # candidate.
+    if placeholder is None:
         attempt_row = CveLabMapping(
             cve_id=cve_id,
             kind=LabSourceKind.SYNTHESIZED,
-            lab_kind=f"synthesized/{cve_id}/pending",
+            lab_kind=placeholder_kind,
             spec={},
             verified=False,
             last_synthesis_attempt_at=now,
@@ -739,8 +762,8 @@ async def synthesize(
         await db.flush()
         attempt_mapping_id = attempt_row.id
     else:
-        existing.last_synthesis_attempt_at = now
-        attempt_mapping_id = existing.id
+        placeholder.last_synthesis_attempt_at = now
+        attempt_mapping_id = placeholder.id
     await db.commit()
 
     prior_block = await _prior_attempts_block(db, existing)
@@ -888,10 +911,20 @@ async def synthesize(
                 spec_dict["digest"] = digest
 
             payload_dict = _payload_dict_for_mapping(parsed)
-            mapping = await db.get(CveLabMapping, attempt_mapping_id)
-            if mapping is None:
-                # Should never happen — we just inserted it. Fall back to a
-                # fresh insert so the result is still cached.
+            # Best-of-N (PR 9-S): always INSERT a fresh row for the
+            # verified candidate; the placeholder stays around to track
+            # the next cooldown window. If a row with this exact lab_kind
+            # already exists (synthesizer is deterministic on identical
+            # spec hashes), upsert it in place and reset its feedback so
+            # the resurrected mapping starts with a clean reputation.
+            existing_same_sha = await db.scalar(
+                select(CveLabMapping).where(
+                    CveLabMapping.cve_id == cve_id,
+                    CveLabMapping.kind == LabSourceKind.SYNTHESIZED,
+                    CveLabMapping.lab_kind == spec.lab_kind,
+                )
+            )
+            if existing_same_sha is None:
                 mapping = CveLabMapping(
                     cve_id=cve_id,
                     kind=LabSourceKind.SYNTHESIZED,
@@ -904,31 +937,65 @@ async def synthesize(
                 )
                 db.add(mapping)
             else:
-                # Replacing the previous attempt — drop any stale feedback so
-                # the fresh lab starts with a clean reputation. Carrying the
-                # old 👎 over would re-degrade the new mapping with zero new
-                # user input.
                 stale_feedback_purged = await db.execute(
                     delete(CveLabFeedback).where(
-                        CveLabFeedback.mapping_id == mapping.id
+                        CveLabFeedback.mapping_id == existing_same_sha.id
                     )
                 )
                 if stale_feedback_purged.rowcount:
                     log.info(
                         "synthesizer.feedback_reset",
                         cve_id=cve_id,
-                        mapping_id=mapping.id,
+                        mapping_id=existing_same_sha.id,
                         purged=int(stale_feedback_purged.rowcount),
                     )
-                mapping.lab_kind = spec.lab_kind
-                mapping.spec = spec_dict
-                mapping.known_good_payload = payload_dict
-                mapping.verified = True
-                mapping.last_verified_at = datetime.now(timezone.utc)
-                mapping.notes = digest
-                mapping.feedback_up = 0
-                mapping.feedback_down = 0
+                existing_same_sha.spec = spec_dict
+                existing_same_sha.known_good_payload = payload_dict
+                existing_same_sha.verified = True
+                existing_same_sha.last_verified_at = datetime.now(timezone.utc)
+                existing_same_sha.notes = digest
+                existing_same_sha.feedback_up = 0
+                existing_same_sha.feedback_down = 0
+                mapping = existing_same_sha
             await db.flush()
+            # Trim to ``_BEST_OF_N_CAP`` — drop the lowest-scoring verified
+            # candidates first (degraded > older > lower-id). The fresh
+            # row we just inserted ranks highest by recency so it survives.
+            verified_now = (
+                await db.scalars(
+                    select(CveLabMapping).where(
+                        CveLabMapping.cve_id == cve_id,
+                        CveLabMapping.kind == LabSourceKind.SYNTHESIZED,
+                        CveLabMapping.verified.is_(True),
+                    )
+                )
+            ).all()
+            if len(verified_now) > _BEST_OF_N_CAP:
+                # Same scoring as resolver / list_synthesized_candidates.
+                def _score(m: CveLabMapping) -> tuple:
+                    if m.verified and not is_degraded(m):
+                        tier = 3
+                    elif m.verified:
+                        tier = 2
+                    elif is_degraded(m):
+                        tier = 0
+                    else:
+                        tier = 1
+                    bal = int(m.feedback_up or 0) - int(m.feedback_down or 0)
+                    rec = m.last_verified_at or m.updated_at
+                    return (tier, bal, rec, m.id)
+
+                ordered = sorted(verified_now, key=_score, reverse=True)
+                trim = ordered[_BEST_OF_N_CAP:]
+                for victim in trim:
+                    log.info(
+                        "synthesizer.candidate_trimmed",
+                        cve_id=cve_id,
+                        victim_mapping_id=victim.id,
+                        victim_lab_kind=victim.lab_kind,
+                        kept=[m.id for m in ordered[:_BEST_OF_N_CAP]],
+                    )
+                    await db.delete(victim)
             await db.commit()
             log.info(
                 "synthesizer.cached",

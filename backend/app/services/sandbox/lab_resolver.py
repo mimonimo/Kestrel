@@ -159,12 +159,76 @@ def _spec_from_mapping(mapping: CveLabMapping) -> LabSpec:
 async def _find_mapping(
     db: AsyncSession, cve_id: str, kind: LabSourceKind
 ) -> CveLabMapping | None:
-    return await db.scalar(
-        select(CveLabMapping).where(
-            CveLabMapping.cve_id == cve_id,
-            CveLabMapping.kind == kind,
+    """Return the *best* mapping for (cve_id, kind).
+
+    For vulhub/generic this is the lone row (the unique key still allows
+    only one per CVE per kind in practice). For synthesized this implements
+    best-of-N: prefer verified+not-degraded over verified+degraded over
+    unverified, then most-recently verified, then most-recently created.
+    """
+    rows = (
+        await db.scalars(
+            select(CveLabMapping).where(
+                CveLabMapping.cve_id == cve_id,
+                CveLabMapping.kind == kind,
+            )
         )
-    )
+    ).all()
+    if not rows:
+        return None
+    if len(rows) == 1:
+        return rows[0]
+
+    def score(m: CveLabMapping) -> tuple[int, int, datetime, int]:
+        # Higher tuple wins (we sort reverse=True). Tier 0/1/2/3 collapses
+        # the categorical preferences into a single dominant axis; tie-
+        # breakers are recency of verification then row id (stable).
+        if m.verified and not is_degraded(m):
+            tier = 3
+        elif m.verified:
+            tier = 2
+        elif is_degraded(m):
+            tier = 0
+        else:
+            tier = 1
+        feedback_balance = int(m.feedback_up or 0) - int(m.feedback_down or 0)
+        recency = m.last_verified_at or m.updated_at or datetime(1970, 1, 1, tzinfo=timezone.utc)
+        return (tier, feedback_balance, recency, m.id)
+
+    return max(rows, key=score)
+
+
+async def list_synthesized_candidates(
+    db: AsyncSession, cve_id: str
+) -> list[CveLabMapping]:
+    """Return every synthesized candidate row for a CVE, ordered by score.
+
+    Used by the operator/UI surfaces ("후보 N개 중 K번째 사용") and by the
+    synthesizer's trim policy (drop oldest when count > cap).
+    """
+    rows = (
+        await db.scalars(
+            select(CveLabMapping).where(
+                CveLabMapping.cve_id == cve_id,
+                CveLabMapping.kind == LabSourceKind.SYNTHESIZED,
+            )
+        )
+    ).all()
+
+    def score(m: CveLabMapping) -> tuple[int, int, datetime, int]:
+        if m.verified and not is_degraded(m):
+            tier = 3
+        elif m.verified:
+            tier = 2
+        elif is_degraded(m):
+            tier = 0
+        else:
+            tier = 1
+        feedback_balance = int(m.feedback_up or 0) - int(m.feedback_down or 0)
+        recency = m.last_verified_at or m.updated_at or datetime(1970, 1, 1, tzinfo=timezone.utc)
+        return (tier, feedback_balance, recency, m.id)
+
+    return sorted(rows, key=score, reverse=True)
 
 
 # ---------------------------------------------------------------------------
