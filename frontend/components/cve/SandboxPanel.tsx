@@ -40,19 +40,19 @@ import { cn } from "@/lib/utils";
 // timeline ahead of any real events — we pre-fill an empty checklist and let
 // arrived events tick boxes off as they come in.
 const PHASE_LABEL: Record<SynthesizePhase, string> = {
-  start: "준비",
-  cached_hit: "기존 검증된 캐시 발견",
-  cooldown: "최근 실패로 24시간 cooldown 중",
-  call_llm: "LLM 호출 (Dockerfile + 앱 코드 + 페이로드 생성)",
-  parsed: "AI 응답 파싱 + 스키마 검증",
-  build_started: "docker 이미지 빌드",
+  start: "합성 준비 — CVE 컨텍스트 + 직전 시도 기록 수집",
+  cached_hit: "기존 검증된 캐시 발견 — 즉시 재사용",
+  cooldown: "최근 실패로 24시간 cooldown 중 — 재시도 보류",
+  call_llm: "LLM 호출 — Dockerfile + 앱 코드 + 주입 지점 + 페이로드 생성",
+  parsed: "AI 응답 파싱 + JSON 스키마 + echo-trap 검증",
+  build_started: "docker 이미지 빌드 (격리 네트워크 안)",
   build_done: "이미지 빌드 완료",
-  lab_started: "검증 컨테이너 기동",
-  verifying: "페이로드 전송 + 응답 확인",
-  verify_failed: "응답 본문에서 success_indicator 찾지 못함",
-  verify_ok: "취약점 트리거 확인됨",
-  cached: "매핑 row 캐시 — 다음 호출은 즉시 사용",
-  failed: "실패",
+  lab_started: "검증용 컨테이너 기동 + backend probe 발사",
+  verifying: "페이로드 전송 + 응답 본문에서 success indicator 확인",
+  verify_failed: "indicator 미검출 — backend probe 가 echo-trap 으로 판정",
+  verify_ok: "backend probe 통과 — 실제 취약점 트리거 확인",
+  cached: "cve_lab_mappings 에 verified row 캐시 — 이후 호출은 즉시 사용",
+  failed: "합성 실패 — 모든 시도 reject",
 };
 
 // Default timeline shown before any events arrive. cached_hit / cooldown are
@@ -472,6 +472,43 @@ function CandidatePivotList({
 }
 
 
+// Common error box used by start / synth log / exec failure surfaces.
+// Designed to match the existing chip palette: rose (failure) parallels
+// the rose 'degraded' badge already in this panel, with the same icon
+// + label + body shape as the amber digest line so the hierarchy reads
+// the same. Higher contrast text (rose-100 title / rose-200 body) on a
+// deeper rose-500/15 bg fixes the previous low-readability rose-200/90
+// on rose-500/10.
+function ErrorBox({
+  title,
+  message,
+  hint,
+  size = "md",
+}: {
+  title: string;
+  message: string;
+  hint?: string;
+  size?: "sm" | "md";
+}) {
+  return (
+    <div
+      className={cn(
+        "space-y-1 rounded border border-rose-500/40 bg-rose-500/15 text-rose-100",
+        size === "sm" ? "p-2 text-[11px]" : "p-3 text-xs",
+      )}
+      role="alert"
+    >
+      <div className="flex items-center gap-1.5">
+        <AlertCircle className="h-3.5 w-3.5 shrink-0 text-rose-300" />
+        <span className="font-medium">{title}</span>
+      </div>
+      <p className="break-words text-rose-100/90">{message}</p>
+      {hint && <p className="text-rose-200/80">{hint}</p>}
+    </div>
+  );
+}
+
+
 function VerdictBadge({ ok, confidence }: { ok: boolean; confidence: string }) {
   return (
     <span
@@ -845,18 +882,15 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
         )}
 
         {startError && !noLabDetail && (
-          <div className="space-y-1 rounded border border-red-500/30 bg-red-500/10 p-3 text-xs">
-            <div className="flex items-center gap-1.5 text-red-300">
-              <AlertCircle className="h-3.5 w-3.5" />
-              <span className="font-medium">샌드박스 시작 실패</span>
-            </div>
-            <p className="text-red-200/90">{startError.message}</p>
-            {isKeyMissing && (
-              <p className="text-red-200/70">
-                AI 키가 필요한 단계가 있을 수 있습니다. 설정에서 활성 키를 확인하세요.
-              </p>
-            )}
-          </div>
+          <ErrorBox
+            title="샌드박스 시작 실패"
+            message={startError.message}
+            hint={
+              isKeyMissing
+                ? "AI 키가 필요한 단계가 있을 수 있습니다. 설정에서 활성 키를 확인하세요."
+                : undefined
+            }
+          />
         )}
 
         {session && (
@@ -991,9 +1025,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
             )}
 
             {execError && (
-              <div className="rounded border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">
-                실행 실패: {execError.message}
-              </div>
+              <ErrorBox title="실행 실패" message={execError.message} />
             )}
 
             {lastResult && <RunResult result={lastResult} />}
@@ -1119,11 +1151,7 @@ function SynthesisTimeline({
         })}
       </ul>
 
-      {error && (
-        <div className="rounded border border-rose-500/30 bg-rose-500/10 p-2 text-rose-200">
-          {error}
-        </div>
-      )}
+      {error && <ErrorBox title="합성 실패" message={error} size="sm" />}
 
       {running && (
         <p className="text-[11px] text-amber-200/60">
