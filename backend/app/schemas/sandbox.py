@@ -17,6 +17,12 @@ class SandboxStartRequest(CamelModel):
     # synthesizer if no curated/generic lab covers this CVE. Defaults False
     # so a stray click never burns LLM tokens or build minutes.
     attempt_synthesis: bool = False
+    # Manual best-of-N pivot (PR 9-U): pin the session to a specific
+    # synthesized candidate row. Bypasses the resolver's score-based pick
+    # so an operator can compare candidates side-by-side. Ignored if the
+    # mapping doesn't exist or doesn't belong to this CVE; in those cases
+    # we fall back to the normal resolver chain.
+    mapping_id: int | None = None
 
 
 class InjectionPointOut(CamelModel):
@@ -71,6 +77,11 @@ class SandboxSessionOut(CamelModel):
     created_at: datetime
     expires_at: datetime | None = None
     lab: LabInfoOut | None = None
+    # PR 9-U manual pivot: id of the cve_lab_mappings row backing this
+    # session. Lets the UI mark the matching candidate as "사용 중" in
+    # the candidate-pivot list. None for sessions whose mapping was
+    # deleted (e.g. trimmed by best-of-N cap after start).
+    mapping_id: int | None = None
 
 
 class AdaptedPayloadOut(CamelModel):
@@ -238,3 +249,24 @@ class LabKindStatsReport(CamelModel):
     verified: int
     by_source: list[LabKindStatsBucket] = []
     by_kind: list[LabKindStatsBucket] = []
+
+
+class SynthCandidateOut(CamelModel):
+    """One synthesized candidate row exposed for manual pivot UI (PR 9-U)."""
+
+    mapping_id: int
+    rank: int  # 1-based, 1 = best per resolver score
+    lab_kind: str
+    digest: str = ""
+    verified: bool
+    feedback_up: int = 0
+    feedback_down: int = 0
+    degraded: bool = False
+    last_verified_at: datetime | None = None
+    created_at: datetime | None = None
+    is_placeholder: bool = False  # cooldown placeholder, not runnable
+
+
+class SynthCandidatesResponse(CamelModel):
+    cve_id: str
+    candidates: list[SynthCandidateOut] = []

@@ -305,6 +305,7 @@ export const api = {
     cveId: string;
     labKind?: string;
     attemptSynthesis?: boolean;
+    mappingId?: number;
   }) =>
     request<SandboxSession>(`/sandbox/sessions`, {
       method: "POST",
@@ -325,6 +326,10 @@ export const api = {
     request<SynthesizeCacheReport>(`/sandbox/synthesize/cache`),
   getLabKindStats: () =>
     request<LabKindStatsReport>(`/sandbox/lab-kind-stats`),
+  getSynthCandidates: (cveId: string) =>
+    request<SynthCandidatesResponse>(
+      `/sandbox/cves/${encodeURIComponent(cveId)}/synth-candidates`,
+    ),
   triggerSynthesizerGc: (
     body?: {
       targetTotalMb?: number;
@@ -470,6 +475,10 @@ export interface SandboxSession {
   createdAt: string;
   expiresAt: string | null;
   lab: LabInfo | null;
+  // PR 9-U manual pivot — id of the cve_lab_mappings row currently
+  // backing this session. UI marks the matching candidate as "사용중"
+  // in the pivot list. null when the resolver couldn't map at GET time.
+  mappingId: number | null;
 }
 
 export interface AdaptedPayload {
@@ -608,6 +617,25 @@ export interface LabKindStatsReport {
   verified: number;
   bySource: LabKindStatsBucket[];
   byKind: LabKindStatsBucket[];
+}
+
+export interface SynthCandidate {
+  mappingId: number;
+  rank: number;
+  labKind: string;
+  digest: string;
+  verified: boolean;
+  feedbackUp: number;
+  feedbackDown: number;
+  degraded: boolean;
+  lastVerifiedAt: string | null;
+  createdAt: string | null;
+  isPlaceholder: boolean;
+}
+
+export interface SynthCandidatesResponse {
+  cveId: string;
+  candidates: SynthCandidate[];
 }
 
 export interface SynthesizeGcResponse {

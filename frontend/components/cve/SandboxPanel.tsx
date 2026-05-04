@@ -177,6 +177,129 @@ function LabKindBadge({ labKind }: { labKind: string }) {
   );
 }
 
+// Manual best-of-N pivot — operator picks a non-default candidate to
+// run against. Hidden when there's only one (or zero) verified candidate;
+// the auto-pick is then trivially "the only one".
+function CandidatePivotList({
+  cveId,
+  currentMappingId,
+  pinning,
+  onPick,
+}: {
+  cveId: string;
+  currentMappingId: number | null;
+  pinning: boolean;
+  onPick: (mappingId: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const list = useQuery({
+    queryKey: ["sandbox", "synth-candidates", cveId],
+    queryFn: () => api.getSynthCandidates(cveId),
+    staleTime: 15_000,
+    enabled: open,
+  });
+
+  // Don't even render the toggle until we know there's >1 verified.
+  // Use a quick probe by always-on cheap query? No — defer until panel
+  // is open. Show toggle unconditionally as long as a session exists;
+  // empty list inside collapses the body.
+  return (
+    <div className="mt-2 rounded border border-neutral-800 bg-surface-2/40">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs text-neutral-300 hover:text-neutral-100"
+      >
+        <span>합성 후보 목록 — 다른 후보로 시작</span>
+        <span className="text-neutral-500">{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <div className="border-t border-neutral-800 px-3 py-2">
+          {list.isLoading && (
+            <p className="text-xs text-neutral-500">조회 중…</p>
+          )}
+          {list.error && (
+            <p className="text-xs text-amber-300">
+              조회 실패: {(list.error as Error).message}
+            </p>
+          )}
+          {list.data && list.data.candidates.length === 0 && (
+            <p className="text-xs text-neutral-500">합성 후보 없음.</p>
+          )}
+          {list.data && list.data.candidates.length > 0 && (
+            <ul className="space-y-1.5">
+              {list.data.candidates.map((c) => {
+                const isCurrent = c.mappingId === currentMappingId;
+                const sha = c.labKind.split("/").pop() ?? c.labKind;
+                return (
+                  <li
+                    key={c.mappingId}
+                    className={cn(
+                      "flex items-center justify-between gap-3 rounded px-2 py-1.5 text-xs",
+                      isCurrent
+                        ? "bg-amber-500/15 text-amber-100"
+                        : "bg-surface-1 text-neutral-300",
+                    )}
+                  >
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] text-neutral-400">
+                          #{c.rank}
+                        </span>
+                        <span className="font-mono text-[10px] text-neutral-500">
+                          {sha}
+                        </span>
+                        {c.isPlaceholder && (
+                          <span className="rounded border border-neutral-700 px-1.5 text-[9px] text-neutral-500">
+                            placeholder
+                          </span>
+                        )}
+                        {!c.isPlaceholder && c.verified && (
+                          <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[9px] text-emerald-200">
+                            verified
+                          </span>
+                        )}
+                        {c.degraded && (
+                          <span className="rounded border border-rose-500/40 bg-rose-500/10 px-1.5 text-[9px] text-rose-200">
+                            degraded
+                          </span>
+                        )}
+                        <span className="text-[10px] text-neutral-500">
+                          👍{c.feedbackUp} 👎{c.feedbackDown}
+                        </span>
+                      </div>
+                      {c.digest && (
+                        <span className="truncate text-[10px] text-neutral-500">
+                          {c.digest}
+                        </span>
+                      )}
+                    </div>
+                    {isCurrent ? (
+                      <span className="text-[10px] uppercase text-amber-200">사용중</span>
+                    ) : c.isPlaceholder || !c.verified ? (
+                      <span className="text-[10px] text-neutral-600">실행 불가</span>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={pinning}
+                        onClick={() => onPick(c.mappingId)}
+                        className="rounded border border-neutral-600 px-2 py-0.5 text-[10px] font-medium text-neutral-200 hover:border-neutral-400 hover:text-neutral-100 disabled:opacity-40"
+                      >
+                        {pinning ? "…" : "이 후보로 시작"}
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function VerdictBadge({ ok, confidence }: { ok: boolean; confidence: string }) {
   return (
     <span
@@ -282,10 +405,11 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
   });
 
   const start = useMutation({
-    mutationFn: (opts?: { attemptSynthesis?: boolean }) =>
+    mutationFn: (opts?: { attemptSynthesis?: boolean; mappingId?: number }) =>
       api.startSandbox({
         cveId,
         attemptSynthesis: opts?.attemptSynthesis,
+        mappingId: opts?.mappingId,
       }),
     onSuccess: (s: SandboxSession) => {
       setSessionId(s.id);
@@ -621,6 +745,14 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                   myVote={session.lab.myVote}
                   pending={feedback.isPending}
                   onVote={(v) => feedback.mutate(v)}
+                />
+              )}
+              {session.labSource === "synthesized" && (
+                <CandidatePivotList
+                  cveId={cveId}
+                  currentMappingId={session.mappingId}
+                  pinning={start.isPending}
+                  onPick={(id) => start.mutate({ mappingId: id })}
                 />
               )}
               {session.targetUrl && (

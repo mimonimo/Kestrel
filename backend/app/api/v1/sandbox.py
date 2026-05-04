@@ -39,6 +39,8 @@ from app.schemas.sandbox import (
     SandboxStartRequest,
     LabKindStatsBucket,
     LabKindStatsReport,
+    SynthCandidateOut,
+    SynthCandidatesResponse,
     SynthesizeCacheEntryOut,
     SynthesizeCacheReport,
     SynthesizeGcRequest,
@@ -170,6 +172,7 @@ async def _session_to_out(
     the injection-point list — the resolver is cheap (one mapping query).
     """
     lab_out: LabInfoOut | None = None
+    effective_mapping_id: int | None = mapping_id
     if spec is not None:
         my_vote = await _my_vote(db, mapping_id, client_id)
         degraded = _degraded_from_counts(spec.feedback_up, spec.feedback_down)
@@ -190,6 +193,7 @@ async def _session_to_out(
         if vuln is not None:
             resolved = await resolve_lab(db, vuln, forced_kind=row.lab_kind)
             if resolved is not None:
+                effective_mapping_id = resolved.mapping_id
                 my_vote = await _my_vote(db, resolved.mapping_id, client_id)
                 degraded = _degraded_from_counts(
                     resolved.spec.feedback_up, resolved.spec.feedback_down
@@ -214,6 +218,7 @@ async def _session_to_out(
                     )
                 )
                 if mapping is not None:
+                    effective_mapping_id = mapping.id
                     fallback_spec = _spec_from_mapping(mapping)
                     my_vote = await _my_vote(db, mapping.id, client_id)
                     degraded = _degraded_from_counts(
@@ -241,6 +246,7 @@ async def _session_to_out(
         created_at=row.created_at,
         expires_at=row.expires_at,
         lab=lab_out,
+        mapping_id=effective_mapping_id,
     )
 
 
@@ -456,6 +462,46 @@ async def synthesize_cache(
 
 
 @router.get(
+    "/cves/{cve_id}/synth-candidates",
+    response_model=SynthCandidatesResponse,
+    response_model_by_alias=True,
+)
+async def synth_candidates(
+    cve_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> SynthCandidatesResponse:
+    """List synthesized candidate mappings for *cve_id*, score-ordered.
+
+    Drives the manual candidate pivot UI (PR 9-U) — operators see all
+    candidates side by side and can pin a non-default one to the next
+    sandbox session via SandboxStartRequest.mapping_id.
+
+    Includes the cooldown placeholder (verified=False, lab_kind ends
+    with '/pending') so the operator can also see "synthesis was
+    attempted but failed" rows. UI hides them under is_placeholder.
+    """
+    rows = await list_synthesized_candidates(db, cve_id)
+    candidates: list[SynthCandidateOut] = []
+    for i, m in enumerate(rows, start=1):
+        candidates.append(
+            SynthCandidateOut(
+                mapping_id=m.id,
+                rank=i,
+                lab_kind=m.lab_kind,
+                digest=str((m.spec or {}).get("digest", "")),
+                verified=bool(m.verified),
+                feedback_up=int(m.feedback_up or 0),
+                feedback_down=int(m.feedback_down or 0),
+                degraded=is_degraded(m),
+                last_verified_at=m.last_verified_at,
+                created_at=m.created_at,
+                is_placeholder=str(m.lab_kind).endswith("/pending"),
+            )
+        )
+    return SynthCandidatesResponse(cve_id=cve_id, candidates=candidates)
+
+
+@router.get(
     "/lab-kind-stats",
     response_model=LabKindStatsReport,
     response_model_by_alias=True,
@@ -556,13 +602,43 @@ async def start_session(
     if vuln is None:
         raise HTTPException(status_code=404, detail=f"{body.cve_id} not found")
 
-    forced = (body.lab_kind or "").strip().lower() or None
-    resolved = await resolve_lab(
-        db,
-        vuln,
-        forced_kind=forced,
-        attempt_synthesis=body.attempt_synthesis,
-    )
+    # PR 9-U manual pivot: when the caller pins a specific synthesized
+    # mapping_id, build the ResolvedLab directly off that row so the
+    # resolver's score-pick is bypassed. The pinned row must belong to
+    # this CVE; on mismatch we silently fall back to the normal chain
+    # (the UI never sends a stale id, but a refresh-race could).
+    resolved: ResolvedLab | None = None
+    if body.mapping_id is not None:
+        pinned = await db.get(CveLabMapping, body.mapping_id)
+        if (
+            pinned is not None
+            and pinned.cve_id == vuln.cve_id
+            and pinned.kind == LabSourceKind.SYNTHESIZED
+            and pinned.verified
+        ):
+            spec = _spec_from_mapping(pinned)
+            resolved = ResolvedLab(
+                spec=spec,
+                source=LabSourceKind.SYNTHESIZED,
+                verified=True,
+                mapping_id=pinned.id,
+                cached_payload=pinned.known_good_payload,
+            )
+            log.info(
+                "sandbox.start.manual_pivot",
+                cve_id=vuln.cve_id,
+                mapping_id=pinned.id,
+                lab_kind=pinned.lab_kind,
+            )
+
+    if resolved is None:
+        forced = (body.lab_kind or "").strip().lower() or None
+        resolved = await resolve_lab(
+            db,
+            vuln,
+            forced_kind=forced,
+            attempt_synthesis=body.attempt_synthesis,
+        )
     if resolved is None:
         # If the caller already consented to synthesis and we still can't
         # produce a lab, surface the synthesis failure verbatim. Otherwise
