@@ -160,10 +160,17 @@ _USER_TEMPLATE = """\
   * **open-redirect** — 입력 URL 이 그대로 Location 헤더에 들어가 3xx redirect 가 일어남
   * **deserialization / pickle** — base64 pickle 페이로드가 deserialize 되어 임의 코드 실행
   * **ssrf / url-fetch** — 입력 URL 을 lab 이 실제로 outbound HTTP 요청으로 fetch
+  * **auth-bypass / broken-auth / idor / broken-access-control** — anonymous (빈 값/임의 값)
+    요청에는 401/403/login redirect 또는 짧은 "denied" 본문을 돌려주고, 특정 입력 모양 (예:
+    `?role=admin`, `Authorization: Bearer admin`) 에만 200 + 보호된 본문을 돌려주는 lab.
+    backend probe 는 anonymous + random + 7종 bypass 페이로드로 3-요청 differential 을
+    돌려 검증하므로, **anonymous 응답은 반드시 unauthorized shape (401/403/redirect/'denied'
+    류 마커)** 여야 하고 **bypass 응답은 anonymous/random 보다 본문이 충분히 (≥30%) 커야**
+    합니다. always-200 echo 식은 게이트가 없는 것으로 reject 됩니다.
 
-가장 흔한 실수: 모든 CVE 를 html-reflect (XSS) 로 만드는 것. 원본 CVE 가 RCE / SQLi / SSRF / path-traversal 이라면
-**그 클래스 그대로** 재현하세요 — XSS 로 환원하면 backend probe 가 다른 probe 를 적용해 reject 하고 사용자에게는
-다른 lab 이 노출되지 않습니다. CVE 가 명백한 XSS 일 때만 html-reflect 를 고르세요.
+가장 흔한 실수: 모든 CVE 를 html-reflect (XSS) 로 만드는 것. 원본 CVE 가 RCE / SQLi / SSRF / path-traversal /
+auth-bypass 라면 **그 클래스 그대로** 재현하세요 — XSS 로 환원하면 backend probe 가 다른 probe 를 적용해
+reject 하고 사용자에게는 다른 lab 이 노출되지 않습니다. CVE 가 명백한 XSS 일 때만 html-reflect 를 고르세요.
 
 ## 매우 중요한 규칙
 1. payload_example를 위 injection_point에 그대로 보냈을 때, success_indicator가 응답 본문(또는 side-channel — RCE/path-trav/XXE
@@ -172,6 +179,8 @@ _USER_TEMPLATE = """\
    예 (path-traversal): payload `../../etc/passwd` → success_indicator `root:x:` (passwd 파일의 알려진 토큰)
    예 (ssti, jinja2): payload `{{{{7*7}}}}` → success_indicator `49`
    예 (html-reflect): payload `<x>SYN_OK_AB12</x>` → success_indicator `SYN_OK_AB12`
+   예 (auth-bypass): payload `admin` → success_indicator `Admin Dashboard`. anonymous (`?role=`) 는 401 + "Unauthorized",
+     `?role=admin` 만 200 + 보호된 본문 (50+ 바이트). backend probe 가 anonymous/random/bypass 3-요청을 직접 만들고 비교.
    외부 호스트로 exfil 같은 건 격리 네트워크라 절대 동작하지 않습니다.
 2. success_indicator 는 짧고 고유한 토큰이거나 (예: `SYN_OK_<랜덤6자>`), 클래스 고유의 결정적 출력
    (예: SSTI 의 `49`, path-traversal 의 `root:x:`) 이어야 합니다.

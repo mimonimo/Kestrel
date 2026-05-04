@@ -95,6 +95,30 @@ def section_b() -> bool:
             FakeVuln(title="Reflected XSS in /search?q="),
             "xss",
         ),
+        # Auth-bypass classification — no generic Flask lab exists for
+        # this kind yet, so resolver step 3 will pass through to AI
+        # synthesis. The classifier still labels so the synthesizer
+        # prompt can pick the matching response_kind.
+        (
+            "CWE-287 improper auth",
+            FakeVuln(types=[FakeVT(cwe_id="CWE-287")]),
+            "auth-bypass",
+        ),
+        (
+            "CWE-639 IDOR",
+            FakeVuln(types=[FakeVT(cwe_id="CWE-639")]),
+            "auth-bypass",
+        ),
+        (
+            "desc 'IDOR in /api/users/{id}'",
+            FakeVuln(description="IDOR in /api/users/{id}"),
+            "auth-bypass",
+        ),
+        (
+            "desc 'authentication bypass via header'",
+            FakeVuln(description="authentication bypass via header"),
+            "auth-bypass",
+        ),
     ]
     all_ok = True
     for label, v, want in cases:

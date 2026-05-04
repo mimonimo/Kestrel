@@ -37,6 +37,16 @@ _CWE_TO_KIND: dict[str, str] = {
     "CWE-73": "path-traversal",  # External Control of File Name or Path
     # SSRF
     "CWE-918": "ssrf",  # Server-Side Request Forgery
+    # Auth-bypass / broken access control. No generic Flask lab for this
+    # class yet (PR 9-X), so resolver step 3 will pass through to AI
+    # synthesis instead — the synthesizer prompt now includes auth-bypass
+    # in its known_kinds guide so the LLM can produce a matching lab.
+    "CWE-287": "auth-bypass",  # Improper Authentication
+    "CWE-306": "auth-bypass",  # Missing Authentication for Critical Function
+    "CWE-425": "auth-bypass",  # Direct Request ('Forced Browsing')
+    "CWE-639": "auth-bypass",  # Authorization Bypass Through User-Controlled Key (IDOR)
+    "CWE-863": "auth-bypass",  # Incorrect Authorization
+    "CWE-862": "auth-bypass",  # Missing Authorization
 }
 
 # Keyword patterns (lowercased substrings) per lab kind. Lookup order
@@ -81,6 +91,18 @@ _KEYWORDS: dict[str, tuple[str, ...]] = {
         "server side request forgery",
         "ssrf",
         "blind ssrf",
+    ),
+    "auth-bypass": (
+        "authentication bypass",
+        "auth bypass",
+        "improper authentication",
+        "missing authentication",
+        "broken access control",
+        "incorrect authorization",
+        "missing authorization",
+        "idor",
+        "insecure direct object reference",
+        "forced browsing",
     ),
     "xss": (
         "cross-site scripting",
