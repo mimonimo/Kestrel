@@ -197,6 +197,96 @@ LAB_CATALOG: dict[str, LabDefinition] = {
             ),
         ],
     ),
+    "xxe": LabDefinition(
+        kind="xxe",
+        image="kestrel-lab-xxe:latest",
+        description="XML External Entity — Flask + lxml 이 입력 XML 의 외부 엔티티 평가를 그대로 수행.",
+        container_port=5000,
+        target_path="/",
+        build_hint=(
+            "docker build -t kestrel-lab-xxe:latest sandbox-labs/xxe-flask"
+        ),
+        injection_points=[
+            InjectionPoint(
+                name="parse_xml",
+                method="GET",
+                path="/parse",
+                parameter="xml",
+                location="query",
+                response_kind="xxe",
+                notes="`<!DOCTYPE [<!ENTITY x SYSTEM 'file:///path'>]>` → 본문에 파일 내용 echo.",
+            ),
+            InjectionPoint(
+                name="parse_xml_post",
+                method="POST",
+                path="/parse",
+                parameter="xml",
+                location="form",
+                response_kind="xxe",
+                notes="POST body 동일 동작 — 큰 XML 페이로드용.",
+            ),
+        ],
+    ),
+    "open-redirect": LabDefinition(
+        kind="open-redirect",
+        image="kestrel-lab-redirect:latest",
+        description="Open redirect — Flask 가 입력 URL 을 그대로 Location 헤더로 302 redirect.",
+        container_port=5000,
+        target_path="/",
+        build_hint=(
+            "docker build -t kestrel-lab-redirect:latest sandbox-labs/redirect-flask"
+        ),
+        injection_points=[
+            InjectionPoint(
+                name="redirect_url",
+                method="GET",
+                path="/redirect",
+                parameter="url",
+                location="query",
+                response_kind="open-redirect",
+                notes="`url=https://...` → 302 + Location 그대로.",
+            ),
+            InjectionPoint(
+                name="go_next",
+                method="GET",
+                path="/go",
+                parameter="next",
+                location="query",
+                response_kind="open-redirect",
+                notes="`next=https://...` 동일 패턴, 다른 파라미터.",
+            ),
+        ],
+    ),
+    "deserialization": LabDefinition(
+        kind="deserialization",
+        image="kestrel-lab-deser:latest",
+        description="Insecure deserialization — Flask 가 base64 → pickle.loads 를 그대로 호출.",
+        container_port=5000,
+        target_path="/",
+        build_hint=(
+            "docker build -t kestrel-lab-deser:latest sandbox-labs/deser-flask"
+        ),
+        injection_points=[
+            InjectionPoint(
+                name="load_get",
+                method="GET",
+                path="/load",
+                parameter="data",
+                location="query",
+                response_kind="deserialization",
+                notes="base64 pickle gadget → __reduce__ 가 os.system 실행 (canary 파일 stamp).",
+            ),
+            InjectionPoint(
+                name="load_post",
+                method="POST",
+                path="/load",
+                parameter="data",
+                location="form",
+                response_kind="deserialization",
+                notes="POST body 동일 동작 — 큰 pickle 페이로드용.",
+            ),
+        ],
+    ),
     "auth-bypass": LabDefinition(
         kind="auth-bypass",
         image="kestrel-lab-auth:latest",

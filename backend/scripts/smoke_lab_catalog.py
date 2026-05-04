@@ -39,7 +39,8 @@ class FakeVuln:
 
 def section_a() -> bool:
     """Catalog kinds vs. expected probes coverage."""
-    expected = {"xss", "rce", "sqli", "ssti", "path-traversal", "ssrf", "auth-bypass"}
+    expected = {"xss", "rce", "sqli", "ssti", "path-traversal", "ssrf", "auth-bypass",
+                "xxe", "open-redirect", "deserialization"}
     actual = set(LAB_CATALOG.keys())
     missing = expected - actual
     extra = actual - expected
@@ -118,6 +119,37 @@ def section_b() -> bool:
             "desc 'authentication bypass via header'",
             FakeVuln(description="authentication bypass via header"),
             "auth-bypass",
+        ),
+        # XXE / open-redirect / deser additions (PR 9-Y)
+        (
+            "CWE-611 XXE",
+            FakeVuln(types=[FakeVT(cwe_id="CWE-611")]),
+            "xxe",
+        ),
+        (
+            "CWE-601 open redirect",
+            FakeVuln(types=[FakeVT(cwe_id="CWE-601")]),
+            "open-redirect",
+        ),
+        (
+            "CWE-502 unsafe deser",
+            FakeVuln(types=[FakeVT(cwe_id="CWE-502")]),
+            "deserialization",
+        ),
+        (
+            "desc 'XML external entity in Spring DefaultMessageHandler'",
+            FakeVuln(description="XML external entity in Spring DefaultMessageHandler"),
+            "xxe",
+        ),
+        (
+            "desc 'open redirect via the next parameter'",
+            FakeVuln(description="open redirect via the next parameter"),
+            "open-redirect",
+        ),
+        (
+            "desc 'java deserialization in Apache Commons Collections'",
+            FakeVuln(description="java deserialization in Apache Commons Collections"),
+            "deserialization",
         ),
     ]
     all_ok = True

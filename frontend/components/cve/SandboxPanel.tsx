@@ -159,6 +159,18 @@ const LAB_KIND_META: Record<
     label: "Auth Bypass · 권한 우회",
     cls: "border-yellow-500/40 bg-yellow-500/10 text-yellow-200",
   },
+  xxe: {
+    label: "XXE · XML 외부 엔티티",
+    cls: "border-teal-500/40 bg-teal-500/10 text-teal-200",
+  },
+  "open-redirect": {
+    label: "Open Redirect · URL 우회",
+    cls: "border-indigo-500/40 bg-indigo-500/10 text-indigo-200",
+  },
+  deserialization: {
+    label: "Deserialization · pickle/object 주입",
+    cls: "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200",
+  },
 };
 
 function LabKindBadge({ labKind }: { labKind: string }) {

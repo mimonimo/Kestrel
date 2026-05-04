@@ -46,7 +46,8 @@ class LiveHandle:
 # Kind → (lab image is published, internal port, expected-pass probe name).
 # Skip kinds whose probes need slow runs (sqli randomblob takes 4-8s) but
 # include them for coverage.
-KINDS = ["xss", "rce", "sqli", "ssti", "path-traversal", "ssrf", "auth-bypass"]
+KINDS = ["xss", "rce", "sqli", "ssti", "path-traversal", "ssrf", "auth-bypass",
+         "xxe", "open-redirect", "deserialization"]
 EXPECTED_PROBE = {
     "xss": "xss_reflect_nonce",
     "rce": "rce_canary_read",
@@ -55,6 +56,9 @@ EXPECTED_PROBE = {
     "path-traversal": "path_traversal_canary",
     "ssrf": "ssrf_inbound_canary",
     "auth-bypass": "auth_bypass_differential",
+    "xxe": "xxe_canary_read",
+    "open-redirect": "open_redirect_nonce",
+    "deserialization": "deser_pickle_canary_write",
 }
 
 

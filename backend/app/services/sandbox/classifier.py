@@ -37,6 +37,15 @@ _CWE_TO_KIND: dict[str, str] = {
     "CWE-73": "path-traversal",  # External Control of File Name or Path
     # SSRF
     "CWE-918": "ssrf",  # Server-Side Request Forgery
+    # XXE / external entity expansion (PR 9-Y)
+    "CWE-611": "xxe",  # Improper Restriction of XML External Entity Reference
+    "CWE-776": "xxe",  # Improper Restriction of Recursive Entity References (Billion Laughs)
+    "CWE-827": "xxe",  # Improper Control of Document Type Definition
+    # Open redirect (PR 9-Y)
+    "CWE-601": "open-redirect",  # URL Redirection to Untrusted Site
+    # Insecure deserialization (PR 9-Y)
+    "CWE-502": "deserialization",  # Deserialization of Untrusted Data
+    "CWE-915": "deserialization",  # Improperly Controlled Modification of Dynamically-Determined Object Attributes
     # Auth-bypass / broken access control. No generic Flask lab for this
     # class yet (PR 9-X), so resolver step 3 will pass through to AI
     # synthesis instead — the synthesizer prompt now includes auth-bypass
@@ -91,6 +100,28 @@ _KEYWORDS: dict[str, tuple[str, ...]] = {
         "server side request forgery",
         "ssrf",
         "blind ssrf",
+    ),
+    "xxe": (
+        "xml external entity",
+        "xxe",
+        "external entity",
+        "billion laughs",
+        "xml entity expansion",
+    ),
+    "open-redirect": (
+        "open redirect",
+        "open-redirect",
+        "url redirect",
+        "redirect to untrusted",
+    ),
+    "deserialization": (
+        "insecure deserialization",
+        "unsafe deserialization",
+        "deserialization of untrusted",
+        "pickle injection",
+        "java deserialization",
+        ".net deserialization",
+        "object injection",
     ),
     "auth-bypass": (
         "authentication bypass",

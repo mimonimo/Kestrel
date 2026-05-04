@@ -22,6 +22,9 @@ declare -a labs=(
   "kestrel-lab-path:latest|path-flask"
   "kestrel-lab-ssrf:latest|ssrf-flask"
   "kestrel-lab-auth:latest|auth-flask"
+  "kestrel-lab-xxe:latest|xxe-flask"
+  "kestrel-lab-redirect:latest|redirect-flask"
+  "kestrel-lab-deser:latest|deser-flask"
 )
 
 for entry in "${labs[@]}"; do
