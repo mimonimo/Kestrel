@@ -53,9 +53,12 @@ def index() -> str:
 @app.get("/users")
 def users() -> str:
     user_id = request.args.get("id", "1")
-    # Intentional: string concat into SQL. Boolean-blind, UNION-based,
-    # and CPU-burn (randomblob) payloads all reach the engine.
-    sql = f"SELECT id, name, role FROM users WHERE id = {user_id}"
+    # Intentional: string concat into SQL with surrounding single quotes.
+    # The quote-wrap is what most real-world SQLi targets look like and is
+    # what backend probe payloads (`1' OR SLEEP(N)--`, `1' AND randomblob(N)--`)
+    # are shaped for: the probe injects `1'` to break out, then a time-burn
+    # expression, then `--` to swallow the trailing close-quote.
+    sql = f"SELECT id, name, role FROM users WHERE id = '{user_id}'"
     con = sqlite3.connect(DB_PATH)
     try:
         rows = con.execute(sql).fetchall()

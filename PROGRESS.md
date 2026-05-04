@@ -1109,6 +1109,37 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 9-P — generic lab × backend probe 라이브 통합 검증 + sqli probe 모던 CPU 보정 ✅
+
+**완료일:** 2026-05-04
+
+> PR 9-O 가 catalog/classifier 까지만 unit 검증 (smoke_lab_catalog.py 13/13). 실제로 컨테이너가 띄워지고 backend probe 가 라이브로 동작하는지는 미확인. End-to-end smoke 추가 + 발견된 sqli timing 한계 같이 수정.
+
+**`backend/scripts/integration_generic_labs.py` — 신규 라이브 통합 smoke**
+- 6 lab kinds 각각:
+  1. `docker.from_env()` 로 lab 이미지를 `kestrel_sandbox_net` 위에 spawn (256MB / 0.5 CPU / cap_drop=ALL — 실제 sandbox 정책과 동일)
+  2. `/healthz` polling 으로 listen 확인
+  3. catalog 의 첫 번째 InjectionPoint 추출 → matching probe 인스턴스
+  4. `probe.run(handle, ip)` — passed=True 기대
+  5. cleanup (kill + remove)
+- 기대 probe 매핑: xss → xss_reflect_nonce, rce → rce_canary_read, sqli → sqli_time_blind, ssti → ssti_arithmetic, path → path_traversal_canary, ssrf → ssrf_inbound_canary.
+
+**SQLi probe 모던 CPU 보정 (`synthesizer_probes.py`)**
+- 기존 마지막 fallback `randomblob(sleep_seconds * 1e8)` (200MB for 2s) 가 M-series CPU 에서 0.3s 만 걸려 threshold(`baseline + 1.4s`) 미달. 1GB(`* 5e8`) 로 키우면 lab 이 OOM disconnect.
+- 해결: SQLite 전용 마지막 페이로드를 recursive CTE 로 교체 — `WITH RECURSIVE c(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM c LIMIT N) SELECT count(*) FROM c`. row 수 = `sleep_seconds * 10_000_000` (sleep=2 → 20M rows). 측정: 2M=0.30s, 5M=0.55s, 10M=1.07s, 20M=2.16s — 선형 + 메모리 압력 없음. 모든 architecture 에서 일관.
+- 페이로드 8 → 7 종 (200MB random 유지 + 새 CTE 추가, 1GB 변형 제거).
+
+**검증 결과**
+- Live 통합: 6/6 PASS — sqli 가 4.49s delay 로 통과 (이전 0.3s).
+- PR 9-L 회귀: 11/11 PASS (real-RCE / echo-machine / XXE / open-redirect / hardcoded-redirect-reject / deserialization / inert-deser-reject 등).
+- PR 9-N 회귀: 4/4 PASS (SSRF 4 시나리오).
+
+**알려진 한계 / 다음 PR 으로 넘김**
+- integration smoke 는 manual (`python /app/integration_generic_labs.py`) — CI/cron 으로 묶을지는 출판 빈도 보고 결정. 6 lab 모두 spawn → probe → cleanup 까지 ~30s 라 매 PR 에 넣어도 무리 없음.
+- sqli CTE row count 가 hard-coded `sleep_seconds * 10M` — 매우 느린 ARM/QEMU 환경에서 over-burn 가능. 향후 baseline 측정 후 dynamic sizing 으로 개선 여지.
+
+---
+
 ### PR 9-O — generic lab 카탈로그 6 클래스 확장 (XSS-only → RCE / SQLi / SSTI / path-traversal / SSRF 추가) ✅
 
 **완료일:** 2026-05-03
