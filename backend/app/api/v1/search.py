@@ -20,14 +20,20 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import case, or_, select
+from pydantic import BaseModel
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.logging import get_logger
-from app.models import Vulnerability
+from app.models import (
+    AffectedProduct,
+    Vulnerability,
+    VulnerabilityType,
+    vulnerability_type_map,
+)
 from app.schemas.search import SearchResponse
-from app.schemas.vulnerability import VulnerabilityListItem
+from app.schemas.vulnerability import CamelModel, VulnerabilityListItem
 from app.services import search_service
 
 router = APIRouter(prefix="/search", tags=["search"])
@@ -278,3 +284,111 @@ async def _pg_search(
         .all()
     )
     return rows, total
+
+
+# ---------------------------------------------------------------------------
+# Facet counts — drives dynamic filter chip lists
+# ---------------------------------------------------------------------------
+
+
+class FacetBucket(CamelModel):
+    value: str
+    count: int
+
+
+class FacetsResponse(CamelModel):
+    types: list[FacetBucket] = []
+    os_families: list[FacetBucket] = []
+    severities: list[FacetBucket] = []
+    sources: list[FacetBucket] = []
+    domains: list[FacetBucket] = []
+
+
+@router.get(
+    "/facets",
+    response_model=FacetsResponse,
+    response_model_by_alias=True,
+)
+async def search_facets(db: AsyncSession = Depends(get_db)) -> FacetsResponse:
+    """Filter facet counts derived from the parsed CVE corpus.
+
+    Replaces hardcoded chip lists in the frontend — chips are rendered
+    only for values that actually have rows in DB, with the count shown
+    next to the label so users can see "RCE (1234)" before clicking.
+    Empty buckets simply don't appear, fixing the long-standing bug
+    where users could click a chip (e.g. ``Path-Traversal``) for which
+    ingestion had never produced a label.
+
+    Each facet runs a single GROUP BY against its source table; on the
+    current scale (~75k vulns / 247 mappings / ~250k affected_products)
+    these complete in a handful of milliseconds.
+    """
+    # types — JOIN map → types, count distinct vulns per type name
+    type_rows = (
+        await db.execute(
+            select(
+                VulnerabilityType.name,
+                func.count(func.distinct(vulnerability_type_map.c.vulnerability_id)).label("c"),
+            )
+            .join(
+                vulnerability_type_map,
+                vulnerability_type_map.c.type_id == VulnerabilityType.id,
+            )
+            .group_by(VulnerabilityType.name)
+            .order_by(func.count().desc())
+        )
+    ).all()
+
+    # os families — JOIN affected_products, distinct vuln per os
+    os_rows = (
+        await db.execute(
+            select(
+                AffectedProduct.os_family,
+                func.count(func.distinct(AffectedProduct.vulnerability_id)).label("c"),
+            )
+            .group_by(AffectedProduct.os_family)
+            .order_by(func.count().desc())
+        )
+    ).all()
+
+    # severities — direct on Vulnerability
+    sev_rows = (
+        await db.execute(
+            select(Vulnerability.severity, func.count())
+            .where(Vulnerability.severity.isnot(None))
+            .group_by(Vulnerability.severity)
+            .order_by(func.count().desc())
+        )
+    ).all()
+
+    # sources
+    src_rows = (
+        await db.execute(
+            select(Vulnerability.source, func.count())
+            .group_by(Vulnerability.source)
+            .order_by(func.count().desc())
+        )
+    ).all()
+
+    # domains — TEXT[] unnested
+    dom_rows = (
+        await db.execute(
+            select(
+                func.unnest(Vulnerability.domains).label("d"),
+                func.count(),
+            )
+            .group_by("d")
+            .order_by(func.count().desc())
+        )
+    ).all()
+
+    def _enum_value(v) -> str:
+        return v.value if hasattr(v, "value") else str(v)
+
+    return FacetsResponse(
+        types=[FacetBucket(value=str(n), count=int(c)) for n, c in type_rows],
+        os_families=[FacetBucket(value=_enum_value(o), count=int(c)) for o, c in os_rows],
+        severities=[FacetBucket(value=_enum_value(s), count=int(c)) for s, c in sev_rows],
+        sources=[FacetBucket(value=_enum_value(s), count=int(c)) for s, c in src_rows],
+        domains=[FacetBucket(value=str(d), count=int(c)) for d, c in dom_rows if d],
+    )

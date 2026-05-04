@@ -326,6 +326,8 @@ export const api = {
     request<SynthesizeCacheReport>(`/sandbox/synthesize/cache`),
   getLabKindStats: () =>
     request<LabKindStatsReport>(`/sandbox/lab-kind-stats`),
+  getSearchFacets: () =>
+    request<SearchFacetsResponse>(`/search/facets`),
   getSynthCandidates: (cveId: string) =>
     request<SynthCandidatesResponse>(
       `/sandbox/cves/${encodeURIComponent(cveId)}/synth-candidates`,
@@ -617,6 +619,19 @@ export interface LabKindStatsReport {
   verified: number;
   bySource: LabKindStatsBucket[];
   byKind: LabKindStatsBucket[];
+}
+
+export interface FacetBucket {
+  value: string;
+  count: number;
+}
+
+export interface SearchFacetsResponse {
+  types: FacetBucket[];
+  osFamilies: FacetBucket[];
+  severities: FacetBucket[];
+  sources: FacetBucket[];
+  domains: FacetBucket[];
 }
 
 export interface SynthCandidate {

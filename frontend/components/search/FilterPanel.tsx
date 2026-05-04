@@ -1,45 +1,33 @@
 "use client";
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import type { Domain, OsFamily, Severity, VulnType } from "@/lib/types";
 import { DOMAINS } from "@/lib/types";
 
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low"];
 const OS_FAMILIES: OsFamily[] = ["windows", "linux", "macos", "android", "ios", "other"];
 
-// Mechanism-class chips. Order: most-common (RCE/XSS/SQLi) first, then
-// the rest in roughly decreasing frequency. Backend stores these as
-// free-form strings on `vulnerability_types.name`, so adding/removing
-// chips here doesn't need a migration — but the parser must populate
-// matching names for the chip to actually filter anything.
-const VULN_TYPES: VulnType[] = [
-  "RCE",
-  "XSS",
-  "SQLi",
-  "CSRF",
-  "XXE",
-  "SSRF",
-  "LFI",
-  "Path-Traversal",
-  "Deserialization",
-  "Open-Redirect",
-  "Privilege-Escalation",
-  "Info-Disclosure",
-  "Memory-Corruption",
-  "DoS",
-  "Auth",
-  "Other",
-];
-
-const VULN_TYPE_LABELS: Partial<Record<VulnType, string>> = {
+// Korean labels for the long English vuln-type names. Anything missing
+// from this map is rendered as-is. Generated dynamically from /search/facets
+// so chips that have 0 rows in DB simply don't appear (was a bug pre-PR
+// where 7 hardcoded chips never matched anything).
+const VULN_TYPE_LABELS: Partial<Record<string, string>> = {
   "Path-Traversal": "경로순회",
-  "Deserialization": "역직렬화",
+  Deserialization: "역직렬화",
   "Open-Redirect": "오픈리다이렉트",
   "Privilege-Escalation": "권한상승",
   "Info-Disclosure": "정보노출",
   "Memory-Corruption": "메모리손상",
 };
+
+function _formatCount(n: number): string {
+  if (n >= 10000) return `${(n / 1000).toFixed(0)}k`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
 
 const OS_LABELS: Record<OsFamily, string> = {
   windows: "Windows",
@@ -187,6 +175,36 @@ export function FilterPanel({ value, onChange }: Props) {
     value.fromDate !== "" ||
     value.toDate !== "";
 
+  // Pull facet counts so chips reflect what's actually in the parsed
+  // corpus. Fetched once per session (60s staleTime) — small payload,
+  // doesn't change between user clicks. Pre-PR the chip lists were
+  // hardcoded and 7 of the 16 vuln-type chips matched zero rows.
+  const facets = useQuery({
+    queryKey: ["search", "facets"],
+    queryFn: () => api.getSearchFacets(),
+    staleTime: 60_000,
+  });
+
+  // Stable count lookup — facets may still be loading; we render the
+  // chip list anyway and just hide the count suffix until it arrives.
+  const typeCount = (name: string): number | undefined =>
+    facets.data?.types.find((b) => b.value === name)?.count;
+  const osCount = (name: string): number | undefined =>
+    facets.data?.osFamilies.find((b) => b.value === name)?.count;
+  const sevCount = (name: string): number | undefined =>
+    facets.data?.severities.find((b) => b.value === name)?.count;
+  const domCount = (name: string): number | undefined =>
+    facets.data?.domains.find((b) => b.value === name)?.count;
+
+  // Type chips come from facets — each name in DB becomes one chip,
+  // sorted by count desc. Always include any currently-active type
+  // even if it's not in the facets response (so an old URL with a
+  // selected type that has 0 rows still shows the chip in active state).
+  const dynamicTypes = facets.data?.types.map((b) => b.value) ?? [];
+  const typesToRender = Array.from(
+    new Set([...dynamicTypes, ...value.types]),
+  );
+
   return (
     <aside className="space-y-6 rounded-lg border border-neutral-800 bg-surface-1 p-5">
       <FilterGroup title="심각도">
@@ -196,6 +214,7 @@ export function FilterPanel({ value, onChange }: Props) {
             active={value.severity.includes(s)}
             onClick={() => toggle("severity", s)}
             variant="upper"
+            count={sevCount(s)}
           >
             {s}
           </Chip>
@@ -204,19 +223,28 @@ export function FilterPanel({ value, onChange }: Props) {
 
       <FilterGroup title="OS">
         {OS_FAMILIES.map((o) => (
-          <Chip key={o} active={value.osFamily.includes(o)} onClick={() => toggle("osFamily", o)}>
+          <Chip
+            key={o}
+            active={value.osFamily.includes(o)}
+            onClick={() => toggle("osFamily", o)}
+            count={osCount(o)}
+          >
             {OS_LABELS[o]}
           </Chip>
         ))}
       </FilterGroup>
 
       <FilterGroup title="취약점 유형">
-        {VULN_TYPES.map((t) => (
+        {typesToRender.length === 0 && facets.isLoading && (
+          <span className="text-xs text-neutral-500">로딩중…</span>
+        )}
+        {typesToRender.map((t) => (
           <Chip
             key={t}
-            active={value.types.includes(t)}
-            onClick={() => toggle("types", t)}
+            active={value.types.includes(t as VulnType)}
+            onClick={() => toggle("types", t as VulnType)}
             title={VULN_TYPE_LABELS[t]}
+            count={typeCount(t)}
           >
             {t}
           </Chip>
@@ -230,6 +258,7 @@ export function FilterPanel({ value, onChange }: Props) {
             active={value.domains.includes(d)}
             onClick={() => toggle("domains", d)}
             title={d}
+            count={domCount(d)}
           >
             {DOMAIN_LABELS[d]}
           </Chip>
@@ -304,27 +333,45 @@ function Chip({
   children,
   variant = "default",
   title,
+  count,
 }: {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
   variant?: "default" | "upper";
   title?: string;
+  // When provided, rendered as a small dimmed suffix `(123)`. ``undefined``
+  // hides the suffix (used while facets are still loading or for facets
+  // not yet wired through). Zero shows as `(0)` so users see *empty*
+  // categories explicitly rather than wondering why a chip silently
+  // returns nothing.
+  count?: number;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      title={title}
+      title={title ? `${title}${count !== undefined ? ` — ${count}` : ""}` : undefined}
       className={cn(
         "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
         variant === "upper" && "uppercase",
+        count === 0 && "opacity-50",
         active
           ? "bg-neutral-100 text-neutral-900 border-neutral-100"
           : "bg-transparent text-neutral-300 border-neutral-700 hover:border-neutral-500 hover:text-neutral-100",
       )}
     >
       {children}
+      {count !== undefined && (
+        <span
+          className={cn(
+            "ml-1 text-[10px] font-normal tabular-nums",
+            active ? "text-neutral-600" : "text-neutral-500",
+          )}
+        >
+          ({_formatCount(count)})
+        </span>
+      )}
     </button>
   );
 }
