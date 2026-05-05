@@ -25,21 +25,80 @@ from app.services.summarizer import generate_summary
 
 log = get_logger(__name__)
 
-# CWE → human label mapping (non-exhaustive; extend as needed)
+# CWE → human label mapping. Drives both ingestion-time labelling (new
+# CVEs get type rows attached on insert) and the periodic backfill that
+# stamps the same labels onto pre-existing rows. Keep aligned with the
+# frontend filter chip set (lib/types.ts VulnType) so every chip has a
+# real CWE source feeding it.
 CWE_TO_TYPE = {
+    # Reflected/stored XSS family
     "CWE-79": "XSS",
+    "CWE-80": "XSS",
+    "CWE-83": "XSS",
+    "CWE-87": "XSS",
+    # SQL injection
     "CWE-89": "SQLi",
+    "CWE-564": "SQLi",
+    # CSRF
     "CWE-352": "CSRF",
+    # SSRF
     "CWE-918": "SSRF",
-    "CWE-22": "LFI",
+    # Path traversal vs. PHP-include LFI — kept as separate labels so
+    # users can tell "any file read" from "PHP file include".
+    "CWE-22": "Path-Traversal",
+    "CWE-23": "Path-Traversal",
+    "CWE-36": "Path-Traversal",
+    "CWE-73": "Path-Traversal",
+    "CWE-98": "LFI",
+    # XXE / external entity
     "CWE-611": "XXE",
+    "CWE-776": "XXE",
+    "CWE-827": "XXE",
+    # Command/code injection → RCE
     "CWE-77": "RCE",
     "CWE-78": "RCE",
     "CWE-94": "RCE",
+    "CWE-95": "RCE",
+    "CWE-1336": "RCE",  # SSTI 도 결국 코드 평가 — 사용자 시야에서 RCE
+    # Insecure deserialization
+    "CWE-502": "Deserialization",
+    "CWE-915": "Deserialization",
+    # Open redirect
+    "CWE-601": "Open-Redirect",
+    # Privilege escalation
+    "CWE-269": "Privilege-Escalation",
+    "CWE-264": "Privilege-Escalation",
+    "CWE-250": "Privilege-Escalation",
+    "CWE-272": "Privilege-Escalation",
+    # Information disclosure
+    "CWE-200": "Info-Disclosure",
+    "CWE-201": "Info-Disclosure",
+    "CWE-203": "Info-Disclosure",
+    "CWE-209": "Info-Disclosure",
+    "CWE-532": "Info-Disclosure",
+    # Memory corruption (binary-side classes)
+    "CWE-119": "Memory-Corruption",
+    "CWE-120": "Memory-Corruption",
+    "CWE-121": "Memory-Corruption",
+    "CWE-122": "Memory-Corruption",
+    "CWE-125": "Memory-Corruption",
+    "CWE-415": "Memory-Corruption",
+    "CWE-416": "Memory-Corruption",
+    "CWE-787": "Memory-Corruption",
+    "CWE-824": "Memory-Corruption",
+    # Authentication / authorization broadly. PR 9-W lab classifier uses
+    # a finer "auth-bypass" axis; user-facing chip stays as the broader
+    # "Auth" label so it doesn't fragment.
     "CWE-287": "Auth",
+    "CWE-306": "Auth",
+    "CWE-425": "Auth",
+    "CWE-639": "Auth",
+    "CWE-862": "Auth",
     "CWE-863": "Auth",
+    # Denial of service / resource exhaustion
     "CWE-400": "DoS",
     "CWE-770": "DoS",
+    "CWE-835": "DoS",
 }
 
 
