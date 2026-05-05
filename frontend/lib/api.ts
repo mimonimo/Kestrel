@@ -328,6 +328,23 @@ export const api = {
     request<LabKindStatsReport>(`/sandbox/lab-kind-stats`),
   getSearchFacets: () =>
     request<SearchFacetsResponse>(`/search/facets`),
+  getAssetNotifications: (
+    assets: Asset[],
+    sinceDays = 14,
+    limit = 50,
+  ) =>
+    request<SearchResponse>(`/assets/notifications`, {
+      method: "POST",
+      body: JSON.stringify({
+        assets: assets.map(({ vendor, product, version }) => ({
+          vendor,
+          product,
+          version,
+        })),
+        sinceDays,
+        limit,
+      }),
+    }),
   getSynthCandidates: (cveId: string) =>
     request<SynthCandidatesResponse>(
       `/sandbox/cves/${encodeURIComponent(cveId)}/synth-candidates`,

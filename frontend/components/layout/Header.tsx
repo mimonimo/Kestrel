@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Bird, Settings } from "lucide-react";
 
+import { NotificationBell } from "./NotificationBell";
+
 export function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-neutral-800 bg-surface-0/80 backdrop-blur">
@@ -9,7 +11,7 @@ export function Header() {
           <Bird className="h-5 w-5 text-blue-500" />
           <span className="tracking-tight">Kestrel</span>
         </Link>
-        <nav className="flex items-center gap-5 text-sm text-neutral-400">
+        <nav className="flex items-center gap-3 text-sm text-neutral-400 sm:gap-5">
           <Link href="/" className="hover:text-neutral-100">
             대시보드
           </Link>
@@ -24,6 +26,7 @@ export function Header() {
           >
             NVD
           </a>
+          <NotificationBell />
           <Link
             href="/settings"
             className="flex items-center gap-1 rounded-md border border-neutral-800 px-2 py-1 hover:border-neutral-700 hover:text-neutral-100"
