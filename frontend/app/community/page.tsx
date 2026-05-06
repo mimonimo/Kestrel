@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { MessageSquare, Plus, Eye, Hash, Sparkles } from "lucide-react";
+import { MessageSquare, Plus, Eye, Hash, RefreshCw, Sparkles } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { ErrorBox, FeedbackBoxButton } from "@/components/ui/feedback-box";
 import { NewPostModal } from "@/components/community/NewPostModal";
 import { formatRelativeKo } from "@/lib/format";
 
@@ -42,12 +43,16 @@ export default function CommunityPage() {
           ))}
         </div>
       ) : isError ? (
-        <div className="rounded-lg border border-red-900/40 bg-red-950/30 p-6 text-sm text-red-300">
-          글 목록을 불러오지 못했습니다.{" "}
-          <button onClick={() => refetch()} className="underline">
-            다시 시도
-          </button>
-        </div>
+        <ErrorBox
+          title="글 목록을 불러오지 못했습니다"
+          message="잠시 후 다시 시도하거나 백엔드 상태를 확인해 보세요."
+          actions={
+            <FeedbackBoxButton onClick={() => refetch()}>
+              <RefreshCw className="h-3 w-3" />
+              다시 시도
+            </FeedbackBoxButton>
+          }
+        />
       ) : data && data.items.length === 0 ? (
         <div className="overflow-hidden rounded-xl border border-sky-500/30 bg-gradient-to-br from-sky-500/10 via-blue-500/5 to-transparent px-6 py-12 text-center shadow-[0_0_0_1px_rgba(56,189,248,0.05)]">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-sky-500/15 ring-1 ring-sky-400/30">

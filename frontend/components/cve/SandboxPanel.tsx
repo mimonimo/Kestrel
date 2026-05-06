@@ -22,6 +22,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { ErrorBox, FeedbackBoxButton, NoticeBox } from "@/components/ui/feedback-box";
 import {
   ApiError,
   api,
@@ -528,76 +529,9 @@ function CandidatePivotList({
 }
 
 
-// Common error box used by start / synth log / exec failure surfaces.
-// Designed to match the existing chip palette: rose (failure) parallels
-// the rose 'degraded' badge already in this panel, with the same icon
-// + label + body shape as the amber digest line so the hierarchy reads
-// the same. Higher contrast text (rose-100 title / rose-200 body) on a
-// deeper rose-500/15 bg fixes the previous low-readability rose-200/90
-// on rose-500/10.
-function ErrorBox({
-  title,
-  message,
-  hint,
-  size = "md",
-}: {
-  title: string;
-  message: string;
-  hint?: string;
-  size?: "sm" | "md";
-}) {
-  return (
-    <div
-      className={cn(
-        "space-y-1 rounded border border-rose-500/40 bg-rose-500/15 text-rose-100",
-        size === "sm" ? "p-2 text-[11px]" : "p-3 text-xs",
-      )}
-      role="alert"
-    >
-      <div className="flex items-center gap-1.5">
-        <AlertCircle className="h-3.5 w-3.5 shrink-0 text-rose-300" />
-        <span className="font-medium">{title}</span>
-      </div>
-      <p className="break-words leading-relaxed text-rose-100/90">{message}</p>
-      {hint && <p className="leading-relaxed text-rose-200/80">{hint}</p>}
-    </div>
-  );
-}
-
-// Non-error informational pause (cooldown / waiting / cached_hit). Same
-// shape as ErrorBox so the layout doesn't shift, but amber tone parallels
-// the "AI 합성 진행 상황" header — communicates "scheduled retry / 안내"
-// rather than alarm. Body uses neutral light text instead of tinted
-// amber-on-amber (which had poor contrast); amber stays only on the
-// border/icon/title where it actually carries meaning.
-function NoticeBox({
-  title,
-  message,
-  hint,
-  size = "md",
-}: {
-  title: string;
-  message: string;
-  hint?: string;
-  size?: "sm" | "md";
-}) {
-  return (
-    <div
-      className={cn(
-        "space-y-1.5 rounded border border-amber-500/40 bg-surface-2",
-        size === "sm" ? "p-2.5 text-[11px]" : "p-3 text-xs",
-      )}
-      role="status"
-    >
-      <div className="flex items-center gap-1.5 text-amber-200">
-        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-        <span className="font-medium">{title}</span>
-      </div>
-      <p className="break-words leading-relaxed text-neutral-100">{message}</p>
-      {hint && <p className="leading-relaxed text-neutral-300">{hint}</p>}
-    </div>
-  );
-}
+// ErrorBox / NoticeBox now live in components/ui/feedback-box.tsx so
+// every panel renders the same shape. Re-imported below via the named
+// imports at the top of this file.
 
 
 function VerdictBadge({ ok, confidence }: { ok: boolean; confidence: string }) {
@@ -981,6 +915,17 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                 ? "AI 키가 필요한 단계가 있을 수 있습니다. 설정에서 활성 키를 확인하세요."
                 : undefined
             }
+            actions={
+              <>
+                {isKeyMissing && (
+                  <FeedbackBoxButton href="/settings">설정으로 이동</FeedbackBoxButton>
+                )}
+                <FeedbackBoxButton onClick={() => start.mutate(undefined)}>
+                  <RefreshCw className="h-3 w-3" />
+                  다시 시도
+                </FeedbackBoxButton>
+              </>
+            }
           />
         )}
 
@@ -1116,7 +1061,16 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
             )}
 
             {execError && (
-              <ErrorBox title="실행 실패" message={execError.message} />
+              <ErrorBox
+                title="실행 실패"
+                message={execError.message}
+                actions={
+                  <FeedbackBoxButton onClick={() => exec.mutate(undefined)}>
+                    <RefreshCw className="h-3 w-3" />
+                    다시 시도
+                  </FeedbackBoxButton>
+                }
+              />
             )}
 
             {lastResult && <RunResult result={lastResult} />}
@@ -1252,11 +1206,27 @@ function SynthesisTimeline({
           message={error}
           hint="즉시 재시도가 필요하면 forceRegenerate=true 로 다시 시도하거나 cooldown 만료를 기다리세요."
           size="sm"
+          actions={
+            <FeedbackBoxButton tone="notice" onClick={onRetry}>
+              <RefreshCw className="h-3 w-3" />
+              다시 시도
+            </FeedbackBoxButton>
+          }
         />
       ) : seen.has("cached_hit") ? (
         <NoticeBox title="이미 검증된 캐시 재사용" message={error} size="sm" />
       ) : (
-        <ErrorBox title="합성 실패" message={error} size="sm" />
+        <ErrorBox
+          title="합성 실패"
+          message={error}
+          size="sm"
+          actions={
+            <FeedbackBoxButton onClick={onRetry}>
+              <RefreshCw className="h-3 w-3" />
+              다시 시도
+            </FeedbackBoxButton>
+          }
+        />
       ))}
 
       {running && (

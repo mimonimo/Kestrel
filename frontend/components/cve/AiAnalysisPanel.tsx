@@ -1,13 +1,13 @@
 "use client";
 
-import { AlertCircle, Check, Copy, Loader2, RotateCcw, Sparkles } from "lucide-react";
+import { Check, Copy, Loader2, RotateCcw, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import Link from "next/link";
 
 import { ApiError, api, type AiAnalysisResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { ErrorBox, FeedbackBoxButton } from "@/components/ui/feedback-box";
 import { cn } from "@/lib/utils";
 
 function detectLanguage(source: string): string {
@@ -137,30 +137,21 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
         )}
 
         {error && (
-          <div className="space-y-2 rounded-md border border-red-500/30 bg-red-500/10 p-3">
-            <div className="flex items-center gap-1.5 text-sm font-medium text-red-300">
-              <AlertCircle className="h-4 w-4" />
-              분석 요청 실패
-            </div>
-            <p className="text-xs text-red-200/90">{error.message}</p>
-            <div className="flex items-center gap-2 pt-1">
-              {isKeyMissing && (
-                <Link
-                  href="/settings"
-                  className="inline-flex items-center rounded border border-neutral-700 bg-surface-2 px-2 py-1 text-xs text-neutral-200 hover:bg-surface-3"
-                >
-                  설정 페이지로 이동
-                </Link>
-              )}
-              <button
-                type="button"
-                onClick={() => analyze.mutate()}
-                className="text-xs text-neutral-400 underline hover:text-neutral-200"
-              >
-                다시 시도
-              </button>
-            </div>
-          </div>
+          <ErrorBox
+            title="분석 요청 실패"
+            message={error.message}
+            actions={
+              <>
+                {isKeyMissing && (
+                  <FeedbackBoxButton href="/settings">설정으로 이동</FeedbackBoxButton>
+                )}
+                <FeedbackBoxButton onClick={() => analyze.mutate()}>
+                  <RotateCcw className="h-3 w-3" />
+                  다시 시도
+                </FeedbackBoxButton>
+              </>
+            }
+          />
         )}
 
         {data && (
