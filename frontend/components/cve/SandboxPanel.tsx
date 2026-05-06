@@ -17,6 +17,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
@@ -324,6 +325,61 @@ function ShellTerminal({ sessionId }: { sessionId: string }) {
           {running ? "…" : "실행"}
         </button>
       </form>
+    </div>
+  );
+}
+
+
+// PTY component is dynamically imported because xterm pulls DOM APIs
+// + a CSS file that next.js can't tree-shake into SSR. ssr: false avoids
+// hydration mismatch and skips the bundle for users who never click the
+// PTY tab.
+const PtyTerminalDynamic = dynamic(
+  () => import("./PtyTerminal").then((m) => m.PtyTerminal),
+  { ssr: false, loading: () => <p className="mt-3 text-xs text-neutral-500">터미널 로딩…</p> },
+);
+
+
+// Toggle wrapper between single-shot exec runner (PR 9-Z) and full
+// interactive PTY (PR 10-H). Single-shot is default — fast diagnostics
+// without xterm bundle download. PTY tab loads xterm.js on demand.
+function SessionShell({ sessionId }: { sessionId: string }) {
+  const [mode, setMode] = useState<"single" | "pty">("single");
+  return (
+    <div className="mt-3">
+      <div className="flex items-center gap-1 text-[11px] text-neutral-400">
+        <span className="text-neutral-500">모드:</span>
+        <button
+          type="button"
+          onClick={() => setMode("single")}
+          className={cn(
+            "rounded px-2 py-0.5 transition-colors",
+            mode === "single"
+              ? "bg-neutral-100 text-neutral-900"
+              : "border border-neutral-700 hover:border-neutral-500 hover:text-neutral-100",
+          )}
+        >
+          단발 exec
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("pty")}
+          className={cn(
+            "rounded px-2 py-0.5 transition-colors",
+            mode === "pty"
+              ? "bg-neutral-100 text-neutral-900"
+              : "border border-neutral-700 hover:border-neutral-500 hover:text-neutral-100",
+          )}
+          title="xterm.js + WebSocket PTY — vim, less, top, 인터랙티브 셸 등 가능"
+        >
+          인터랙티브 PTY
+        </button>
+      </div>
+      {mode === "single" ? (
+        <ShellTerminal sessionId={sessionId} />
+      ) : (
+        <PtyTerminalDynamic sessionId={sessionId} />
+      )}
     </div>
   );
 }
@@ -981,7 +1037,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                 </details>
               )}
               {session.status === "running" && (
-                <ShellTerminal sessionId={session.id} />
+                <SessionShell sessionId={session.id} />
               )}
               {session.error && (
                 <p className="mt-2 text-red-300">오류: {session.error}</p>
