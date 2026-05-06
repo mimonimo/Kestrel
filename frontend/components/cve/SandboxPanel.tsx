@@ -1124,8 +1124,8 @@ function SynthesisTimeline({
   })();
 
   return (
-    <div className="space-y-3 rounded border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
-      <div className="flex items-center justify-between">
+    <div className="space-y-3 rounded border border-neutral-800 bg-surface-2 p-3 text-xs">
+      <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
         <div className="flex items-center gap-1.5 text-amber-200">
           <Sparkles className="h-3.5 w-3.5" />
           <span className="font-medium">AI 합성 진행 상황</span>
@@ -1136,7 +1136,7 @@ function SynthesisTimeline({
             onClick={onCancel}
             size="sm"
             variant="ghost"
-            className="h-7 px-2 text-amber-200/70"
+            className="h-7 px-2 text-neutral-300 hover:text-neutral-100"
           >
             연결 끊기
           </Button>
@@ -1147,7 +1147,7 @@ function SynthesisTimeline({
             onClick={onRetry}
             size="sm"
             variant="ghost"
-            className="h-7 px-2 text-amber-200"
+            className="h-7 px-2 text-amber-200 hover:text-amber-100"
           >
             <RefreshCw className="mr-1 h-3 w-3" />
             재시도
@@ -1155,7 +1155,7 @@ function SynthesisTimeline({
         )}
       </div>
 
-      <ul className="space-y-1">
+      <ul className="space-y-2">
         {phases.map((phase, i) => {
           const entry = log.find((e) => e.phase === phase);
           const done = seen.has(phase);
@@ -1173,7 +1173,7 @@ function SynthesisTimeline({
                 ) : isCurrent ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-300" />
                 ) : (
-                  <Circle className="h-3.5 w-3.5 text-neutral-700" />
+                  <Circle className="h-3.5 w-3.5 text-neutral-600" />
                 )}
               </span>
               <div className="flex-1">
@@ -1183,10 +1183,10 @@ function SynthesisTimeline({
                     done
                       ? isFailedHere
                         ? "text-rose-200"
-                        : "text-amber-100"
+                        : "text-emerald-200"
                       : isCurrent
                         ? "text-amber-200"
-                        : "text-neutral-500",
+                        : "text-neutral-300",
                   )}
                 >
                   {PHASE_LABEL[phase] ?? phase}
@@ -1195,7 +1195,11 @@ function SynthesisTimeline({
                   <div
                     className={cn(
                       "mt-0.5 break-words",
-                      isFailedHere ? "text-rose-200/80" : "text-amber-100/70",
+                      isFailedHere
+                        ? "text-rose-200"
+                        : isCurrent
+                          ? "text-amber-100"
+                          : "text-neutral-400",
                     )}
                   >
                     {entry.message}
