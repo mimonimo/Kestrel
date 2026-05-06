@@ -567,7 +567,9 @@ function ErrorBox({
 // Non-error informational pause (cooldown / waiting / cached_hit). Same
 // shape as ErrorBox so the layout doesn't shift, but amber tone parallels
 // the "AI 합성 진행 상황" header — communicates "scheduled retry / 안내"
-// rather than alarm.
+// rather than alarm. Body uses neutral light text instead of tinted
+// amber-on-amber (which had poor contrast); amber stays only on the
+// border/icon/title where it actually carries meaning.
 function NoticeBox({
   title,
   message,
@@ -582,17 +584,17 @@ function NoticeBox({
   return (
     <div
       className={cn(
-        "space-y-1 rounded border border-amber-500/40 bg-amber-500/10 text-amber-100",
-        size === "sm" ? "p-2 text-[11px]" : "p-3 text-xs",
+        "space-y-1.5 rounded border border-amber-500/40 bg-surface-2",
+        size === "sm" ? "p-2.5 text-[11px]" : "p-3 text-xs",
       )}
       role="status"
     >
-      <div className="flex items-center gap-1.5">
-        <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+      <div className="flex items-center gap-1.5 text-amber-200">
+        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
         <span className="font-medium">{title}</span>
       </div>
-      <p className="break-words leading-relaxed text-amber-100/95">{message}</p>
-      {hint && <p className="leading-relaxed text-amber-200/85">{hint}</p>}
+      <p className="break-words leading-relaxed text-neutral-100">{message}</p>
+      {hint && <p className="leading-relaxed text-neutral-300">{hint}</p>}
     </div>
   );
 }
