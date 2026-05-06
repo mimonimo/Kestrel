@@ -558,8 +558,41 @@ function ErrorBox({
         <AlertCircle className="h-3.5 w-3.5 shrink-0 text-rose-300" />
         <span className="font-medium">{title}</span>
       </div>
-      <p className="break-words text-rose-100/90">{message}</p>
-      {hint && <p className="text-rose-200/80">{hint}</p>}
+      <p className="break-words leading-relaxed text-rose-100/90">{message}</p>
+      {hint && <p className="leading-relaxed text-rose-200/80">{hint}</p>}
+    </div>
+  );
+}
+
+// Non-error informational pause (cooldown / waiting / cached_hit). Same
+// shape as ErrorBox so the layout doesn't shift, but amber tone parallels
+// the "AI 합성 진행 상황" header — communicates "scheduled retry / 안내"
+// rather than alarm.
+function NoticeBox({
+  title,
+  message,
+  hint,
+  size = "md",
+}: {
+  title: string;
+  message: string;
+  hint?: string;
+  size?: "sm" | "md";
+}) {
+  return (
+    <div
+      className={cn(
+        "space-y-1 rounded border border-amber-500/40 bg-amber-500/10 text-amber-100",
+        size === "sm" ? "p-2 text-[11px]" : "p-3 text-xs",
+      )}
+      role="status"
+    >
+      <div className="flex items-center gap-1.5">
+        <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-300" />
+        <span className="font-medium">{title}</span>
+      </div>
+      <p className="break-words leading-relaxed text-amber-100/95">{message}</p>
+      {hint && <p className="leading-relaxed text-amber-200/85">{hint}</p>}
     </div>
   );
 }
@@ -1211,7 +1244,18 @@ function SynthesisTimeline({
         })}
       </ul>
 
-      {error && <ErrorBox title="합성 실패" message={error} size="sm" />}
+      {error && (seen.has("cooldown") ? (
+        <NoticeBox
+          title="합성 cooldown 중"
+          message={error}
+          hint="즉시 재시도가 필요하면 forceRegenerate=true 로 다시 시도하거나 cooldown 만료를 기다리세요."
+          size="sm"
+        />
+      ) : seen.has("cached_hit") ? (
+        <NoticeBox title="이미 검증된 캐시 재사용" message={error} size="sm" />
+      ) : (
+        <ErrorBox title="합성 실패" message={error} size="sm" />
+      ))}
 
       {running && (
         <p className="text-[11px] text-amber-200/60">

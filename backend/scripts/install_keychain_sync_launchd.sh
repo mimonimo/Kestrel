@@ -28,7 +28,10 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 LABEL="com.kestrel.creds-sync"
-SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/sync_claude_creds_from_keychain.sh"
+# Use the refresh+sync wrapper so the cron actually maintains a fresh
+# token, not just copies whatever is in Keychain (which itself may be
+# expired). See refresh_and_sync_claude_creds.sh header for details.
+SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/refresh_and_sync_claude_creds.sh"
 PLIST_DIR="$HOME/Library/LaunchAgents"
 PLIST_PATH="$PLIST_DIR/$LABEL.plist"
 LOG_DIR="$HOME/Library/Logs"
