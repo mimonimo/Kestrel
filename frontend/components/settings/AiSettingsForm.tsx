@@ -266,19 +266,19 @@ function CredentialList({
         })}
       </ul>
       {activate.isError && (
-        <p className="text-xs text-red-400">
+        <p className="text-xs text-rose-400">
           활성화에 실패했습니다:{" "}
           {activate.error instanceof ApiError ? activate.error.message : "알 수 없는 오류"}
         </p>
       )}
       {remove.isError && (
-        <p className="text-xs text-red-400">
+        <p className="text-xs text-rose-400">
           삭제에 실패했습니다:{" "}
           {remove.error instanceof ApiError ? remove.error.message : "알 수 없는 오류"}
         </p>
       )}
       {updateModel.isError && (
-        <p className="text-xs text-red-400">
+        <p className="text-xs text-rose-400">
           모델 변경에 실패했습니다:{" "}
           {updateModel.error instanceof ApiError
             ? updateModel.error.message
@@ -510,7 +510,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
 
       <div className="flex items-center justify-between">
         <div className="min-h-[18px] text-xs">
-          {errorMsg && <span className="text-red-400">{errorMsg}</span>}
+          {errorMsg && <span className="text-rose-400">{errorMsg}</span>}
         </div>
         <Button type="submit" size="md" disabled={!canSubmit}>
           {create.isPending ? (

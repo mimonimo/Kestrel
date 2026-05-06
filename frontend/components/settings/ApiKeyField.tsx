@@ -128,7 +128,7 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
         <p className="text-xs text-emerald-400">저장되었고, 백그라운드에서 재수집을 시작했습니다.</p>
       )}
       {status === "error" && errorMsg && (
-        <p className="text-xs text-red-400">저장 또는 재수집 요청 실패: {errorMsg}</p>
+        <p className="text-xs text-rose-400">저장 또는 재수집 요청 실패: {errorMsg}</p>
       )}
     </div>
   );

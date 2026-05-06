@@ -135,7 +135,7 @@ export function TicketControl({ cveId }: Props) {
             onChange={(e) => setNote(e.target.value)}
             maxLength={4000}
           />
-          {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+          {error && <p className="mt-1 text-xs text-rose-400">{error}</p>}
           <div className="mt-2 flex items-center justify-between text-[11px] text-neutral-500">
             <span>{ticket ? `최근 갱신 ${new Date(ticket.updatedAt).toLocaleString("ko-KR")}` : "아직 등록되지 않음"}</span>
             <Button

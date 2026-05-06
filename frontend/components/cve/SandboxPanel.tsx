@@ -279,7 +279,7 @@ function ShellTerminal({ sessionId }: { sessionId: string }) {
           <div key={l.id} className="mb-1.5">
             <div className="text-emerald-300">$ {l.command}</div>
             {l.error ? (
-              <div className="whitespace-pre-wrap text-red-300">{l.error}</div>
+              <div className="whitespace-pre-wrap text-rose-300">{l.error}</div>
             ) : (
               <>
                 <pre className="whitespace-pre-wrap text-neutral-300">
@@ -939,7 +939,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                     session.status === "running"
                       ? "bg-emerald-500/15 text-emerald-300"
                       : session.status === "failed"
-                      ? "bg-red-500/15 text-red-300"
+                      ? "bg-rose-500/15 text-rose-300"
                       : "bg-neutral-700/40 text-neutral-300",
                   )}
                 >
@@ -1020,7 +1020,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                 <SessionShell sessionId={session.id} />
               )}
               {session.error && (
-                <p className="mt-2 text-red-300">오류: {session.error}</p>
+                <p className="mt-2 text-rose-300">오류: {session.error}</p>
               )}
             </div>
 

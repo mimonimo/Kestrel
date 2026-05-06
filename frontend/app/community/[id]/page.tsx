@@ -7,6 +7,7 @@ import { ArrowLeft, Eye, MessageSquare, Trash2 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { ErrorBox } from "@/components/ui/feedback-box";
 import { CommentThread } from "@/components/community/CommentThread";
 import { formatRelativeKo } from "@/lib/format";
 
@@ -44,9 +45,10 @@ export default function PostDetailPage() {
       {isPending ? (
         <div className="h-40 animate-pulse rounded-lg border border-neutral-800 bg-surface-1/50" />
       ) : isError || !data ? (
-        <div className="rounded border border-red-900/40 bg-red-950/30 p-6 text-sm text-red-300">
-          글을 불러오지 못했습니다.
-        </div>
+        <ErrorBox
+          title="글을 불러오지 못했습니다"
+          message="잠시 후 다시 시도하거나 백엔드 상태를 확인해 보세요."
+        />
       ) : (
         <article className="rounded-lg border border-neutral-800 bg-surface-1 p-6">
           <header className="mb-4 border-b border-neutral-800 pb-4">

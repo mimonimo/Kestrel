@@ -95,7 +95,7 @@ export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
               이 CVE에 연결되어 게시됩니다.
             </p>
           )}
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && <p className="text-xs text-rose-400">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={onClose} disabled={create.isPending}>
               취소

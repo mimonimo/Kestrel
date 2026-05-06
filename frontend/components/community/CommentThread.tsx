@@ -78,7 +78,7 @@ export function CommentThread({ postId, vulnerabilityId }: Props) {
           onChange={(e) => setContent(e.target.value)}
           maxLength={4000}
         />
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error && <p className="text-xs text-rose-400">{error}</p>}
         <div className="flex justify-end">
           <Button type="submit" size="sm" disabled={create.isPending || !content.trim()}>
             {create.isPending ? "등록 중..." : "댓글 등록"}

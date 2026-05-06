@@ -95,7 +95,7 @@ export function MyAssetsPanel() {
       {isLoading ? (
         <p className="text-xs text-neutral-500">매칭 중…</p>
       ) : isError ? (
-        <p className="text-xs text-red-400">매칭 API 호출에 실패했습니다.</p>
+        <p className="text-xs text-rose-400">매칭 API 호출에 실패했습니다.</p>
       ) : sortedItems.length === 0 ? (
         <p className="text-xs text-neutral-500">
           등록된 자산과 일치하는 CVE가 아직 수집되지 않았습니다.
