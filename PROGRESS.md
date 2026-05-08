@@ -1109,6 +1109,41 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-AB — 기간 필터 인라인 이동 + AI 분석 안내 문구 사용자 톤 ✅
+
+**완료일:** 2026-05-08
+
+> 사용자 보고: "기간 수정도 총 xx건 옆에 현재 날짜 보여주는 곳에서 바로 적용 가능하도록 이동 조치. 입력은 사용자가 편리하게 할 수 있도록 할것." 사이드바 FilterPanel 의 "기간" FilterGroup 으로 가야만 기간을 바꿀 수 있던 두-단계 흐름을 → 결과 헤더의 코퍼스 범위 배지 자체가 클릭형 popover 가 되도록 한-단계로 줄였다. 같이 묶어 AiAnalysisPanel 의 안내 문구도 LLM 내부 동작 설명에서 "보안 운영팀 사용 가능" 사용자 톤으로 정리.
+
+**`frontend/components/dashboard/DateRangeControl.tsx` — 신규**
+- 비활성 상태에서는 기존 `CorpusRange` 와 동일한 `데이터 YYYY.MM.DD ~ YYYY.MM.DD` 배지 (corpus 전체 publishedAt 범위, `/search/facets` 60s TTL 캐시 활용) — 사용자 선호: 정보 손실 없이 클릭 가능 surface 만 추가.
+- 활성 상태에서는 호박색 강조 + `기간 YYYY.MM.DD ~ YYYY.MM.DD` 라벨 + ✕ 1-click 해제 (popover 안 열고도 즉시 reset).
+- 클릭 시 popover: 5 개 프리셋 (오늘 / 7일 / 30일 / 90일 / 1년) + `시작 / 종료` date input 두 개 + 코퍼스 범위 hint + 초기화/완료 푸터. **프리셋과 직접 입력이 동일 화면에서 동시 노출** — 기존엔 "직접 입력" 칩을 추가로 클릭해야 input 이 나타났다 (사용자 보고의 "편리한 입력" 핵심).
+- date input 의 `min`/`max` 가 corpus 범위 + 반대편 endpoint 로 자동 클램프 — "시작 > 종료" / "코퍼스 밖 날짜" 같은 잘못된 범위를 input level 에서 봉쇄.
+- 외부 클릭 + Esc 자동 닫힘 (`mousedown` + `keydown` window listener, `wrapperRef.contains` 가드).
+
+**`frontend/app/page.tsx` 인라인 배치**
+- 결과 헤더(`총 X건`)를 `flex flex-wrap items-center gap-x-2` 로 바꾸고 `<DateRangeControl />` 을 두 번째 자식으로 배치. 기존 `CorpusRange()` 로컬 컴포넌트 + `useQuery import` 일부 제거.
+- onChange 가 `url.set({ filters: {...url.filters, fromDate, toDate}, page: 1 })` 로 라우팅 — URL state / useCveSearch / pagination 모두 무수정. 단일 source-of-truth 유지.
+
+**`frontend/components/search/FilterPanel.tsx` 정리**
+- "기간" FilterGroup, `DateInput` 헬퍼, `PresetKey`/`DATE_PRESETS`/`presetForDates`/`todayIso`/`isoDaysAgo`/`customMode` 상태 모두 삭제 (138 → 약 75 라인 감소). FilterState 의 `fromDate`/`toDate` 키는 URL 직렬화·backend 쿼리 hook 이 의존하므로 그대로 유지.
+- `useState` import 도 남는 사용처가 없어 제거. `tsc --noEmit` 통과.
+
+**AiAnalysisPanel 안내 문구 (사용자 톤)**
+- 전: "LLM을 활용해 공격 기법·페이로드 예시·대응 방안을 생성합니다. 설정 페이지에서 등록한 제공자·모델·API 키가 사용됩니다."
+- 후: "이 CVE 의 공격 시나리오, 재현 가능한 PoC 페이로드, 그리고 즉시 적용 가능한 차단 패치 항목을 한 번에 받아봅니다. 분석 결과는 보안 운영팀이 그대로 점검·티켓팅에 사용할 수 있는 형태로 정리됩니다."
+- 사용자 메모리: "내가 어디가서 설명하는게 아니라 서비스 이용자를 위한 설명이 핵심" — 기능 *동작* 설명에서 *사용자 효익* 설명으로 전환.
+
+**왜 사이드바에서 완전히 빼는가 (duplicate 가 아니라 move)**
+- 기간은 결과 *볼륨* 과 가장 직접적으로 결합된 필터다 — "총 X건" 옆에 두면 "지금 보고 있는 X건이 어떤 기간 슬라이스인지" 한 줄에서 읽힌다. 사이드바 분리 시 사용자가 두 곳을 동기화해 봐야 했고, 사이드바를 *하나 더* 두면 어느 쪽이 truth 인지 헷갈린다. URL state 단일 source 원칙 유지.
+- severity / OS / vuln-type / 도메인은 chip group 의 *공간 배치* 가 의미를 전달 (한눈에 토글) — 사이드바 잔존이 자연스럽다. 기간만 떼는 게 정합.
+
+**알려진 한계**
+- popover 가 절대 위치(`absolute left-0 top-[calc(100%+6px)]`) 라 좁은 뷰포트에서 우측 잘림 가능 — 결과 헤더 폭이 충분히 넓고 popover 자체가 300px 이라 현재 `max-w-7xl` 레이아웃에서는 안전. mobile 대응이 필요하면 추후 viewport-aware 반전 로직 추가.
+
+---
+
 ### PR 9-P — generic lab × backend probe 라이브 통합 검증 + sqli probe 모던 CPU 보정 ✅
 
 **완료일:** 2026-05-04
