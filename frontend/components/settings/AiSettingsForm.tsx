@@ -23,34 +23,11 @@ interface ProviderMeta {
   requiresApiKey?: boolean;
 }
 
+// PR 10-T: provider 매트릭스 단순화. 사용자 요청 — claude_cli 외 모두
+// 제거. AI 분석/합성 의 truth oracle 이 모두 백엔드 probe 기반이라
+// 모델 다변화의 의미 적고, 다중 provider 가 인증/오류 매트릭스만
+// 키워 UX 가 조잡해짐. 호스트 Claude 구독 단일 경로로 정리.
 const PROVIDERS: ProviderMeta[] = [
-  {
-    value: "openai",
-    label: "OpenAI",
-    models: [
-      "gpt-5.4-nano",
-      "gpt-5.4-mini",
-      "gpt-5.4",
-      "gpt-5.3-chat-latest",
-      "gpt-5.2",
-      "gpt-5.1",
-      "gpt-5-mini",
-      "gpt-5",
-      "gpt-4o-mini",
-      "gpt-4o",
-      "gpt-4.1",
-      "gpt-4.1-mini",
-    ],
-  },
-  {
-    value: "anthropic",
-    label: "Anthropic",
-    models: [
-      "claude-haiku-4-5-20251001",
-      "claude-sonnet-4-6",
-      "claude-opus-4-7",
-    ],
-  },
   {
     value: "claude_cli",
     label: "Claude Code CLI (로컬 구독)",
@@ -62,54 +39,6 @@ const PROVIDERS: ProviderMeta[] = [
     requiresApiKey: false,
     note:
       "별도 API 키 없이 본인 Claude Code 구독을 사용합니다. 백엔드 이미지에 claude CLI가 설치되어 있고 ~/.claude 가 마운트되어 있어야 합니다. README의 'Claude Code CLI' 섹션 참고.",
-  },
-  {
-    value: "gemini",
-    label: "Google Gemini (무료 티어)",
-    defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-    models: [
-      "gemini-2.5-flash",
-      "gemini-2.5-pro",
-      "gemini-2.0-flash",
-      "gemini-2.0-flash-lite",
-      "gemini-1.5-flash",
-      "gemini-1.5-pro",
-    ],
-    note: "aistudio.google.com에서 무료 키 발급, 일 1,500 요청(Flash) 제한",
-  },
-  {
-    value: "groq",
-    label: "Groq (무료 티어)",
-    defaultBaseUrl: "https://api.groq.com/openai/v1",
-    models: [
-      "llama-3.3-70b-versatile",
-      "llama-3.1-8b-instant",
-      "mixtral-8x7b-32768",
-      "gemma2-9b-it",
-    ],
-    note: "console.groq.com에서 키 발급, 분당 30 · 일 14,400 요청 제한",
-  },
-  {
-    value: "openrouter",
-    label: "OpenRouter (:free 모델)",
-    defaultBaseUrl: "https://openrouter.ai/api/v1",
-    models: [
-      "deepseek/deepseek-chat-v3-0324:free",
-      "google/gemini-2.0-flash-exp:free",
-      "meta-llama/llama-3.3-70b-instruct:free",
-      "qwen/qwen-2.5-72b-instruct:free",
-    ],
-    note: "openrouter.ai/keys에서 키 발급, :free 모델만 무료",
-  },
-  {
-    value: "cerebras",
-    label: "Cerebras (무료 티어)",
-    defaultBaseUrl: "https://api.cerebras.ai/v1",
-    models: [
-      "llama-3.3-70b",
-      "llama3.1-8b",
-    ],
-    note: "cloud.cerebras.ai에서 키 발급, 일 1M 토큰 무료",
   },
 ];
 

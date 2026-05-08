@@ -594,16 +594,22 @@ async def _dispatch_text(
     system: str,
     user: str,
     *,
-    force_json: bool,
+    force_json: bool,  # noqa: ARG001 — kept for legacy call sites; claude_cli ignores
 ) -> str:
+    """Dispatch the LLM call. PR 10-T 후 claude_cli 단일 경로만 지원.
+
+    OpenAI/Anthropic/Gemini/Groq/OpenRouter/Cerebras 분기는 사용자 요청
+    으로 제거. DB 에 남아 있는 비-claude_cli credential 은 활성화 시도
+    가 즉시 명확한 에러로 reject 되어 사용자가 settings 에서 새 키로
+    바꾸도록 유도.
+    """
     provider = (cred.provider or "").lower()
-    if provider in _OPENAI_COMPATIBLE:
-        return await _call_openai_text(cred, system, user, force_json=force_json)
-    if provider == "anthropic":
-        return await _call_anthropic_text(cred, system, user)
     if provider == "claude_cli":
         return await _call_claude_cli_text(cred, system, user)
-    raise AiAnalyzerNotConfigured(f"지원하지 않는 AI 제공자입니다: {cred.provider}")
+    raise AiAnalyzerNotConfigured(
+        f"PR 10-T 이후 claude_cli 만 지원합니다 (현재 활성: {cred.provider}). "
+        "설정에서 'Claude Code CLI (로컬 구독)' 으로 새 credential 을 등록하고 활성화하세요."
+    )
 
 
 async def call_llm(
