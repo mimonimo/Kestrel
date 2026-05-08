@@ -209,6 +209,15 @@ html.light .bg-red-500\/15 { background-color: #fecaca; }
 html.light .bg-red-600\/20 { background-color: #fecaca; }
 html.light .bg-green-600\/20 { background-color: #bbf7d0; }
 
+/* `bg-black/{20,40,60}` is used as a code-block / terminal-like surface
+   in dark mode (ContainerAccessHelper, ShellTerminal scrollback before
+   removal). On a white page that black bg makes any tinted text on top
+   illegible (dark-on-dark). Remap to light gray steps so the same
+   element reads as a code block in both modes. */
+html.light .bg-black\/20 { background-color: #f4f4f5; } /* neutral-100 */
+html.light .bg-black\/40 { background-color: #e4e4e7; } /* neutral-200 */
+html.light .bg-black\/60 { background-color: #d4d4d8; } /* neutral-300 */
+
 html.light ::-webkit-scrollbar-track { background: #fafafa; }
 html.light ::-webkit-scrollbar-thumb { background: #d4d4d8; }
 html.light ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }

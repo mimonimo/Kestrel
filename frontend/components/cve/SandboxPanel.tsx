@@ -199,7 +199,7 @@ function ContainerAccessHelper({ containerName }: { containerName: string }) {
         <span className="text-neutral-500">— 호스트 터미널에서 실행</span>
       </div>
       <div className="flex items-center gap-2">
-        <code className="flex-1 select-all overflow-x-auto rounded bg-black/40 px-2 py-1.5 font-mono text-[11px] text-emerald-300">
+        <code className="flex-1 select-all overflow-x-auto rounded border border-neutral-800 bg-neutral-900 px-2 py-1.5 font-mono text-[11px] text-emerald-300">
           {cmd}
         </code>
         <button

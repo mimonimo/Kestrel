@@ -11,9 +11,41 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
+
+
+# Workaround for the macOS host bind-mount inode-swap problem (PR 10-P).
+# claude-code on macOS atomically saves ~/.claude.json (write tmp + rename)
+# whenever it refreshes OAuth, which orphans the docker bind mount of
+# that single file. We side-step by *never* using the mounted single
+# file directly: the host's launchd cron mirrors it into the directory
+# mount at ~/.claude/_kestrel_claude_json_mirror.json, and on each CLI
+# call we copy that mirror into a writable HOME and run the CLI with
+# HOME=that_path. The directory mount stays stable because docker
+# resolves entries through the dir's inode each time.
+_KESTREL_CLAUDE_HOME = "/tmp/kestrel_claude_home"
+_CLAUDE_JSON_MIRROR = "/home/app/.claude/_kestrel_claude_json_mirror.json"
+
+
+def _ensure_kestrel_claude_home() -> str:
+    """Build a writable HOME with .claude/ symlinked to the mounted dir
+    + .claude.json refreshed from the mirror. Idempotent; safe per call."""
+    os.makedirs(_KESTREL_CLAUDE_HOME, exist_ok=True)
+    sym = os.path.join(_KESTREL_CLAUDE_HOME, ".claude")
+    if not os.path.lexists(sym):
+        try:
+            os.symlink("/home/app/.claude", sym)
+        except FileExistsError:
+            pass
+    if os.path.exists(_CLAUDE_JSON_MIRROR):
+        try:
+            shutil.copy2(_CLAUDE_JSON_MIRROR, os.path.join(_KESTREL_CLAUDE_HOME, ".claude.json"))
+        except OSError:
+            pass
+    return _KESTREL_CLAUDE_HOME
 
 import httpx
 from fastapi import HTTPException, status
@@ -363,11 +395,17 @@ async def _call_claude_cli_text(
         "--output-format",
         "text",
     ]
+    # Override HOME to a writable dir that always has a fresh .claude.json
+    # (from the mounted-directory mirror). See _ensure_kestrel_claude_home
+    # for why — works around macOS atomic-save inode swap.
+    env = os.environ.copy()
+    env["HOME"] = _ensure_kestrel_claude_home()
     try:
         proc = await asyncio.create_subprocess_exec(
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
     except FileNotFoundError as e:
         raise HTTPException(

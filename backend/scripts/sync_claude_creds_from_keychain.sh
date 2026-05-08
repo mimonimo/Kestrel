@@ -58,7 +58,22 @@ chmod 600 "$tmp"
 mv -f "$tmp" "$CRED_PATH"
 trap - EXIT
 
+# Mirror ~/.claude.json into the .claude/ directory so the backend
+# container can read it via the *directory* bind mount (which doesn't
+# suffer from the single-file inode-swap problem). The backend uses an
+# HOME override pointing at /tmp/kestrel_claude_home where .claude.json
+# is refreshed from this mirror on every CLI call. PR 10-P.
+CLAUDE_JSON="$HOME/.claude.json"
+MIRROR_PATH="$HOME/.claude/_kestrel_claude_json_mirror.json"
+if [ -f "$CLAUDE_JSON" ]; then
+  cp -f "$CLAUDE_JSON" "$MIRROR_PATH" 2>/dev/null || true
+  chmod 600 "$MIRROR_PATH" 2>/dev/null || true
+fi
+
 # Surface expiry so the user knows when to re-sync. (No secret data.)
 expires_at=$(/usr/bin/python3 -c 'import json,sys,datetime; d=json.load(open(sys.argv[1])); ts=d["claudeAiOauth"].get("expiresAt"); print(datetime.datetime.fromtimestamp(ts/1000).isoformat() if ts and ts > 1e12 else "unknown")' "$CRED_PATH")
 echo "synced: $CRED_PATH (expiresAt=$expires_at)"
+if [ -f "$MIRROR_PATH" ]; then
+  echo "mirror: $MIRROR_PATH"
+fi
 echo "참고: 컨테이너의 mount 가 read-only 라도 호스트가 파일을 새로 쓰면 즉시 새 토큰을 읽으므로 backend rebuild 는 불필요합니다."
