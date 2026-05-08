@@ -210,6 +210,29 @@ def _strip_fence(text: str) -> str:
     return t
 
 
+def _extract_first_json_object(raw: str) -> dict:
+    """Pull the first balanced JSON object out of a free-form LLM reply.
+
+    Same idea as ai_analyzer._extract_first_json_object — strict
+    json.loads rejects ``{...}\\n\\n해설`` (trailing prose) with
+    "Extra data". We strip fences then use raw_decode from the first
+    '{' so trailing content is harmless. Falls back to strict parse
+    on the whole string so the original error is informative.
+    """
+    text = _strip_fence(raw)
+    start = text.find("{")
+    if start != -1:
+        decoder = json.JSONDecoder()
+        try:
+            obj, _end = decoder.raw_decode(text[start:])
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            pass
+    # Fallback so the original error message surfaces if extraction failed
+    return json.loads(text)
+
+
 def _references_block(vuln: Vulnerability) -> str:
     if not vuln.references:
         return "(참고 링크 없음 — CVE 설명만 보고 추정해 작성)"
@@ -807,7 +830,7 @@ async def synthesize(
             log.warning("synthesizer.llm_failed", cve_id=cve_id, error=last_error)
             continue
         try:
-            parsed = json.loads(_strip_fence(raw))
+            parsed = _extract_first_json_object(raw)
         except json.JSONDecodeError as e:
             last_error = f"AI 응답 JSON 파싱 실패: {e}"
             log.warning("synthesizer.parse_failed", cve_id=cve_id, raw=raw[:300])

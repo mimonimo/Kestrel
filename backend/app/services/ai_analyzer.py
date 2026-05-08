@@ -202,21 +202,59 @@ async def _load_active_credential(db: AsyncSession) -> AiCredential:
     return cred
 
 
-def _parse_payload(raw: str) -> AiAnalysis:
-    """Accept either a raw JSON object or a JSON object wrapped in code fences."""
+def _extract_first_json_object(raw: str) -> dict:
+    """Pull the first balanced JSON object out of a free-form text reply.
+
+    LLMs (especially via the claude_cli text path with no force_json) often
+    return ``{ ... }\\n\\n해설...`` or markdown like
+    ``Here is the analysis:\\n```json\\n{ ... }\\n```\\nLet me know...``.
+    Strict ``json.loads`` rejects either of those with "Extra data".
+
+    Strategy:
+      1. Strip code fences if present.
+      2. Locate the first '{', then use ``raw_decode`` from that offset
+         to consume exactly one JSON object — trailing prose is ignored.
+      3. If that fails, fall back to the strict whole-string parse so
+         the original error surface stays informative.
+    """
     text = raw.strip()
+    # ``` or ```json fences
     if text.startswith("```"):
-        text = text.strip("`")
-        # Strip optional language hint like "json\n..."
-        if "\n" in text:
-            first, rest = text.split("\n", 1)
-            if len(first) <= 10:  # crude heuristic
-                text = rest
+        # Drop opening fence + optional language tag
+        nl = text.find("\n")
+        if nl != -1:
+            text = text[nl + 1 :]
+        # Drop trailing fence + anything after (preserve content up to last ```)
+        end_fence = text.rfind("```")
+        if end_fence != -1:
+            text = text[:end_fence]
+        text = text.strip()
+
+    # raw_decode from the first '{' so trailing prose is harmless
+    start = text.find("{")
+    if start != -1:
+        decoder = json.JSONDecoder()
+        try:
+            obj, _end = decoder.raw_decode(text[start:])
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            pass
+
+    # Fallback to strict parse — surfaces the original "Extra data" error
+    return json.loads(text)
+
+
+def _parse_payload(raw: str) -> AiAnalysis:
+    """Accept JSON in many shapes: raw object, fenced markdown, or with
+    trailing prose. Strict schema check after extraction."""
     try:
-        data = json.loads(text)
+        data = _extract_first_json_object(raw)
     except json.JSONDecodeError as e:
         log.exception("ai_analyzer.parse_failed", raw=raw[:500])
         raise HTTPException(status_code=502, detail=f"AI 응답 파싱 실패: {e}") from e
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=502, detail="AI 응답이 JSON 객체가 아닙니다.")
     try:
         mitigation = data["mitigation"]
         if not isinstance(mitigation, list):
