@@ -111,8 +111,9 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
         {!data && !analyze.isPending && !error && (
           <div className="flex flex-col items-start gap-2">
             <p className="text-sm text-neutral-400">
-              LLM을 활용해 공격 기법·페이로드 예시·대응 방안을 생성합니다. 설정 페이지에서
-              등록한 제공자·모델·API 키가 사용됩니다.
+              이 CVE 의 공격 시나리오, 재현 가능한 PoC 페이로드, 그리고 즉시 적용
+              가능한 차단 패치 항목을 한 번에 받아봅니다. 분석 결과는 보안 운영팀이
+              그대로 점검·티켓팅에 사용할 수 있는 형태로 정리됩니다.
             </p>
             <Button
               type="button"

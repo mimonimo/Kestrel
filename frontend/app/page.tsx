@@ -12,6 +12,7 @@ import { Pagination } from "@/components/search/Pagination";
 import { RefreshBar } from "@/components/dashboard/RefreshBar";
 import { MyAssetsPanel } from "@/components/dashboard/MyAssetsPanel";
 import { SortSelect } from "@/components/dashboard/SortSelect";
+import { DateRangeControl } from "@/components/dashboard/DateRangeControl";
 import { useCveSearch } from "@/hooks/useCveSearch";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useUrlState } from "@/lib/url-state";
@@ -21,33 +22,6 @@ import { sortVulnerabilities } from "@/lib/sort";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 20;
-
-// "데이터 YYYY.MM.DD ~ YYYY.MM.DD" — sourced from /search/facets so it
-// reflects the entire parsed corpus (publishedAt MIN..MAX) rather than
-// the currently filtered slice. Lets the operator gauge how much of the
-// CVE timeline the dashboard covers at a glance.
-function CorpusRange() {
-  const facets = useQuery({
-    queryKey: ["search", "facets"],
-    queryFn: () => api.getSearchFacets(),
-    staleTime: 60_000,
-  });
-  const lo = facets.data?.earliestPublishedAt;
-  const hi = facets.data?.latestPublishedAt;
-  if (!lo || !hi) return null;
-  const fmt = (iso: string) => {
-    const d = new Date(iso);
-    return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
-  };
-  return (
-    <span
-      className="ml-2 inline-flex items-center rounded border border-neutral-800 bg-surface-2 px-2 py-0.5 text-[11px] text-neutral-400"
-      title={`수집 데이터의 publishedAt 범위 — 전체 corpus 기준 (현재 필터와 무관)`}
-    >
-      데이터 {fmt(lo)} ~ {fmt(hi)}
-    </span>
-  );
-}
 
 function Dashboard() {
   const url = useUrlState();
@@ -137,17 +111,25 @@ function Dashboard() {
         />
 
         <div className="space-y-4">
-          <div className="flex items-baseline justify-between border-b border-neutral-800 pb-3">
-            <h2 className="text-sm text-neutral-400">
-              총{" "}
-              <span className="text-neutral-100 font-semibold">{activeData.total ?? "—"}</span>
-              건
-              <CorpusRange />
-              {bookmarksOnly && " · 즐겨찾기"}
+          <div className="flex items-baseline justify-between gap-3 border-b border-neutral-800 pb-3">
+            <h2 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-neutral-400">
+              <span>
+                총{" "}
+                <span className="text-neutral-100 font-semibold">{activeData.total ?? "—"}</span>
+                건
+              </span>
+              <DateRangeControl
+                fromDate={url.filters.fromDate}
+                toDate={url.filters.toDate}
+                onChange={({ fromDate, toDate }) =>
+                  url.set({ filters: { ...url.filters, fromDate, toDate }, page: 1 })
+                }
+              />
+              {bookmarksOnly && <span>· 즐겨찾기</span>}
               {url.query && !bookmarksOnly && (
-                <>
-                  {" "}· "<span className="text-neutral-200">{url.query}</span>" 검색 결과
-                </>
+                <span>
+                  · "<span className="text-neutral-200">{url.query}</span>" 검색 결과
+                </span>
               )}
             </h2>
             <div className="flex items-center gap-3">
