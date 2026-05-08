@@ -451,26 +451,38 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="block text-xs">
-          <span className="mb-1 block font-medium text-neutral-300">AI 제공자</span>
-          <select
-            value={provider}
-            onChange={(e) => {
-              const next = e.target.value;
-              setProvider(next);
-              const meta = PROVIDERS.find((p) => p.value === next) ?? PROVIDERS[0];
-              setModel(meta.models[0]);
-              setBaseUrl(meta.defaultBaseUrl ?? "");
-            }}
-            className="w-full rounded-md border border-neutral-800 bg-surface-2 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-600 focus:outline-none"
-          >
-            {PROVIDERS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {PROVIDERS.length > 1 ? (
+          <label className="block text-xs">
+            <span className="mb-1 block font-medium text-neutral-300">AI 제공자</span>
+            <select
+              value={provider}
+              onChange={(e) => {
+                const next = e.target.value;
+                setProvider(next);
+                const meta = PROVIDERS.find((p) => p.value === next) ?? PROVIDERS[0];
+                setModel(meta.models[0]);
+                setBaseUrl(meta.defaultBaseUrl ?? "");
+              }}
+              className="w-full rounded-md border border-neutral-800 bg-surface-2 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-600 focus:outline-none"
+            >
+              {PROVIDERS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          // PR 10-T 후 provider 가 1개 (claude_cli) 뿐이라 dropdown 의미
+          // 없음. 정적 라벨로 표시 — sandbox provider 매트릭스 단순화의
+          // 시각적 반영.
+          <div className="block text-xs">
+            <span className="mb-1 block font-medium text-neutral-300">AI 제공자</span>
+            <div className="flex h-[42px] w-full items-center rounded-md border border-neutral-800 bg-surface-2 px-3 text-sm text-neutral-100">
+              {providerMeta.label}
+            </div>
+          </div>
+        )}
 
         <label className="block text-xs">
           <span className="mb-1 block font-medium text-neutral-300">모델</span>

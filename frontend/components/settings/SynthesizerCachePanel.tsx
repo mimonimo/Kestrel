@@ -4,6 +4,7 @@ import { Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { ErrorBox } from "@/components/ui/feedback-box";
 import { api, type EvictedImage, type SynthesizeCacheEntry } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -62,9 +63,11 @@ export function SynthesizerCachePanel() {
 
   if (cache.error) {
     return (
-      <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
-        캐시 상태 조회 실패: {(cache.error as Error).message}
-      </div>
+      <ErrorBox
+        title="캐시 상태 조회 실패"
+        message={(cache.error as Error).message}
+        size="sm"
+      />
     );
   }
 
@@ -129,9 +132,7 @@ export function SynthesizerCachePanel() {
       </div>
 
       {gcError && (
-        <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
-          GC 실패: {gcError}
-        </div>
+        <ErrorBox title="GC 실패" message={gcError} size="sm" />
       )}
       {lastGc !== null && !gcError && (
         <GcResultBanner evicted={lastGc} />
