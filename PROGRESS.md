@@ -1109,6 +1109,48 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-X — 설정 페이지 샌드박스 세션 관리 + vulhub 동기화 패널 ✅
+
+**완료일:** 2026-05-08
+
+> 사용자 보고: "설정에서 샌드박스 관리가 가능하도록 개선부탁." 그동안 샌드박스 세션은 *각 CVE 상세 페이지* 안에서만 시작/정지가 가능했고, 동시에 여러 CVE 를 띄운 운영자는 어떤 세션이 살아 있는지 한눈에 확인할 길이 없었음. 컨테이너 슬롯이 30분 TTL 안에 회수되긴 하지만 즉시 정리·정지 surface 가 없으니 "방금 띄운 lab 정지" 같은 일상 작업이 답답. 설정 페이지에 통합 관리 패널 신설.
+
+**Backend — `GET /sandbox/sessions` 신규**
+- 새 응답 모델 `SandboxSessionSummary` — 풀 `SandboxSessionOut` 에서 `LabInfoOut`/`injection_points`/`candidate_rank` 같은 무거운 필드 제거하고 *목록에서 의미 있는* 6+3 필드만 노출 (id, cve_id, lab_kind, lab_source, status, container_name, target_url, created_at, expires_at, error). `vulnerability_id` 대신 `cve_id` 를 backend 에서 미리 resolve — `Vulnerability.id IN (...)` 한 번에 배치 lookup 으로 N+1 회피.
+- 기본 필터 = `status IN (pending, running)` 로 *지금 자원을 점유하고 있는* 세션만. 쿼리스트링 `include_stopped=true` 면 정지·만료·실패도 포함. `limit` 1-200 clamp.
+- Surface-on-read: 응답 시점에 `expires_at <= now()` 인 RUNNING 행은 한꺼번에 `EXPIRED` 로 transition + commit. sweeper 가 안 돌아도 패널 정확도가 유지되고, 다음 호출에서 자연스럽게 사라진다.
+- `POST /sandbox/sessions/reap` 신규 — 기존 `reap_expired_sessions(db)` 서비스 호출하고 `{reaped: int}` 반환. operator 가 컨테이너 슬롯을 즉시 비우고 싶을 때 강제 sweep 트리거.
+- `app/schemas/sandbox.py` 에 `SandboxSessionListResponse {items, runningCount, total}` 추가, sandbox API import 도 동기화.
+
+**Frontend — `components/settings/SandboxSessionsPanel.tsx` 신규**
+- React Query — 10s staleTime + 30s refetchInterval 로 setting 페이지 열린 동안 패널이 자동으로 최신화. `includeStopped` 토글이 queryKey 의 한 자리이므로 키 바뀌면 캐시 분기.
+- 헤더 통계 — `현재 실행 중 N개 / 목록 표시 M개 / 정지·만료된 세션도 보기` 체크박스 + `새로고침` + `만료 세션 정리` 버튼. Reap 결과는 `NoticeBox` 로 한 줄 요약 ("N개 세션이 정리되었습니다" / "정리할 세션이 없습니다").
+- 세션 카드 — 상태 배지(`pending/running/stopped/expired/failed` 5종 — 각자 색조+아이콘), CVE id 클릭 시 `/cve/<id>` deep-link, 출처 칩(`vulhub/표준/AI 합성`), `lab_kind` font-mono, 시작/만료 상대시간 (`5분 전 / 12분 후`), `containerName`, 에러 본문, 우측에 `정지` 버튼 (running/pending 일 때만 활성).
+- vulhub 동기화 sub-section — `POST /sandbox/vulhub/sync` 호출 + 결과 요약 배너 (폴더 N개 검사 / 환경 M개 갱신 / 후보 K개 / 건너뜀 L개). errors 배열은 `<details>` 로 접어 5건까지만 inline.
+- `lib/api.ts` 에 helper 3종 (`listSandboxSessions`, `reapSandboxSessions`, `syncVulhub`) + 타입 3종 (`SandboxSessionSummary`, `SandboxSessionListResponse`, `VulhubSyncResponse`).
+
+**설정 페이지 배치 (`app/settings/page.tsx`)**
+- 새 섹션 "실행 중인 샌드박스 세션" 을 "합성된 실습 환경 저장 공간" 바로 위에 배치 — *세션 -> 저장공간 -> 환경 분포* 순으로 인프라 깊이가 깊어지는 흐름.
+
+**왜 cve_id 를 backend 에서 resolve 했는가**
+- `SandboxSession` 은 `vulnerability_id (UUID)` 만 보유. 프론트엔드가 직접 `vulnerability_id → cve_id` 매핑하려면 (a) 별도 API 호출 (N+1) 또는 (b) Vulnerability 전체 테이블 캐시. 둘 다 비효율. 백엔드에서 vuln_ids set 만들어 한 번에 `IN (...)` 쿼리 후 dict 로 채워 넣는 패턴이 가장 짧고 빠르다 (50 row 기준 단일 query).
+
+**왜 GET /sandbox/sessions 가 응답 안에서 행을 commit 하는가 (read-side write)**
+- API 호출이 *idempotent GET* 이지만 응답 결과의 의미는 "지금 이 시점의 상태" — 그러니 expired 인데 RUNNING 으로 보이면 거짓말. sweeper 의 30s schedule 사이에서도 사용자에게 일관된 view 를 주기 위해 read 시점에 transition. side-effect 가 있긴 하나 transition 은 monotonic (RUNNING→EXPIRED 한 방향) + idempotent (이미 EXPIRED 면 no-op) 이므로 GET semantics 는 유지된다.
+
+**검증 (라이브 API)**
+- `GET /sandbox/sessions` → 200, `total=3 / runningCount=3 / 모두 status="running"`. (이전 만료 세션 5건은 transition 후 다음 응답에서 제거됨.)
+- `GET /sandbox/sessions?include_stopped=true&limit=5` → expired 5건 모두 노출 + cveId 미리 채워짐.
+- `POST /sandbox/sessions/reap` → `{"reaped": 0}` (이미 모두 transition 됨).
+- `tsc --noEmit` 통과.
+
+**알려진 한계 / 다음 PR 으로 넘김**
+- 패널이 패널 단위로 30s polling — 다중 사용자가 같은 세션을 동시에 정지시키는 race 는 백엔드의 idempotent stop_session 으로 흡수되지만 UI 가 잠시 stale 상태일 수 있음. WebSocket 푸시는 setting-page 가치 대비 over-engineering.
+- 정지 동작은 단건만 — `Stop all` 일괄 버튼은 "운영자 실수로 모든 lab 끄기" 위험이 있어 의도적으로 안 깔았음. 필요 시 후속.
+- 백엔드 source 가 image baked — 본 PR 은 `docker compose cp` 로 라이브 검증했고, full container 재생성 시점에는 `docker compose build backend && up -d backend` 한 번 필요 (그 외 dev container 는 mount 됨).
+
+---
+
 ### PR 10-AA — In-app copy 보안 분석가 톤으로 전면 정리 ✅
 
 **완료일:** 2026-05-08
