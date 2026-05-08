@@ -45,7 +45,8 @@ export function MyAssetsPanel() {
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-semibold text-neutral-100">내 시스템 취약점</h2>
             <p className="mt-1 text-sm text-neutral-300">
-              사용 중인 벤더 · 제품을 등록하면 CPE 매칭을 통해 관련 CVE만 별도로 모아볼 수 있습니다.
+              운영 중인 벤더·제품을 등록해 두면 그 자산에 영향을 주는 CVE 만
+              따로 모아 보여드립니다. 매일 새로 들어오는 취약점도 자동 반영됩니다.
             </p>
           </div>
           <Link
@@ -93,12 +94,12 @@ export function MyAssetsPanel() {
       </header>
 
       {isLoading ? (
-        <p className="text-xs text-neutral-500">매칭 중…</p>
+        <p className="text-xs text-neutral-500">자산과 일치하는 CVE 를 찾는 중…</p>
       ) : isError ? (
-        <p className="text-xs text-rose-400">매칭 API 호출에 실패했습니다.</p>
+        <p className="text-xs text-rose-400">자산 매칭에 실패했습니다. 잠시 후 다시 시도해 주세요.</p>
       ) : sortedItems.length === 0 ? (
         <p className="text-xs text-neutral-500">
-          등록된 자산과 일치하는 CVE가 아직 수집되지 않았습니다.
+          현재 등록된 자산과 일치하는 CVE 가 아직 없습니다.
         </p>
       ) : (
         <>

@@ -56,7 +56,7 @@ export function SynthesizerCachePanel() {
   if (cache.isLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-neutral-500">
-        <Loader2 className="h-4 w-4 animate-spin" /> 캐시 상태 조회 중…
+        <Loader2 className="h-4 w-4 animate-spin" /> 저장 공간 사용량을 확인하는 중…
       </div>
     );
   }
@@ -64,7 +64,7 @@ export function SynthesizerCachePanel() {
   if (cache.error) {
     return (
       <ErrorBox
-        title="캐시 상태 조회 실패"
+        title="저장 공간 정보를 불러오지 못했습니다"
         message={(cache.error as Error).message}
         size="sm"
       />
@@ -81,12 +81,12 @@ export function SynthesizerCachePanel() {
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
         <Stat
-          label="합계 디스크 사용량"
+          label="총 사용 용량"
           value={`${data.totalMb} / ${data.maxTotalMb} MB`}
           percent={sizePct}
         />
         <Stat
-          label="이미지 개수"
+          label="저장된 환경 수"
           value={`${data.count} / ${data.maxCount}`}
           percent={countPct}
         />
@@ -97,15 +97,16 @@ export function SynthesizerCachePanel() {
           최대 보관 기간 <span className="text-neutral-200">{data.maxAgeDays}일</span>
         </span>
         <span>
-          사용 중 <span className="text-neutral-200">{data.inUseCount}개</span>
+          현재 사용 중 <span className="text-neutral-200">{data.inUseCount}개</span>
         </span>
         {data.missingImageCount > 0 && (
           <span className="text-amber-300">
-            이미지 사라진 row {data.missingImageCount}개 — GC 시 정리됨
+            이미지가 삭제된 항목 {data.missingImageCount}개 — 정리 시 자동 제거됨
           </span>
         )}
         <span>
-          가장 오래 사용 안 된 시점 <span className="text-neutral-200">{formatRelative(data.oldestLastUsedAt)}</span>
+          가장 오랫동안 사용되지 않은 시점{" "}
+          <span className="text-neutral-200">{formatRelative(data.oldestLastUsedAt)}</span>
         </span>
       </div>
 
@@ -127,12 +128,12 @@ export function SynthesizerCachePanel() {
           onClick={() => gc.mutate()}
         >
           <Trash2 className={cn("mr-1 h-3.5 w-3.5", gc.isPending && "animate-pulse")} />
-          {gc.isPending ? "GC 진행 중…" : "지금 GC 실행"}
+          {gc.isPending ? "정리 중…" : "지금 즉시 정리"}
         </Button>
       </div>
 
       {gcError && (
-        <ErrorBox title="GC 실패" message={gcError} size="sm" />
+        <ErrorBox title="정리에 실패했습니다" message={gcError} size="sm" />
       )}
       {lastGc !== null && !gcError && (
         <GcResultBanner evicted={lastGc} />
@@ -140,14 +141,17 @@ export function SynthesizerCachePanel() {
 
       {data.entries.length === 0 ? (
         <div className="rounded-lg border border-dashed border-neutral-700 bg-surface-1 p-6 text-center text-xs text-neutral-500">
-          합성된 lab 이미지 없음. AI 합성을 한 번도 사용하지 않았거나 모두 회수됨.
+          저장된 합성 환경이 없습니다. AI 합성을 한 번도 사용하지 않았거나 모두
+          정리되었습니다.
         </div>
       ) : (
         <CacheTable entries={data.entries} />
       )}
 
       <p className="text-[11px] text-neutral-500">
-        오래된 순(LRU) 정렬 — 다음 GC 가 위에서부터 회수합니다. 합성은 매 호출 시 자동으로 GC 가 한 번 돌고, 위 버튼은 즉시 강제 sweep.
+        오래된 순으로 정렬되어 있어 위쪽 항목부터 자동 정리됩니다. 새 합성이
+        실행될 때마다 자동 정리가 한 번씩 돌고, 위 버튼은 그 정리를 즉시
+        실행합니다.
       </p>
     </div>
   );
@@ -192,7 +196,7 @@ function CacheTable({ entries }: { entries: SynthesizeCacheEntry[] }) {
         <thead className="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-500">
           <tr>
             <th className="px-3 py-2 text-left">CVE</th>
-            <th className="px-3 py-2 text-left">이미지</th>
+            <th className="px-3 py-2 text-left">환경 식별자</th>
             <th className="px-3 py-2 text-right">크기</th>
             <th className="px-3 py-2 text-right">마지막 사용</th>
             <th className="px-3 py-2 text-right">상태</th>
@@ -212,11 +216,11 @@ function CacheTable({ entries }: { entries: SynthesizeCacheEntry[] }) {
               </td>
               <td className="px-3 py-2 text-right">
                 {!e.imagePresent ? (
-                  <Badge tone="amber">이미지 없음</Badge>
+                  <Badge tone="amber">이미지 누락</Badge>
                 ) : e.inUse ? (
                   <Badge tone="sky">사용 중</Badge>
                 ) : (
-                  <Badge tone="neutral">대기</Badge>
+                  <Badge tone="neutral">대기 중</Badge>
                 )}
               </td>
             </tr>
@@ -250,14 +254,14 @@ function GcResultBanner({ evicted }: { evicted: EvictedImage[] }) {
   if (evicted.length === 0) {
     return (
       <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
-        GC 완료 — 회수할 항목이 없었습니다 (모든 이미지가 ceiling 이내).
+        정리 완료 — 정리할 항목이 없었습니다 (모든 항목이 보관 한도 이내).
       </div>
     );
   }
   const totalMb = evicted.reduce((s, e) => s + e.sizeMb, 0);
   return (
     <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
-      GC 완료 — {evicted.length}개 이미지 ({totalMb} MB) 회수.
+      정리 완료 — {evicted.length}개 환경 ({totalMb} MB) 회수했습니다.
       <ul className="mt-1 space-y-0.5 text-[11px] text-emerald-200/80">
         {evicted.slice(0, 5).map((e) => (
           <li key={`${e.cveId}-${e.imageTag}`}>
@@ -265,7 +269,7 @@ function GcResultBanner({ evicted }: { evicted: EvictedImage[] }) {
             <span className="text-neutral-400">·</span>{" "}
             <span>{e.sizeMb} MB</span>{" "}
             <span className="text-neutral-400">·</span>{" "}
-            <span className="text-emerald-300/70">reason={e.reason}</span>
+            <span className="text-emerald-300/70">사유: {reasonLabel(e.reason)}</span>
           </li>
         ))}
         {evicted.length > 5 && (
@@ -274,4 +278,19 @@ function GcResultBanner({ evicted }: { evicted: EvictedImage[] }) {
       </ul>
     </div>
   );
+}
+
+function reasonLabel(reason: string): string {
+  switch (reason) {
+    case "size":
+      return "용량 한도 초과";
+    case "count":
+      return "개수 한도 초과";
+    case "age":
+      return "보관 기간 만료";
+    case "missing":
+      return "이미지 누락";
+    default:
+      return reason;
+  }
 }

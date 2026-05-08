@@ -116,14 +116,14 @@ export function LabKindStatsPanel() {
   if (stats.isLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-neutral-500">
-        <Loader2 className="h-4 w-4 animate-spin" /> lab 분포 조회 중…
+        <Loader2 className="h-4 w-4 animate-spin" /> 실습 환경 분포를 불러오는 중…
       </div>
     );
   }
   if (stats.error) {
     return (
       <p className="text-sm text-amber-300">
-        lab 분포 조회 실패: {(stats.error as Error).message}
+        분포를 불러오지 못했습니다: {(stats.error as Error).message}
       </p>
     );
   }
@@ -133,10 +133,10 @@ export function LabKindStatsPanel() {
     <section className="space-y-5 rounded-lg border border-neutral-800 bg-surface-1 p-5">
       <header className="flex items-baseline justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-neutral-100">CVE → lab 매핑 분포</h2>
+          <h2 className="text-sm font-semibold text-neutral-100">실습 환경 분포</h2>
           <p className="mt-1 text-xs text-neutral-500">
-            cve_lab_mappings 전체 {data.total}개 중 verified {data.verified}개. 한
-            클래스로 쏠려있다면 합성 prompt 또는 classifier 룰의 편향 신호.
+            전체 {data.total}개 중 검증 완료 {data.verified}개. 한쪽으로 크게
+            치우쳐 있다면 합성 품질을 점검할 신호일 수 있습니다.
           </p>
         </div>
         <Button
@@ -153,7 +153,7 @@ export function LabKindStatsPanel() {
       <div className="grid gap-5 md:grid-cols-2">
         <div className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-            provenance 별 (vulhub / generic / synthesized)
+            출처별 (vulhub 공식 / 표준 / AI 합성)
           </h3>
           <Bar
             buckets={data.bySource}
@@ -164,7 +164,7 @@ export function LabKindStatsPanel() {
         </div>
         <div className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-            lab kind 별 (top 8)
+            취약점 유형별 (상위 8개)
           </h3>
           <Bar
             buckets={data.byKind}

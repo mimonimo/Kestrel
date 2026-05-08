@@ -12,14 +12,14 @@ export const SETTING_META: Record<
 > = {
   nvdApiKey: {
     label: "NVD API Key",
-    placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-    help: "NVD 2.0 API의 레이트 리밋을 30초당 5회 → 50회로 끌어올립니다.",
+    placeholder: "예: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    help: "NVD 에서 발급받은 API 키를 입력하면 30초당 5회 → 50회로 수집 속도가 빨라집니다. 비워 두어도 동작합니다.",
     docsUrl: "https://nvd.nist.gov/developers/request-an-api-key",
   },
   githubToken: {
     label: "GitHub Personal Access Token",
-    placeholder: "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    help: "GitHub Advisory API 호출 시 인증에 사용됩니다. repo scope 불필요.",
+    placeholder: "예: ghp_...",
+    help: "GitHub Advisory 데이터를 안정적으로 가져오는 데 사용됩니다. repo 권한 없이 발급해도 됩니다.",
     docsUrl: "https://github.com/settings/tokens",
   },
 };

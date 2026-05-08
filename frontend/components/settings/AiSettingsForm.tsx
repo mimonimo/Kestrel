@@ -38,7 +38,7 @@ const PROVIDERS: ProviderMeta[] = [
     ],
     requiresApiKey: false,
     note:
-      "별도 API 키 없이 본인 Claude Code 구독을 사용합니다. 백엔드 이미지에 claude CLI가 설치되어 있고 ~/.claude 가 마운트되어 있어야 합니다. README의 'Claude Code CLI' 섹션 참고.",
+      "별도의 API 키 없이 본인의 Claude Code 구독을 그대로 사용합니다. 설치 시 README 의 'Claude Code CLI' 섹션을 따라 한 번만 인증해 두면 자동으로 갱신됩니다.",
   },
 ];
 
@@ -330,17 +330,17 @@ function remedyForKind(kind: string | null): string | null {
   switch (kind) {
     case "auth_expired":
     case "not_logged_in":
-      return "macOS 호스트 별도 터미널에서 `bash backend/scripts/refresh_and_sync_claude_creds.sh` 실행. launchd 가 매시간 자동 sync 하지만 만료된 직후라면 수동 sync 필요.";
+      return "Claude 인증이 만료되었습니다. 호스트 터미널에서 `bash backend/scripts/refresh_and_sync_claude_creds.sh` 를 한 번 실행하면 갱신됩니다 (매시간 자동 갱신되지만 만료 직후에는 수동 갱신이 필요할 수 있습니다).";
     case "rate_limit":
-      return "Claude 구독 사용량 한도 도달. reset 시각 이후 재시도하거나 다른 provider (OpenAI/Gemini 등) 키를 활성화하세요.";
+      return "Claude 구독 사용량 한도에 도달했습니다. 표시된 reset 시각 이후 다시 시도하거나, 별도 키를 등록해 활성화해 주세요.";
     case "config_missing":
-      return "컨테이너의 ~/.claude.json 마운트가 stale inode 일 가능성. backend 컨테이너를 재시작하면 호스트 파일의 새 inode 가 다시 바인딩됩니다.";
+      return "Claude 인증 파일이 백엔드와 연결되지 않았습니다. 백엔드 컨테이너를 한 번 재시작하면 해결됩니다.";
     case "cli_missing":
-      return "백엔드 이미지에 claude CLI 가 없음. INSTALL_CLAUDE_CLI=1 로 backend 이미지를 rebuild 하세요.";
+      return "백엔드 이미지에 Claude CLI 가 설치되어 있지 않습니다. README 설치 가이드의 'AI 키 등록' 단계를 다시 진행해 주세요.";
     case "empty_response":
-      return "CLI 가 exit 0 + 빈 stdout 으로 silent 실패. 자동 self-upgrade 가 시도되었지만 못 고쳤으면 Keychain 토큰 만료 가능성 — refresh script 실행 후 재시도.";
+      return "Claude 가 응답 없이 종료되었습니다. 자동 복구가 실패했다면 인증 토큰이 만료되었을 가능성이 큽니다 — 위 인증 갱신 안내를 따라 주세요.";
     case "not_configured":
-      return "활성 AI 키가 없습니다. 위에서 키를 등록하고 라디오 버튼으로 활성화하세요.";
+      return "현재 활성화된 AI 키가 없습니다. 아래에서 키를 추가하고 라디오 버튼으로 활성화해 주세요.";
     default:
       return null;
   }
@@ -557,12 +557,14 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
             </button>
           </div>
           <p className="mt-1.5 text-[11px] text-neutral-500">
-            서버 DB에 저장됩니다. 응답에는 다시 표시되지 않으므로 보관에 주의하세요.
+            키는 안전하게 저장되며, 한번 등록 후에는 화면에 다시 표시되지 않으니
+            원본은 별도로 보관해 주세요.
           </p>
         </div>
       ) : (
         <div className="rounded-md border border-neutral-800 bg-surface-2 px-3 py-2 text-[11px] text-neutral-400">
-          이 제공자는 API 키가 필요 없습니다. 백엔드 컨테이너의 <span className="font-mono">claude</span> CLI 로그인 정보를 사용합니다.
+          이 제공자는 별도 API 키가 필요 없습니다. 호스트에 로그인된 Claude
+          구독 자격 증명을 그대로 사용합니다.
         </div>
       )}
 

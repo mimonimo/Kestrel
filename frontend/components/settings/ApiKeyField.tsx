@@ -94,7 +94,7 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
           </button>
         </div>
       ) : (
-        <p className="text-xs text-neutral-600">아직 저장된 값이 없습니다.</p>
+        <p className="text-xs text-neutral-600">아직 등록된 키가 없습니다 — 비워 두어도 정상 동작합니다.</p>
       )}
 
       <form
@@ -120,15 +120,15 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
           ) : (
             <Save className="mr-1 h-4 w-4" />
           )}
-          {status === "submitting" ? "저장 중" : "저장 + 새로고침"}
+          {status === "submitting" ? "저장 중" : "저장하고 즉시 재수집"}
         </Button>
       </form>
 
       {status === "saved" && (
-        <p className="text-xs text-emerald-400">저장되었고, 백그라운드에서 재수집을 시작했습니다.</p>
+        <p className="text-xs text-emerald-400">저장되었습니다. 새 키로 데이터 재수집을 백그라운드에서 시작했습니다.</p>
       )}
       {status === "error" && errorMsg && (
-        <p className="text-xs text-rose-400">저장 또는 재수집 요청 실패: {errorMsg}</p>
+        <p className="text-xs text-rose-400">저장 또는 재수집 요청에 실패했습니다: {errorMsg}</p>
       )}
     </div>
   );

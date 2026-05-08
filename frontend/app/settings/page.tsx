@@ -17,18 +17,18 @@ export default function SettingsPage() {
       <header className="mb-8">
         <h1 className="text-2xl font-bold text-neutral-100">설정</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          테마와 외부 API 키를 이 기기에서만 관리합니다. 모든 값은 브라우저
-          localStorage에 저장되며 서버로 전송되지 않습니다.
+          테마와 외부 API 키, 자산 정보 등을 관리합니다. 화면 설정과 외부 API
+          키는 이 기기 안에만 저장되며 외부로 전송되지 않습니다.
         </p>
       </header>
 
-      <Section title="테마" description="다크 / 라이트 / 시스템 자동 감지 중에서 선택합니다.">
+      <Section title="화면 테마" description="다크 / 라이트 / 시스템 설정 자동 감지 중에서 선택합니다.">
         <ThemeSwitcher />
       </Section>
 
       <Section
-        title="API 키"
-        description="셀프 호스팅 시 외부 API의 레이트 리밋과 인증에 사용됩니다. 비워 두면 기본 키리스 모드로 동작합니다."
+        title="외부 데이터 소스 API 키"
+        description="NVD · GitHub Advisory 데이터를 더 빠르게 받아오기 위한 키입니다. 비워 두어도 동작하지만, 등록하면 수집 속도와 안정성이 좋아집니다."
       >
         <div className="space-y-4">
           <ApiKeyField settingKey="nvdApiKey" />
@@ -37,48 +37,38 @@ export default function SettingsPage() {
       </Section>
 
       <Section
-        title="AI 분석 설정"
-        description="CVE 상세 페이지의 'AI 심층 분석'에 사용할 LLM 제공자·모델·API 키를 설정합니다. 키는 서버 DB에 저장되며 응답에서는 가려집니다."
+        title="AI 분석 키"
+        description="CVE 상세 화면의 'AI 심층 분석' 과 실습 환경 합성에 사용됩니다. 키는 안전하게 저장되며 응답에는 다시 표시되지 않습니다."
       >
         <AiSettingsForm />
       </Section>
 
       <Section
         title="내 자산"
-        description="등록한 벤더·제품은 파싱된 CVE의 CPE 정보와 매칭되어 대시보드 상단 '내 시스템 취약점'에 노출됩니다."
+        description="운영 중인 벤더·제품을 등록하면 그에 영향을 주는 CVE 만 모아 대시보드 상단 '내 시스템 취약점' 카드에 표시됩니다."
       >
         <AssetsManager />
       </Section>
 
       <Section
-        title="합성된 lab 캐시"
-        description="AI 합성으로 만든 docker 이미지의 캐시 상태입니다. 합성 호출 시 자동 LRU 회수가 돌지만, 지금 강제 정리도 가능합니다."
+        title="합성된 실습 환경 저장 공간"
+        description="AI 합성으로 만든 실습 환경 이미지의 사용량입니다. 합성이 호출될 때마다 자동으로 오래된 이미지가 정리되며, 필요할 때 즉시 정리도 가능합니다."
       >
         <SynthesizerCachePanel />
       </Section>
 
       <Section
-        title="CVE → lab 매핑 분포"
-        description="vulhub / generic / synthesized 각 provenance 와 lab kind 별 점유율. 한 클래스로 쏠려있다면 합성 prompt 또는 classifier 룰 편향 신호."
+        title="실습 환경 출처별 분포"
+        description="vulhub 공식 재현 / 표준 환경 / AI 합성 비율과 취약점 유형별 점유율을 보여줍니다. 한쪽으로 쏠려 있다면 합성 품질을 점검할 신호일 수 있습니다."
       >
         <LabKindStatsPanel />
       </Section>
 
-      <Section title="저장 위치" description="" muted>
+      <Section title="설정 저장 위치 안내" description="" muted>
         <ul className="list-disc space-y-1 pl-5 text-xs text-neutral-500">
-          <li>키와 테마 설정은 모두 브라우저 localStorage에 저장됩니다.</li>
-          <li>다른 기기·브라우저로 옮길 때는 다시 입력해야 합니다.</li>
-          <li>
-            서비스 정식 배포 단계에서는 백엔드 환경변수
-            <code className="mx-1 rounded bg-surface-2 px-1 py-0.5 font-mono text-[11px]">
-              NVD_API_KEY
-            </code>
-            ·
-            <code className="mx-1 rounded bg-surface-2 px-1 py-0.5 font-mono text-[11px]">
-              GITHUB_TOKEN
-            </code>
-            으로 옮길 예정입니다.
-          </li>
+          <li>화면 테마와 외부 데이터 소스 키는 이 기기의 브라우저 안에만 저장됩니다.</li>
+          <li>다른 기기·브라우저에서는 다시 입력해 주세요.</li>
+          <li>AI 분석 키와 등록한 자산은 서버에 안전하게 저장되어 모든 기기에서 공유됩니다.</li>
         </ul>
       </Section>
     </div>

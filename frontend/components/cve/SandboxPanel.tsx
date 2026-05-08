@@ -38,23 +38,23 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-// Friendly labels keyed by phase. Order matters when we render the *expected*
-// timeline ahead of any real events — we pre-fill an empty checklist and let
-// arrived events tick boxes off as they come in.
+// User-facing labels for each synthesis phase. We render the *expected*
+// timeline ahead of any real events so the operator can see how long it'll
+// take and which step is in flight. Order matters — checklist top→bottom.
 const PHASE_LABEL: Record<SynthesizePhase, string> = {
-  start: "합성 준비 — CVE 컨텍스트 + 직전 시도 기록 수집",
-  cached_hit: "기존 검증된 캐시 발견 — 즉시 재사용",
-  cooldown: "최근 실패로 24시간 cooldown 중 — 재시도 보류",
-  call_llm: "LLM 호출 — Dockerfile + 앱 코드 + 주입 지점 + 페이로드 생성",
-  parsed: "AI 응답 파싱 + JSON 스키마 + echo-trap 검증",
-  build_started: "docker 이미지 빌드 (격리 네트워크 안)",
-  build_done: "이미지 빌드 완료",
-  lab_started: "검증용 컨테이너 기동 + backend probe 발사",
-  verifying: "페이로드 전송 + 응답 본문에서 success indicator 확인",
-  verify_failed: "indicator 미검출 — backend probe 가 echo-trap 으로 판정",
-  verify_ok: "backend probe 통과 — 실제 취약점 트리거 확인",
-  cached: "cve_lab_mappings 에 verified row 캐시 — 이후 호출은 즉시 사용",
-  failed: "합성 실패 — 모든 시도 reject",
+  start: "CVE 정보와 이전 시도 기록을 모으는 중",
+  cached_hit: "이미 검증된 실습 환경을 찾았습니다 — 곧바로 사용",
+  cooldown: "24시간 안에 같은 CVE 합성이 실패해 잠시 멈춰 있습니다",
+  call_llm: "AI가 격리된 실습 환경 명세와 공격 페이로드를 작성 중",
+  parsed: "AI가 만든 명세를 검증하고 가짜 응답인지 가려내는 중",
+  build_started: "격리된 네트워크 안에 실습 컨테이너 이미지를 만드는 중",
+  build_done: "실습 환경 이미지 준비 완료",
+  lab_started: "실습 컨테이너를 띄우고 안전한 검증 도구를 연결하는 중",
+  verifying: "공격 페이로드를 보내 실제로 취약점이 발현되는지 확인하는 중",
+  verify_failed: "취약점이 실제로 발현되지 않았습니다 (가짜 응답 가능성)",
+  verify_ok: "검증 통과 — 실제 취약점 발현을 확인했습니다",
+  cached: "검증된 실습 환경을 저장 — 다음부터는 즉시 사용 가능합니다",
+  failed: "합성 실패 — 모든 후보가 검증을 통과하지 못했습니다",
 };
 
 // Default timeline shown before any events arrive. cached_hit / cooldown are
@@ -84,26 +84,29 @@ function SourceBadge({
   source: LabSourceKind;
   verified: boolean;
 }) {
-  // Three flavors of provenance — UI distinguishes "검증된 vulhub reproducer"
-  // (highest trust) from a "일반 클래스" lab and from an AI-synthesized one.
+  // 출처별 신뢰도가 다르므로 UI 에서 구분 — 사용자가 "이 환경이 어디서
+  // 왔는지" 한눈에 파악할 수 있도록 색·아이콘·라벨을 구분.
   const map: Record<
     LabSourceKind,
-    { label: string; cls: string; Icon: typeof ShieldCheck }
+    { label: string; cls: string; Icon: typeof ShieldCheck; tip: string }
   > = {
     vulhub: {
-      label: "vulhub reproducer",
+      label: "vulhub 공식 재현",
       cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
       Icon: ShieldCheck,
+      tip: "vulhub 프로젝트가 공식적으로 재현해 둔 환경 — 가장 신뢰도가 높습니다.",
     },
     generic: {
-      label: "일반 클래스 lab",
+      label: "표준 실습 환경",
       cls: "border-neutral-600 bg-neutral-700/30 text-neutral-300",
       Icon: FlaskConical,
+      tip: "취약점 유형(예: XSS, RCE)별로 미리 만들어 둔 표준 환경입니다.",
     },
     synthesized: {
-      label: "AI 생성 lab",
+      label: "AI 합성 환경",
       cls: "border-amber-500/40 bg-amber-500/10 text-amber-200",
       Icon: Sparkles,
+      tip: "이 CVE 전용으로 AI가 만든 환경 — 결과가 정확하면 👍 로 알려주세요.",
     },
   };
   const m = map[source];
@@ -115,8 +118,8 @@ function SourceBadge({
       )}
       title={
         verified
-          ? "이전 실행에서 페이로드가 동작함이 확인됨 (캐시 보유)"
-          : "아직 검증되지 않은 lab — 첫 exec에서 결과를 확인하세요"
+          ? `${m.tip} 이전 실행에서 페이로드가 작동함이 확인되어 결과를 즉시 재생합니다.`
+          : `${m.tip} 첫 실행에서 실제 발현 여부를 확인합니다.`
       }
     >
       <m.Icon className="h-3 w-3" />
@@ -234,7 +237,7 @@ function LabKindBadge({ labKind }: { labKind: string }) {
         "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium tracking-wide",
         meta.cls,
       )}
-      title={`generic lab class: ${labKind}`}
+      title={`표준 실습 환경 분류: ${labKind}`}
     >
       {meta.label}
     </span>
@@ -274,21 +277,21 @@ function CandidatePivotList({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs text-neutral-300 hover:text-neutral-100"
       >
-        <span>합성 후보 목록 — 다른 후보로 시작</span>
+        <span>다른 합성 환경으로 시작하기</span>
         <span className="text-neutral-500">{open ? "▴" : "▾"}</span>
       </button>
       {open && (
         <div className="border-t border-neutral-800 px-3 py-2">
           {list.isLoading && (
-            <p className="text-xs text-neutral-500">조회 중…</p>
+            <p className="text-xs text-neutral-500">불러오는 중…</p>
           )}
           {list.error && (
             <p className="text-xs text-amber-300">
-              조회 실패: {(list.error as Error).message}
+              불러오기 실패: {(list.error as Error).message}
             </p>
           )}
           {list.data && list.data.candidates.length === 0 && (
-            <p className="text-xs text-neutral-500">합성 후보 없음.</p>
+            <p className="text-xs text-neutral-500">대체할 합성 환경이 없습니다.</p>
           )}
           {list.data && list.data.candidates.length > 0 && (
             <ul className="space-y-1.5">
@@ -315,17 +318,17 @@ function CandidatePivotList({
                         </span>
                         {c.isPlaceholder && (
                           <span className="rounded border border-neutral-700 px-1.5 text-[9px] text-neutral-500">
-                            placeholder
+                            준비중
                           </span>
                         )}
                         {!c.isPlaceholder && c.verified && (
                           <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[9px] text-emerald-200">
-                            verified
+                            검증됨
                           </span>
                         )}
                         {c.degraded && (
                           <span className="rounded border border-rose-500/40 bg-rose-500/10 px-1.5 text-[9px] text-rose-200">
-                            degraded
+                            정확도 낮음
                           </span>
                         )}
                         <span className="text-[10px] text-neutral-500">
@@ -349,7 +352,7 @@ function CandidatePivotList({
                         onClick={() => onPick(c.mappingId)}
                         className="rounded border border-neutral-600 px-2 py-0.5 text-[10px] font-medium text-neutral-200 hover:border-neutral-400 hover:text-neutral-100 disabled:opacity-40"
                       >
-                        {pinning ? "…" : "이 후보로 시작"}
+                        {pinning ? "…" : "이 환경으로 시작"}
                       </button>
                     )}
                   </li>
@@ -394,10 +397,10 @@ function RunResult({ result }: { result: SandboxExecResponse }) {
         {adapted.fromCache && (
           <span
             className="inline-flex items-center gap-1 rounded border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-200"
-            title="캐시된 known-good 페이로드를 그대로 재생했습니다 (LLM 호출 0회)"
+            title="이전에 검증된 페이로드를 그대로 재실행했습니다 — AI 호출 없이 즉시 결과 표시."
           >
             <RefreshCw className="h-3 w-3" />
-            캐시 사용
+            저장된 페이로드 재사용
           </span>
         )}
         <span className="font-mono text-[11px] text-neutral-500">
@@ -410,39 +413,39 @@ function RunResult({ result }: { result: SandboxExecResponse }) {
 
       <div>
         <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-          AI 판정
+          AI 판정 결과
         </div>
         <p className="mt-1 text-sm text-neutral-200">{verdict.summary}</p>
         {verdict.evidence && (
-          <p className="mt-1 text-xs text-neutral-400">근거: {verdict.evidence}</p>
+          <p className="mt-1 text-xs text-neutral-400">판단 근거: {verdict.evidence}</p>
         )}
         {verdict.nextStep && (
           <p className="mt-1 text-xs text-neutral-400">
-            다음 시도: {verdict.nextStep}
+            추천 다음 단계: {verdict.nextStep}
           </p>
         )}
         <p className="mt-1 text-[10px] uppercase tracking-wide text-neutral-600">
-          휴리스틱: {verdict.heuristicSignal}
+          자동 분석 신호: {verdict.heuristicSignal}
         </p>
       </div>
 
       <div>
         <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-          전송된 페이로드
+          실제로 보낸 페이로드
         </div>
         <pre className="mt-1 overflow-x-auto rounded border border-neutral-800 bg-surface-2 p-2 font-mono text-[11px] text-neutral-100">
           {adapted.payload}
         </pre>
         {adapted.rationale && (
           <p className="mt-1 text-[11px] text-neutral-500">
-            적응 근거: {adapted.rationale}
+            AI 가 이 페이로드를 선택한 이유: {adapted.rationale}
           </p>
         )}
       </div>
 
       <div>
         <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-          응답 본문 (앞부분{exchange.bodyTruncated ? ", 잘림" : ""})
+          서버 응답 본문 (앞부분{exchange.bodyTruncated ? ", 일부 잘림" : ""})
         </div>
         <pre className="mt-1 max-h-64 overflow-auto rounded border border-neutral-800 bg-surface-2 p-2 font-mono text-[11px] text-neutral-100">
           {exchange.body || "(빈 응답)"}
@@ -660,9 +663,10 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
         {!session && !start.isPending && !startError && (
           <div className="space-y-2">
             <p className="text-sm text-neutral-400">
-              CVE 분류에 맞는 격리된 실습 컨테이너를 띄우고, AI가 만든 페이로드를
-              실제 환경에 맞춰 적응시킨 뒤 직접 실행합니다. 컨테이너는 인터넷
-              차단된 내부 네트워크에서만 동작하며 30분 후 자동 회수됩니다.
+              이 CVE 를 안전하게 재현해 볼 수 있는 격리된 실습 환경을 띄웁니다.
+              AI가 페이로드를 환경에 맞춰 자동 조정한 뒤 실행해 주므로 별도
+              세팅 없이 바로 결과를 확인할 수 있습니다. 환경은 외부 인터넷이
+              차단되며 30분 뒤 자동으로 정리됩니다.
             </p>
             <Button
               type="button"
@@ -679,7 +683,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
         {start.isPending && (
           <div className="flex items-center gap-2 py-2 text-sm text-neutral-400">
             <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-            랩 컨테이너 시작 중…
+            실습 환경 준비 중…
           </div>
         )}
 
@@ -693,12 +697,14 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
             <div className="space-y-2 rounded border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
               <div className="flex items-center gap-1.5 text-amber-200">
                 <Sparkles className="h-3.5 w-3.5" />
-                <span className="font-medium">등록된 lab 이 없습니다</span>
+                <span className="font-medium">아직 준비된 실습 환경이 없습니다</span>
               </div>
               <p className="text-amber-100/90">{noLabDetail.message}</p>
               <p className="text-amber-100/60">
-                합성은 LLM 토큰을 사용하고 빌드 시간이 걸립니다. 24시간 내 합성에 실패하면
-                같은 CVE 에 대해 자동 재시도가 차단됩니다 (캐시 보존).
+                AI에게 이 CVE 전용 환경을 만들어 달라고 요청할 수 있습니다.
+                AI 사용량이 발생하고 1~2분 정도 빌드 시간이 걸립니다. 합성에
+                실패하면 같은 CVE 에 대해 24시간 동안 재시도가 자동으로
+                보류됩니다.
               </p>
               <div className="flex gap-2 pt-1">
                 <Button
@@ -708,7 +714,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                   className="bg-amber-500 text-black hover:bg-amber-400"
                 >
                   <Sparkles className="mr-1.5 h-4 w-4" />
-                  AI 합성으로 시도
+                  AI에게 환경 합성 요청
                 </Button>
                 <Button
                   type="button"
@@ -733,14 +739,14 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
               <div className="flex items-center gap-1.5 text-rose-200">
                 <ShieldAlert className="h-3.5 w-3.5" />
                 <span className="font-medium">
-                  사용자 평가로 격하된 lab 입니다
+                  다른 사용자들이 부정확하다고 평가한 환경입니다
                 </span>
               </div>
               <p className="text-rose-100/90">{noLabDetail.message}</p>
               <p className="text-rose-100/70">
                 현재 평가 — 👍 {noLabDetail.feedbackUp ?? 0} · 👎{" "}
-                {noLabDetail.feedbackDown ?? 0}. 이 매핑은 더 이상 자동
-                선택되지 않습니다. 새로 합성하면 새 매핑(빈 평가)으로
+                {noLabDetail.feedbackDown ?? 0}. 이 환경은 자동으로 선택되지
+                않으며, 새로 합성하면 평가 기록이 비어 있는 새 환경으로
                 대체됩니다.
               </p>
               <div className="flex gap-2 pt-1">
@@ -752,7 +758,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                     className="bg-amber-500 text-black hover:bg-amber-400"
                   >
                     <Sparkles className="mr-1.5 h-4 w-4" />
-                    새로 합성으로 시도
+                    AI에게 새 환경 합성 요청
                   </Button>
                 )}
                 <Button
@@ -827,7 +833,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                 {session.lab && session.lab.candidateCount > 1 && (
                   <span
                     className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-amber-200"
-                    title="동일 CVE 에 대해 합성된 후보 spec 수와 현재 사용 중인 후보 순위 (1=최우수). 👎 로 격하되면 자동으로 다음 후보로 폴백됩니다."
+                    title="이 CVE 에 대해 AI가 만든 환경이 여러 개 있습니다. 현재 가장 정확하다고 평가된 환경을 사용 중이며, 👎 평가가 쌓이면 다음 후보로 자동 전환됩니다."
                   >
                     후보 {session.lab.candidateCount}개 중 {session.lab.candidateRank}번째
                   </span>
@@ -849,8 +855,8 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                 <p className="mt-2 flex items-start gap-1.5 text-rose-300">
                   <ShieldAlert className="mt-0.5 h-3 w-3 shrink-0" />
                   <span>
-                    사용자 평가로 격하된 lab 입니다 — 다음 시작 시 다른 매핑이
-                    선택됩니다.
+                    이 환경은 다른 사용자 평가로 정확도가 낮다고 표시되어
+                    있습니다 — 다음 실행 시 다른 환경이 자동 선택됩니다.
                   </span>
                 </p>
               )}
@@ -873,13 +879,13 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
               )}
               {session.targetUrl && (
                 <p className="mt-2 break-all font-mono text-neutral-400">
-                  타깃 (내부 전용): {session.targetUrl}
+                  공격 대상 주소 (격리 네트워크 내부 전용): {session.targetUrl}
                 </p>
               )}
               {session.lab?.injectionPoints && session.lab.injectionPoints.length > 0 && (
                 <details className="mt-2">
                   <summary className="cursor-pointer text-neutral-400 hover:text-neutral-200">
-                    주입 지점 {session.lab.injectionPoints.length}개
+                    공격 입력 지점 {session.lab.injectionPoints.length}개
                   </summary>
                   <ul className="mt-2 space-y-1 font-mono text-[11px] text-neutral-400">
                     {session.lab.injectionPoints.map((ip) => (
@@ -911,7 +917,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                   ) : (
                     <Play className="mr-1.5 h-4 w-4" />
                   )}
-                  {session.verified ? "캐시된 페이로드 재생" : "AI 페이로드 적응 + 실행"}
+                  {session.verified ? "검증된 페이로드 재실행" : "AI 페이로드 자동 조정 + 공격 실행"}
                 </Button>
                 {session.verified && (
                   <Button
@@ -920,16 +926,16 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                     disabled={exec.isPending}
                     size="md"
                     variant="ghost"
-                    title="캐시 무시하고 LLM에 다시 적응 요청 (다른 기법으로 재시도)"
+                    title="저장된 페이로드를 무시하고 AI에게 다른 기법으로 새로 만들도록 요청합니다."
                   >
                     <RefreshCw className="mr-1.5 h-4 w-4" />
-                    재생성
+                    페이로드 새로 생성
                   </Button>
                 )}
                 <span className="text-[11px] text-neutral-500">
                   {session.verified
-                    ? "이전 실행에서 검증된 페이로드 — LLM 호출 없이 즉시 재생"
-                    : "CVE → 적응 → 전송 → AI 판정까지 한 번에"}
+                    ? "이전 실행에서 검증된 페이로드 — AI 호출 없이 즉시 재실행"
+                    : "AI가 페이로드를 환경에 맞게 조정해 보내고, 응답을 분석해 성공/실패를 판정합니다."}
                 </span>
               </div>
             )}
@@ -995,7 +1001,7 @@ function SynthesisTimeline({
       <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
         <div className="flex items-center gap-1.5 text-amber-200">
           <Sparkles className="h-3.5 w-3.5" />
-          <span className="font-medium">AI 합성 진행 상황</span>
+          <span className="font-medium">AI 환경 합성 진행 상황</span>
         </div>
         {running && (
           <Button
@@ -1005,7 +1011,7 @@ function SynthesisTimeline({
             variant="ghost"
             className="h-7 px-2 text-neutral-300 hover:text-neutral-100"
           >
-            연결 끊기
+            진행 화면 닫기
           </Button>
         )}
         {!running && (failed || verifyFailed) && (
@@ -1080,15 +1086,15 @@ function SynthesisTimeline({
 
       {error && (seen.has("cooldown") ? (
         <NoticeBox
-          title="합성 cooldown 중"
+          title="잠시 합성이 보류되어 있습니다"
           message={error}
-          hint="cooldown 을 즉시 해제하고 새 합성 시도를 보내려면 아래 'cooldown 초기화' 버튼을 누르세요. 24시간 만료를 기다려도 됩니다."
+          hint="이전 합성이 실패해 같은 CVE 에 대해 24시간 동안 자동 재시도가 멈춰 있습니다. 지금 바로 다시 시도하려면 '재시도 보류 해제' 를 누르세요."
           size="sm"
           actions={
             <>
               <FeedbackBoxButton tone="notice" onClick={onResetCooldown}>
                 <RefreshCw className="h-3 w-3" />
-                cooldown 초기화
+                재시도 보류 해제
               </FeedbackBoxButton>
               <FeedbackBoxButton tone="notice" onClick={onRetry}>
                 다시 시도
@@ -1097,14 +1103,14 @@ function SynthesisTimeline({
           }
         />
       ) : seen.has("cached_hit") ? (
-        <NoticeBox title="이미 검증된 캐시 재사용" message={error} size="sm" />
+        <NoticeBox title="이미 검증된 환경을 그대로 사용합니다" message={error} size="sm" />
       ) : (
         <ErrorBox
           title="합성 실패"
           message={error}
           hint={
             verifyFailed
-              ? "이미 빌드된 이미지가 캐시되어 있어 'verify 단계만 재개' 로 LLM 호출/빌드 없이 검증만 다시 시도할 수 있습니다 (수 초)."
+              ? "환경 이미지는 이미 만들어져 있습니다. '검증만 다시 시도' 로 AI 호출/빌드 없이 몇 초 만에 재검증할 수 있습니다."
               : undefined
           }
           size="sm"
@@ -1113,7 +1119,7 @@ function SynthesisTimeline({
               {verifyFailed && (
                 <FeedbackBoxButton onClick={onResumeVerify}>
                   <RefreshCw className="h-3 w-3" />
-                  verify 단계만 재개
+                  검증만 다시 시도
                 </FeedbackBoxButton>
               )}
               <FeedbackBoxButton onClick={onRetry}>
@@ -1127,7 +1133,7 @@ function SynthesisTimeline({
 
       {running && (
         <p className="text-[11px] text-amber-200/60">
-          빌드 중 연결을 끊어도 백엔드 합성은 계속 진행됩니다 (캐시까지 완료).
+          이 화면을 닫아도 백그라운드 합성은 계속 진행돼 결과가 자동으로 저장됩니다.
         </p>
       )}
     </div>
@@ -1150,7 +1156,7 @@ function LabFeedbackButtons({
   return (
     <div className="mt-2 flex items-center gap-2 text-[11px] text-neutral-400">
       <span className="uppercase tracking-wide text-neutral-500">
-        이 lab 정확도
+        이 환경 정확도
       </span>
       <button
         type="button"
@@ -1163,7 +1169,7 @@ function LabFeedbackButtons({
             : "border-neutral-700 hover:border-emerald-500/40 hover:text-emerald-200",
           pending && "opacity-50",
         )}
-        title="페이로드/주입 지점이 CVE 와 정확히 맞다"
+        title="페이로드와 입력 지점이 이 CVE 와 정확히 일치합니다"
       >
         <ThumbsUp className="h-3 w-3" />
         {up}
@@ -1179,13 +1185,13 @@ function LabFeedbackButtons({
             : "border-neutral-700 hover:border-rose-500/40 hover:text-rose-200",
           pending && "opacity-50",
         )}
-        title="잘못된 lab — 다른 CVE를 흉내내거나 동작하지 않음"
+        title="잘못된 환경 — 다른 CVE 를 모사했거나 실제로 작동하지 않습니다"
       >
         <ThumbsDown className="h-3 w-3" />
         {down}
       </button>
       {myVote && (
-        <span className="text-neutral-500">한 번 더 누르면 변경됩니다</span>
+        <span className="text-neutral-500">다시 누르면 평가가 변경됩니다</span>
       )}
     </div>
   );

@@ -91,7 +91,8 @@ function Dashboard() {
           </span>
         </h1>
         <p className="text-neutral-400 text-sm sm:text-base mb-8">
-          NVD · Exploit-DB · GitHub Advisory를 한 화면에서. 실시간 CVE 및 제로데이 모니터링.
+          NVD · Exploit-DB · GitHub Advisory 를 한 곳에서. 매일 들어오는 CVE 와
+          제로데이를 한 화면에서 모니터링하세요.
         </p>
         <div className="mx-auto max-w-2xl">
           <SearchBar initialQuery={queryInput} onSearch={(q) => setQueryInput(q)} />
