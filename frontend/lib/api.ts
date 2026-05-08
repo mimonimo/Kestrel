@@ -382,6 +382,17 @@ export const api = {
     request<void>(`/sandbox/sessions/${encodeURIComponent(sessionId)}`, {
       method: "DELETE",
     }),
+  listSandboxSessions: (opts?: { includeStopped?: boolean; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (opts?.includeStopped) qs.set("include_stopped", "true");
+    if (opts?.limit) qs.set("limit", String(opts.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return request<SandboxSessionListResponse>(`/sandbox/sessions${suffix}`);
+  },
+  reapSandboxSessions: () =>
+    request<{ reaped: number }>(`/sandbox/sessions/reap`, { method: "POST" }),
+  syncVulhub: () =>
+    request<VulhubSyncResponse>(`/sandbox/vulhub/sync`, { method: "POST" }),
   execSandbox: (
     sessionId: string,
     body: { genericPayload?: string; forceRegenerate?: boolean },
@@ -523,6 +534,36 @@ export interface SandboxSession {
   // backing this session. UI marks the matching candidate as "사용중"
   // in the pivot list. null when the resolver couldn't map at GET time.
   mappingId: number | null;
+}
+
+// Settings-page lightweight session view (no LabInfo) — see backend
+// ``SandboxSessionSummary``. cve_id is pre-resolved so the UI can
+// deep-link without an extra fetch.
+export interface SandboxSessionSummary {
+  id: string;
+  cveId: string | null;
+  labKind: string;
+  labSource: LabSourceKind;
+  status: SandboxStatus;
+  containerName: string | null;
+  targetUrl: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  error: string | null;
+}
+
+export interface SandboxSessionListResponse {
+  items: SandboxSessionSummary[];
+  runningCount: number;
+  total: number;
+}
+
+export interface VulhubSyncResponse {
+  foldersScanned: number;
+  candidates: number;
+  upserted: number;
+  skipped: number;
+  errors: string[];
 }
 
 export interface AdaptedPayload {

@@ -36,7 +36,9 @@ from app.schemas.sandbox import (
     RunVerdictOut,
     SandboxExecRequest,
     SandboxExecResponse,
+    SandboxSessionListResponse,
     SandboxSessionOut,
+    SandboxSessionSummary,
     SandboxStartRequest,
     LabKindStatsBucket,
     LabKindStatsReport,
@@ -833,6 +835,100 @@ async def start_session(
         mapping_id=resolved.mapping_id,
         client_id=x_client_id,
     )
+
+
+@router.get(
+    "/sessions",
+    response_model=SandboxSessionListResponse,
+    response_model_by_alias=True,
+)
+async def list_sessions(
+    db: AsyncSession = Depends(get_db),
+    include_stopped: bool = False,
+    limit: int = 50,
+) -> SandboxSessionListResponse:
+    """Settings-page management list — current and recent sandbox sessions.
+
+    Default scope = anything not in {STOPPED, EXPIRED, FAILED} (so the
+    operator sees what's actually consuming resources). When
+    ``include_stopped=True`` we also include the most-recent terminated
+    sessions for audit. ``limit`` caps the response to keep the panel
+    snappy; older rows are reaped by the background sweeper anyway.
+    """
+    limit = max(1, min(200, limit))
+    stmt = select(SandboxSession).order_by(SandboxSession.created_at.desc())
+    if not include_stopped:
+        stmt = stmt.where(
+            SandboxSession.status.in_(
+                [SandboxStatus.PENDING, SandboxStatus.RUNNING]
+            )
+        )
+    stmt = stmt.limit(limit)
+    rows: list[SandboxSession] = list((await db.scalars(stmt)).all())
+
+    # Surface any expired-but-not-yet-reaped rows so the panel reflects
+    # reality even if the sweeper hasn't run since TTL.
+    now = datetime.now(timezone.utc)
+    dirty = False
+    for r in rows:
+        if (
+            r.status == SandboxStatus.RUNNING
+            and r.expires_at is not None
+            and r.expires_at <= now
+        ):
+            r.status = SandboxStatus.EXPIRED
+            dirty = True
+    if dirty:
+        await db.commit()
+
+    # Single batched lookup for cve_id — the model only stores
+    # vulnerability_id (UUID), but the UI needs the human-readable
+    # "CVE-YYYY-NNNN" to deep-link.
+    vuln_ids = {r.vulnerability_id for r in rows if r.vulnerability_id}
+    cve_id_by_vuln: dict[UUID, str] = {}
+    if vuln_ids:
+        for v_id, c_id in (
+            await db.execute(
+                select(Vulnerability.id, Vulnerability.cve_id).where(
+                    Vulnerability.id.in_(vuln_ids)
+                )
+            )
+        ).all():
+            cve_id_by_vuln[v_id] = c_id
+
+    items = [
+        SandboxSessionSummary(
+            id=r.id,
+            cve_id=cve_id_by_vuln.get(r.vulnerability_id) if r.vulnerability_id else None,
+            lab_kind=r.lab_kind,
+            lab_source=r.lab_source,
+            status=r.status,
+            container_name=r.container_name,
+            target_url=r.target_url,
+            created_at=r.created_at,
+            expires_at=r.expires_at,
+            error=r.error,
+        )
+        for r in rows
+    ]
+    running_count = await _count_running(db)
+    return SandboxSessionListResponse(
+        items=items,
+        running_count=running_count,
+        total=len(items),
+    )
+
+
+@router.post("/sessions/reap", status_code=status.HTTP_200_OK)
+async def reap_now(db: AsyncSession = Depends(get_db)) -> dict:
+    """Force the expired-session sweeper to run immediately.
+
+    Normally the background reaper runs on a schedule, but operators
+    occasionally want to free container slots without waiting. Returns
+    the number of rows transitioned to EXPIRED + containers torn down.
+    """
+    reaped = await reap_expired_sessions(db)
+    return {"reaped": reaped}
 
 
 @router.get(

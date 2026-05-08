@@ -84,6 +84,33 @@ class SandboxSessionOut(CamelModel):
     mapping_id: int | None = None
 
 
+class SandboxSessionSummary(CamelModel):
+    """Lightweight session view for the settings-page management list.
+
+    Drops the heavy ``LabInfoOut`` (no injection_points, no candidate
+    rank lookup) so we can list 50+ rows without N×resolver hits.
+    Includes the ``cve_id`` so the UI can deep-link without a second
+    fetch.
+    """
+
+    id: UUID
+    cve_id: str | None = None
+    lab_kind: str
+    lab_source: LabSourceKind
+    status: SandboxStatus
+    container_name: str | None = None
+    target_url: str | None = None
+    created_at: datetime
+    expires_at: datetime | None = None
+    error: str | None = None
+
+
+class SandboxSessionListResponse(CamelModel):
+    items: list[SandboxSessionSummary]
+    running_count: int
+    total: int
+
+
 class AdaptedPayloadOut(CamelModel):
     method: str
     path: str

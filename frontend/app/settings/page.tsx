@@ -3,6 +3,7 @@ import { AiSettingsForm } from "@/components/settings/AiSettingsForm";
 import { ApiKeyField } from "@/components/settings/ApiKeyField";
 import { AssetsManager } from "@/components/settings/AssetsManager";
 import { LabKindStatsPanel } from "@/components/settings/LabKindStatsPanel";
+import { SandboxSessionsPanel } from "@/components/settings/SandboxSessionsPanel";
 import { SynthesizerCachePanel } from "@/components/settings/SynthesizerCachePanel";
 import { ThemeSwitcher } from "@/components/settings/ThemeSwitcher";
 
@@ -48,6 +49,13 @@ export default function SettingsPage() {
         description="운영 중인 벤더·제품을 등록하면 그에 영향을 주는 CVE 만 모아 대시보드 상단 '내 시스템 취약점' 카드에 표시됩니다."
       >
         <AssetsManager />
+      </Section>
+
+      <Section
+        title="실행 중인 샌드박스 세션"
+        description="현재 띄워진 실습 환경 컨테이너 목록입니다. 만료 전이라도 즉시 정지할 수 있고, vulhub 공식 환경을 새로 받아오는 동기화도 여기서 실행합니다."
+      >
+        <SandboxSessionsPanel />
       </Section>
 
       <Section
