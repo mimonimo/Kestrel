@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Eye, EyeOff, Loader2, Plus, Trash2 } from "lucide-react";
+import { Activity, AlertCircle, Check, Eye, EyeOff, Loader2, Plus, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -244,6 +244,7 @@ function CredentialList({
                       </>
                     )}
                   </div>
+                  {isActive && <ConnectionTest />}
                 </div>
               </div>
               <Button
@@ -288,6 +289,134 @@ function CredentialList({
     </div>
   );
 }
+
+// Connection-test button + inline result. Only renders for the active
+// credential row — testing inactive ones doesn't make sense (only the
+// active one drives AI 분석/sandbox synth). Surface errors with
+// kind-specific remediation so users immediately see "왜 안 되나".
+function ConnectionTest() {
+  const [result, setResult] = useState<
+    | { ok: true; latencyMs: number; preview: string | null; cliVersion: string | null }
+    | { ok: false; kind: string | null; detail: string | null; cliVersion: string | null }
+    | null
+  >(null);
+  const ping = useMutation({
+    mutationFn: () => api.pingActiveCredential(),
+    onSuccess: (r) => {
+      if (r.ok) {
+        setResult({
+          ok: true,
+          latencyMs: r.latencyMs,
+          preview: r.replyPreview,
+          cliVersion: r.cliVersion,
+        });
+      } else {
+        setResult({
+          ok: false,
+          kind: r.errorKind,
+          detail: r.errorDetail,
+          cliVersion: r.cliVersion,
+        });
+      }
+    },
+    onError: (e: Error) => {
+      setResult({ ok: false, kind: "unknown", detail: e.message, cliVersion: null });
+    },
+  });
+
+  const hint = result && !result.ok
+    ? remedyForKind(result.kind)
+    : null;
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="md"
+        onClick={() => ping.mutate()}
+        disabled={ping.isPending}
+        className="gap-1"
+      >
+        {ping.isPending ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Activity className="h-3.5 w-3.5" />
+        )}
+        연결 테스트
+      </Button>
+      {result?.ok && (
+        <span className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-300">
+          <Check className="h-3 w-3" />
+          OK · {result.latencyMs}ms
+          {result.cliVersion && <span className="text-emerald-300/70">· {result.cliVersion}</span>}
+        </span>
+      )}
+      {result && !result.ok && (
+        <span className="inline-flex items-center gap-1 rounded border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-[11px] text-rose-300">
+          <X className="h-3 w-3" />
+          {labelForKind(result.kind)}
+          {result.cliVersion && <span className="text-rose-300/70">· {result.cliVersion}</span>}
+        </span>
+      )}
+      {hint && (
+        <p className="basis-full text-[11px] leading-relaxed text-rose-200/90">
+          <AlertCircle className="mr-1 inline h-3 w-3" />
+          {hint}
+        </p>
+      )}
+      {result && !result.ok && result.detail && (
+        <p className="basis-full break-words text-[10px] text-neutral-500">
+          상세: {result.detail.slice(0, 240)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+
+function labelForKind(kind: string | null): string {
+  switch (kind) {
+    case "auth_expired":
+      return "인증 만료";
+    case "rate_limit":
+      return "사용량 한도";
+    case "not_logged_in":
+      return "로그인 안 됨";
+    case "config_missing":
+      return "설정 파일 없음";
+    case "cli_missing":
+      return "CLI 미설치";
+    case "empty_response":
+      return "빈 응답";
+    case "not_configured":
+      return "활성 키 없음";
+    default:
+      return "오류";
+  }
+}
+
+
+function remedyForKind(kind: string | null): string | null {
+  switch (kind) {
+    case "auth_expired":
+    case "not_logged_in":
+      return "macOS 호스트 별도 터미널에서 `bash backend/scripts/refresh_and_sync_claude_creds.sh` 실행. launchd 가 매시간 자동 sync 하지만 만료된 직후라면 수동 sync 필요.";
+    case "rate_limit":
+      return "Claude 구독 사용량 한도 도달. reset 시각 이후 재시도하거나 다른 provider (OpenAI/Gemini 등) 키를 활성화하세요.";
+    case "config_missing":
+      return "컨테이너의 ~/.claude.json 마운트가 stale inode 일 가능성. backend 컨테이너를 재시작하면 호스트 파일의 새 inode 가 다시 바인딩됩니다.";
+    case "cli_missing":
+      return "백엔드 이미지에 claude CLI 가 없음. INSTALL_CLAUDE_CLI=1 로 backend 이미지를 rebuild 하세요.";
+    case "empty_response":
+      return "CLI 가 exit 0 + 빈 stdout 으로 silent 실패. 자동 self-upgrade 가 시도되었지만 못 고쳤으면 Keychain 토큰 만료 가능성 — refresh script 실행 후 재시도.";
+    case "not_configured":
+      return "활성 AI 키가 없습니다. 위에서 키를 등록하고 라디오 버튼으로 활성화하세요.";
+    default:
+      return null;
+  }
+}
+
 
 function ModelSelect({
   credential,

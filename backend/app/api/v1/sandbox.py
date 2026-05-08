@@ -8,11 +8,9 @@ from datetime import datetime, timezone
 from typing import AsyncIterator
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-import docker as _docker
-from docker.errors import APIError as _DockerAPIError, NotFound as _DockerNotFound
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,8 +40,6 @@ from app.schemas.sandbox import (
     SandboxStartRequest,
     LabKindStatsBucket,
     LabKindStatsReport,
-    ShellExecRequest,
-    ShellExecResponse,
     SynthCandidateOut,
     SynthCandidatesResponse,
     SynthesizeCacheEntryOut,
@@ -75,7 +71,6 @@ from app.services.sandbox.lab_resolver import (
 from app.services.sandbox.manager import (
     LabImageMissing,
     SandboxError,
-    exec_in_lab,
     proxy_request,
     reap_expired,
     start_lab,
@@ -1021,75 +1016,11 @@ async def exec_payload(
 _VOTE_VALUES = {"up", "down"}
 
 
-_SHELL_OUTPUT_CAP = 16_384
-
-
-@router.post(
-    "/sessions/{session_id}/shell",
-    response_model=ShellExecResponse,
-    response_model_by_alias=True,
-)
-async def shell_exec(
-    session_id: UUID,
-    body: ShellExecRequest,
-    db: AsyncSession = Depends(get_db),
-) -> ShellExecResponse:
-    """Run one shell command inside the lab container.
-
-    Single-shot; not a PTY. The user types `ls /`, `cat /etc/passwd`, or
-    `whoami` and gets back exit code + merged stdout/stderr (capped at
-    16 KiB). Same docker exec channel the backend probes use, so the
-    sandbox-net isolation policy applies — no container escape.
-
-    Real interactive shell (xterm.js + websocket pty) is queued as a
-    follow-up; this single-shot version covers most diagnostic needs
-    without any new infrastructure.
-    """
-    row = await db.scalar(
-        select(SandboxSession).where(SandboxSession.id == session_id)
-    )
-    if row is None:
-        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
-    if row.status != SandboxStatus.RUNNING or not row.container_name:
-        raise HTTPException(
-            status_code=409,
-            detail=f"세션 상태가 {row.status.value} 입니다 — RUNNING 일 때만 셸 명령 가능합니다.",
-        )
-    started = datetime.now(timezone.utc)
-    try:
-        code, output_bytes = await exec_in_lab(
-            row.container_name,
-            ["sh", "-c", body.command],
-            timeout_seconds=15.0,
-        )
-    except SandboxError as e:
-        raise HTTPException(status_code=502, detail=f"셸 실행 실패: {e}") from e
-    except asyncio.TimeoutError as e:
-        raise HTTPException(
-            status_code=504,
-            detail="셸 명령 응답이 15초 내에 돌아오지 않았습니다.",
-        ) from e
-    elapsed_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
-    text = output_bytes.decode("utf-8", errors="replace")
-    truncated = len(text) > _SHELL_OUTPUT_CAP
-    if truncated:
-        text = text[:_SHELL_OUTPUT_CAP]
-    log.info(
-        "sandbox.shell_exec",
-        session_id=str(session_id),
-        container=row.container_name,
-        exit_code=code,
-        output_bytes=len(output_bytes),
-        elapsed_ms=elapsed_ms,
-    )
-    return ShellExecResponse(
-        container_name=row.container_name,
-        command=body.command,
-        exit_code=code,
-        output=text,
-        truncated=truncated,
-        elapsed_ms=elapsed_ms,
-    )
+# 단발 exec / 인터랙티브 PTY 엔드포인트는 PR 10-O 에서 제거됨. 사용자는
+# 이제 SandboxPanel 에 표시된 ``docker exec -it <container> sh`` 명령을
+# 자기 터미널에 복사-붙여넣기 해 컨테이너에 접속한다. WebSocket PTY
+# (xterm.js) + 단발 sh -c 헬퍼 둘 다 입력/렌더링 한계로 충분히 매끄럽지
+# 못해 차라리 docker CLI 그대로 쓰는 게 나았음.
 
 
 @router.post(
@@ -1205,191 +1136,4 @@ async def submit_feedback(
     )
 
 
-# ---------------------------------------------------------------------------
-# Interactive PTY (PR 10-H) — bridges xterm.js ↔ docker exec -it
-# ---------------------------------------------------------------------------
-
-
-_PTY_READ_CHUNK = 4096
-_PTY_TIMEOUT_S = 30 * 60  # 30 minute idle ceiling per session
-
-
-def _pty_create(container_name: str, cols: int, rows: int):
-    """Spawn `sh` (or bash if available) inside *container_name* with a TTY
-    and return ``(exec_id, raw_socket)``. Caller must close the socket.
-
-    Sync (called via ``asyncio.to_thread``) because the underlying docker
-    SDK calls block on the HTTP upgrade.
-    """
-    cli = _docker.from_env()
-    api = cli.api
-    # Prefer bash for line-editing; fall back to sh if it's missing
-    # (alpine etc.). We resolve at PTY-create time so the lab image
-    # itself decides — same approach as `docker exec -it` recipe.
-    cmd = ["/bin/sh", "-c", "exec bash || exec sh"]
-    create = api.exec_create(
-        container_name,
-        cmd=cmd,
-        stdin=True,
-        stdout=True,
-        stderr=True,
-        tty=True,
-        environment={"TERM": "xterm-256color", "PS1": r"\u@\h:\w\$ "},
-    )
-    exec_id = create["Id"]
-    sock = api.exec_start(exec_id, socket=True, tty=True, demux=False)
-    # docker SDK wraps the raw socket — extract it for asyncio
-    raw = getattr(sock, "_sock", sock)
-    raw.setblocking(False)
-    try:
-        api.exec_resize(exec_id, height=int(rows), width=int(cols))
-    except _DockerAPIError:
-        pass  # resize is best-effort
-    return exec_id, raw
-
-
-@router.websocket("/sessions/{session_id}/pty")
-async def session_pty(websocket: WebSocket, session_id: UUID) -> None:
-    """Bidirectional PTY proxy: xterm.js ↔ docker exec -it.
-
-    Client protocol (WS frames):
-      * binary frame → bytes are written straight to the PTY stdin
-      * text frame  → JSON control message; supported:
-          {"type": "resize", "cols": N, "rows": N}
-          {"type": "ping"}  (ignored, keepalive)
-
-    Server protocol:
-      * binary frame → raw PTY output (stdout+stderr merged by tty=True)
-      * text frame  → JSON; {"type": "exit", "reason": "..."} on close
-
-    Error path: any docker / IO failure ends the WS with code 1011 and a
-    final text frame describing the cause. Clients should reconnect on
-    user retry, not auto-loop.
-    """
-    await websocket.accept()
-    # Defer DB lookup to a fresh session — websockets don't get the
-    # request-scoped get_db dependency.
-    from app.core.database import SessionLocal as _SL
-
-    async with _SL() as db:
-        row = await db.scalar(
-            select(SandboxSession).where(SandboxSession.id == session_id)
-        )
-        if row is None:
-            await websocket.send_text(_json.dumps({"type": "exit", "reason": "session not found"}))
-            await websocket.close(code=1008)
-            return
-        if row.status != SandboxStatus.RUNNING or not row.container_name:
-            await websocket.send_text(_json.dumps({
-                "type": "exit",
-                "reason": f"session not RUNNING (status={row.status.value})",
-            }))
-            await websocket.close(code=1008)
-            return
-        container_name = row.container_name
-
-    # Initial size — client may send 'resize' immediately too, but having
-    # a sensible default avoids garbled output before the first resize.
-    cols, rows = 80, 24
-    try:
-        exec_id, sock = await asyncio.to_thread(_pty_create, container_name, cols, rows)
-    except _DockerNotFound:
-        await websocket.send_text(_json.dumps({"type": "exit", "reason": "container disappeared"}))
-        await websocket.close(code=1011)
-        return
-    except (_DockerAPIError, OSError) as e:
-        await websocket.send_text(_json.dumps({"type": "exit", "reason": f"exec_create failed: {e}"}))
-        await websocket.close(code=1011)
-        return
-
-    log.info("sandbox.pty.open", session_id=str(session_id), container=container_name, exec_id=exec_id)
-
-    loop = asyncio.get_running_loop()
-    closed = asyncio.Event()
-
-    async def _pty_to_ws() -> None:
-        # Use the loop's add_reader to wake up when bytes arrive on the
-        # raw socket. Reads happen in a worker thread so SSL/HTTP-tunnel
-        # quirks of the docker socket don't block the event loop.
-        while not closed.is_set():
-            try:
-                data = await asyncio.to_thread(_blocking_read, sock)
-            except (OSError, ConnectionResetError):
-                break
-            if not data:
-                break  # EOF — shell exited
-            try:
-                await websocket.send_bytes(data)
-            except (RuntimeError, WebSocketDisconnect):
-                break
-        closed.set()
-
-    async def _ws_to_pty() -> None:
-        while not closed.is_set():
-            try:
-                msg = await asyncio.wait_for(websocket.receive(), timeout=_PTY_TIMEOUT_S)
-            except asyncio.TimeoutError:
-                break
-            except WebSocketDisconnect:
-                break
-            if "bytes" in msg and msg["bytes"] is not None:
-                try:
-                    await asyncio.to_thread(sock.sendall, msg["bytes"])
-                except OSError:
-                    break
-            elif "text" in msg and msg["text"]:
-                try:
-                    payload = _json.loads(msg["text"])
-                except _json.JSONDecodeError:
-                    continue
-                kind = payload.get("type")
-                if kind == "resize":
-                    try:
-                        cli = _docker.from_env()
-                        cli.api.exec_resize(
-                            exec_id,
-                            height=int(payload.get("rows") or 24),
-                            width=int(payload.get("cols") or 80),
-                        )
-                    except _DockerAPIError:
-                        pass
-                # ping / unknown types ignored
-        closed.set()
-
-    try:
-        await asyncio.gather(_pty_to_ws(), _ws_to_pty())
-    finally:
-        try:
-            sock.close()
-        except OSError:
-            pass
-        try:
-            await websocket.close()
-        except RuntimeError:
-            pass
-        log.info("sandbox.pty.close", session_id=str(session_id), exec_id=exec_id)
-
-
-def _blocking_read(sock) -> bytes:
-    """Read up to one chunk from the raw exec socket. Returns ``b''``
-    on EOF. Raises OSError on socket error.
-
-    The docker exec-start socket is not strictly POSIX-tty-shaped — it
-    may return short reads or BlockingIOError when no data is buffered.
-    A short ``recv`` loop with a small timeout keeps the worker thread
-    responsive without busy-waiting.
-    """
-    import select as _sel
-    import socket as _socket
-
-    rlist, _, _ = _sel.select([sock], [], [], 1.0)
-    if not rlist:
-        return b""
-    try:
-        data = sock.recv(_PTY_READ_CHUNK)
-    except BlockingIOError:
-        return b""
-    except _socket.timeout:
-        return b""
-    return data
 

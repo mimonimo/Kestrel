@@ -2,8 +2,10 @@
 
 import {
   AlertCircle,
+  Check,
   CheckCircle2,
   Circle,
+  Copy,
   FlaskConical,
   Loader2,
   Play,
@@ -17,7 +19,6 @@ import {
   XCircle,
 } from "lucide-react";
 import { useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,6 @@ import {
   type NoLabDetail,
   type SandboxExecResponse,
   type SandboxSession,
-  type ShellExecResponse,
   type SynthesizePhase,
   type SynthesizeStreamEvent,
 } from "@/lib/api";
@@ -176,211 +176,46 @@ const LAB_KIND_META: Record<
   },
 };
 
-// Inline single-shot shell. Each command runs as `sh -c "<cmd>"` inside
-// the lab container via the same docker exec channel the backend probes
-// use, so the sandbox-net isolation holds. Output is appended to a
-// scrollback area; up-arrow recalls the last command. Real interactive
-// PTY (xterm.js + websocket) is queued for a follow-up PR.
-interface ShellLine {
-  id: number;
-  command: string;
-  exitCode: number | null;
-  output: string;
-  truncated: boolean;
-  elapsedMs: number;
-  error: string | null;
-}
-
-function ShellTerminal({ sessionId }: { sessionId: string }) {
-  const [input, setInput] = useState("");
-  const [history, setHistory] = useState<ShellLine[]>([]);
-  const [running, setRunning] = useState(false);
-  const idRef = useRef(0);
-  const lastCommandRef = useRef<string>("");
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-
-  const submit = async () => {
-    const cmd = input.trim();
-    if (!cmd || running) return;
-    lastCommandRef.current = cmd;
-    setInput("");
-    setRunning(true);
-    const lineId = ++idRef.current;
-    setHistory((h) => [
-      ...h,
-      {
-        id: lineId,
-        command: cmd,
-        exitCode: null,
-        output: "",
-        truncated: false,
-        elapsedMs: 0,
-        error: null,
-      },
-    ]);
+// 인터랙티브 PTY/단발 exec 는 너무 조잡해서 PR 10-O 에서 제거.
+// 대신 ContainerAccessHelper 가 사용자가 자기 터미널에서 사용할
+// `docker exec -it` 명령을 그대로 보여주고 클립보드 복사 한 번으로
+// 진짜 셸에 붙도록 안내. WebSocket PTY 의 모든 헷갈림을 우회.
+function ContainerAccessHelper({ containerName }: { containerName: string }) {
+  const [copied, setCopied] = useState(false);
+  const cmd = `docker exec -it ${containerName} sh`;
+  const onCopy = async () => {
     try {
-      const res: ShellExecResponse = await api.shellExecSandbox(sessionId, cmd);
-      setHistory((h) =>
-        h.map((l) =>
-          l.id === lineId
-            ? {
-                ...l,
-                exitCode: res.exitCode,
-                output: res.output,
-                truncated: res.truncated,
-                elapsedMs: res.elapsedMs,
-              }
-            : l,
-        ),
-      );
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "unknown error";
-      setHistory((h) =>
-        h.map((l) => (l.id === lineId ? { ...l, error: msg } : l)),
-      );
-    } finally {
-      setRunning(false);
-      // After paint, scroll to bottom so the latest output is visible.
-      requestAnimationFrame(() => {
-        if (scrollRef.current) {
-          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-      });
+      await navigator.clipboard.writeText(cmd);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable in insecure contexts; ignore */
     }
   };
-
   return (
-    <div className="mt-3 rounded border border-neutral-800 bg-black/40">
-      <div className="flex items-center justify-between gap-2 border-b border-neutral-800 px-3 py-1.5 text-xs text-neutral-400">
-        <span>컨테이너 셸 — sh -c &lt;명령&gt; (15초 timeout · 16KB 출력 cap)</span>
-        {history.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setHistory([])}
-            className="text-neutral-500 hover:text-neutral-200"
-            title="스크롤백 비우기"
-          >
-            clear
-          </button>
-        )}
+    <div className="mt-3 rounded border border-neutral-800 bg-surface-2 p-3 text-xs">
+      <div className="mb-2 flex items-center gap-1.5 text-neutral-300">
+        <span className="font-medium">컨테이너 접속</span>
+        <span className="text-neutral-500">— 호스트 터미널에서 실행</span>
       </div>
-      <div
-        ref={scrollRef}
-        className="max-h-72 min-h-[6rem] overflow-y-auto px-3 py-2 font-mono text-[11px] leading-relaxed text-neutral-200"
-      >
-        {history.length === 0 && (
-          <p className="text-neutral-600">
-            예: <span className="text-neutral-400">ls /</span> ·{" "}
-            <span className="text-neutral-400">cat /etc/hostname</span> ·{" "}
-            <span className="text-neutral-400">env | sort</span>
-          </p>
-        )}
-        {history.map((l) => (
-          <div key={l.id} className="mb-1.5">
-            <div className="text-emerald-300">$ {l.command}</div>
-            {l.error ? (
-              <div className="whitespace-pre-wrap text-rose-300">{l.error}</div>
-            ) : (
-              <>
-                <pre className="whitespace-pre-wrap text-neutral-300">
-                  {l.output || (l.exitCode === null ? "…" : "")}
-                </pre>
-                {l.exitCode !== null && (
-                  <div className="text-[10px] text-neutral-600">
-                    exit={l.exitCode} · {l.elapsedMs}ms
-                    {l.truncated && " · output truncated at 16KB"}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        ))}
-      </div>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submit();
-        }}
-        className="flex items-center gap-2 border-t border-neutral-800 px-3 py-2"
-      >
-        <span className="font-mono text-xs text-emerald-400">$</span>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowUp" && !input && lastCommandRef.current) {
-              e.preventDefault();
-              setInput(lastCommandRef.current);
-            }
-          }}
-          placeholder="ls / 같은 한 줄 명령"
-          disabled={running}
-          className="flex-1 bg-transparent font-mono text-xs text-neutral-100 outline-none placeholder:text-neutral-600"
-        />
-        <button
-          type="submit"
-          disabled={running || !input.trim()}
-          className="rounded border border-neutral-700 px-2 py-0.5 text-[11px] text-neutral-300 hover:border-neutral-500 hover:text-neutral-100 disabled:opacity-40"
-        >
-          {running ? "…" : "실행"}
-        </button>
-      </form>
-    </div>
-  );
-}
-
-
-// PTY component is dynamically imported because xterm pulls DOM APIs
-// + a CSS file that next.js can't tree-shake into SSR. ssr: false avoids
-// hydration mismatch and skips the bundle for users who never click the
-// PTY tab.
-const PtyTerminalDynamic = dynamic(
-  () => import("./PtyTerminal").then((m) => m.PtyTerminal),
-  { ssr: false, loading: () => <p className="mt-3 text-xs text-neutral-500">터미널 로딩…</p> },
-);
-
-
-// Toggle wrapper between single-shot exec runner (PR 9-Z) and full
-// interactive PTY (PR 10-H). Single-shot is default — fast diagnostics
-// without xterm bundle download. PTY tab loads xterm.js on demand.
-function SessionShell({ sessionId }: { sessionId: string }) {
-  const [mode, setMode] = useState<"single" | "pty">("single");
-  return (
-    <div className="mt-3">
-      <div className="flex items-center gap-1 text-[11px] text-neutral-400">
-        <span className="text-neutral-500">모드:</span>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 select-all overflow-x-auto rounded bg-black/40 px-2 py-1.5 font-mono text-[11px] text-emerald-300">
+          {cmd}
+        </code>
         <button
           type="button"
-          onClick={() => setMode("single")}
-          className={cn(
-            "rounded px-2 py-0.5 transition-colors",
-            mode === "single"
-              ? "bg-neutral-100 text-neutral-900"
-              : "border border-neutral-700 hover:border-neutral-500 hover:text-neutral-100",
-          )}
+          onClick={onCopy}
+          className="inline-flex items-center gap-1 rounded border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
         >
-          단발 exec
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("pty")}
-          className={cn(
-            "rounded px-2 py-0.5 transition-colors",
-            mode === "pty"
-              ? "bg-neutral-100 text-neutral-900"
-              : "border border-neutral-700 hover:border-neutral-500 hover:text-neutral-100",
-          )}
-          title="xterm.js + WebSocket PTY — vim, less, top, 인터랙티브 셸 등 가능"
-        >
-          인터랙티브 PTY
+          {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+          {copied ? "복사됨" : "복사"}
         </button>
       </div>
-      {mode === "single" ? (
-        <ShellTerminal sessionId={sessionId} />
-      ) : (
-        <PtyTerminalDynamic sessionId={sessionId} />
-      )}
+      <p className="mt-2 text-[11px] text-neutral-500">
+        bash 가 있으면 <span className="font-mono">sh</span> 대신{" "}
+        <span className="font-mono">bash</span> 로 바꿔 사용하세요. 컨테이너 종료 시
+        세션도 자동으로 닫힙니다.
+      </p>
     </div>
   );
 }
@@ -1033,8 +868,8 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                   </ul>
                 </details>
               )}
-              {session.status === "running" && (
-                <SessionShell sessionId={session.id} />
+              {session.status === "running" && session.containerName && (
+                <ContainerAccessHelper containerName={session.containerName} />
               )}
               {session.error && (
                 <p className="mt-2 text-rose-300">오류: {session.error}</p>

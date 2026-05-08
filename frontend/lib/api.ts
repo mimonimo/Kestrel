@@ -295,6 +295,10 @@ export const api = {
     request<AppSettingsResponse>(`/settings/credentials/${id}/activate`, {
       method: "POST",
     }),
+  pingActiveCredential: () =>
+    request<CredentialPingResponse>(`/settings/credentials/ping`, {
+      method: "POST",
+    }),
 
   analyzeCve: (cveId: string) =>
     request<AiAnalysisResponse>(`/cves/${encodeURIComponent(cveId)}/analyze`, {
@@ -381,15 +385,6 @@ export const api = {
       `/sandbox/sessions/${encodeURIComponent(sessionId)}/exec`,
       { method: "POST", headers: clientHeaders(), body: JSON.stringify(body) },
     ),
-  shellExecSandbox: (sessionId: string, command: string) =>
-    request<ShellExecResponse>(
-      `/sandbox/sessions/${encodeURIComponent(sessionId)}/shell`,
-      {
-        method: "POST",
-        headers: clientHeaders(),
-        body: JSON.stringify({ command }),
-      },
-    ),
   submitLabFeedback: (
     sessionId: string,
     body: { vote: "up" | "down"; note?: string | null },
@@ -418,6 +413,17 @@ export interface AiCredentialListResponse {
 export interface AppSettingsResponse {
   activeCredentialId: number | null;
   active: AiCredential | null;
+}
+
+export interface CredentialPingResponse {
+  ok: boolean;
+  provider: string | null;
+  model: string | null;
+  latencyMs: number;
+  replyPreview: string | null;
+  errorKind: string | null;
+  errorDetail: string | null;
+  cliVersion: string | null;
 }
 
 export interface AiCredentialCreate {
@@ -665,15 +671,6 @@ export interface SearchFacetsResponse {
   domains: FacetBucket[];
   earliestPublishedAt: string | null;
   latestPublishedAt: string | null;
-}
-
-export interface ShellExecResponse {
-  containerName: string;
-  command: string;
-  exitCode: number;
-  output: string;
-  truncated: boolean;
-  elapsedMs: number;
 }
 
 export interface SynthCandidate {

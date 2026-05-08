@@ -13,6 +13,7 @@ import asyncio
 import json
 import shutil
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import HTTPException, status
@@ -425,7 +426,11 @@ async def _call_claude_cli_text(
             status_code=502,
             detail=f"claude CLI 응답이 비어 있습니다.{_claude_cli_auth_hint(stderr_text)}",
         )
-    return _parse_payload(stdout_text)
+    # Return raw text — the dispatch contract is `-> str`. Older code
+    # called _parse_payload here too, which double-parsed for analysis
+    # callers and broke for connectivity-test callers passing
+    # force_json=False with plain-text reply ("ok").
+    return stdout_text
 
 
 def _claude_cli_auth_hint(diag: str) -> str:
@@ -517,6 +522,78 @@ async def call_llm(
     """
     cred = await _load_active_credential(db)
     return await _dispatch_text(cred, system, user, force_json=force_json)
+
+
+async def ping_active_credential(db: AsyncSession) -> dict:
+    """One-shot connectivity test for the *active* AI credential.
+
+    Returns a structured probe result the settings UI can show next to
+    the active model — `ok`, `latency_ms`, optional `error_detail` and
+    `cli_version` (claude_cli only). The body is one tiny prompt so the
+    cost is negligible (~few tokens) but exercises the full auth + HTTP
+    + parse path the same way real analysis does.
+    """
+    started = datetime.now(timezone.utc)
+    try:
+        cred = await _load_active_credential(db)
+    except AiAnalyzerNotConfigured as e:
+        return {
+            "ok": False,
+            "error_kind": "not_configured",
+            "error_detail": str(e),
+            "latency_ms": 0,
+            "provider": None,
+            "model": None,
+        }
+    try:
+        text = await _dispatch_text(
+            cred,
+            "You are a connectivity test responder.",
+            "Reply with the exact two characters: ok",
+            force_json=False,
+        )
+    except HTTPException as e:
+        elapsed = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+        return {
+            "ok": False,
+            "error_kind": _classify_error(str(e.detail)),
+            "error_detail": str(e.detail),
+            "latency_ms": elapsed,
+            "provider": cred.provider,
+            "model": cred.model,
+            "cli_version": await _claude_cli_version() if cred.provider == "claude_cli" else None,
+        }
+    elapsed = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+    return {
+        "ok": True,
+        "reply_preview": (text or "")[:80],
+        "latency_ms": elapsed,
+        "provider": cred.provider,
+        "model": cred.model,
+        "cli_version": await _claude_cli_version() if cred.provider == "claude_cli" else None,
+    }
+
+
+def _classify_error(detail: str) -> str:
+    """Map an HTTPException detail string to a coarse error_kind tag.
+
+    The settings UI shows different remediation copy per kind — auth
+    expired vs. rate-limited vs. config-not-found etc.
+    """
+    lower = (detail or "").lower()
+    if "401" in lower or "invalid authentication" in lower or "expired" in lower:
+        return "auth_expired"
+    if "rate limit" in lower or "hit your limit" in lower or "usage limit" in lower:
+        return "rate_limit"
+    if "not logged in" in lower or "/login" in lower:
+        return "not_logged_in"
+    if "응답이 비어 있습니다" in lower or "empty" in lower:
+        return "empty_response"
+    if "configuration file not found" in lower or "config" in lower:
+        return "config_missing"
+    if "not found" in lower or "binary" in lower:
+        return "cli_missing"
+    return "unknown"
 
 
 async def analyze_vulnerability(db: AsyncSession, vuln: Vulnerability) -> AiAnalysis:

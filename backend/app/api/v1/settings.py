@@ -228,3 +228,48 @@ async def activate_credential(
         active_credential_id=settings_row.active_credential_id,
         active=_to_out(cred, settings_row.active_credential_id),
     )
+
+
+class CredentialPingResponse(CamelModel):
+    """Result of a connectivity test against the active AI credential."""
+
+    ok: bool
+    provider: str | None = None
+    model: str | None = None
+    latency_ms: int = 0
+    reply_preview: str | None = None
+    error_kind: str | None = None
+    error_detail: str | None = None
+    cli_version: str | None = None
+
+
+@router.post(
+    "/credentials/ping",
+    response_model=CredentialPingResponse,
+    response_model_by_alias=True,
+)
+async def ping_credential(db: AsyncSession = Depends(get_db)) -> CredentialPingResponse:
+    """One-shot connectivity test against the *active* AI credential.
+
+    Drives the "테스트" button in AiSettingsForm so the user gets an
+    immediate ✓/✗ + remediation hint instead of having to leave the
+    settings page and try AI 분석 to find out their config doesn't work.
+
+    The body is a tiny "reply: ok" prompt — billable but negligible
+    (~few tokens). On failure, ``error_kind`` is a coarse tag the UI
+    can pattern-match (auth_expired / rate_limit / config_missing /
+    cli_missing / not_logged_in / empty_response / unknown).
+    """
+    from app.services.ai_analyzer import ping_active_credential
+
+    res = await ping_active_credential(db)
+    return CredentialPingResponse(
+        ok=bool(res.get("ok")),
+        provider=res.get("provider"),
+        model=res.get("model"),
+        latency_ms=int(res.get("latency_ms") or 0),
+        reply_preview=res.get("reply_preview"),
+        error_kind=res.get("error_kind"),
+        error_detail=res.get("error_detail"),
+        cli_version=res.get("cli_version"),
+    )
