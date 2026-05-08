@@ -349,6 +349,11 @@ export const api = {
     request<SynthCandidatesResponse>(
       `/sandbox/cves/${encodeURIComponent(cveId)}/synth-candidates`,
     ),
+  resetSynthCooldown: (cveId: string) =>
+    request<void>(
+      `/sandbox/cves/${encodeURIComponent(cveId)}/synth-cooldown/reset`,
+      { method: "POST" },
+    ),
   triggerSynthesizerGc: (
     body?: {
       targetTotalMb?: number;
@@ -658,6 +663,8 @@ export interface SearchFacetsResponse {
   severities: FacetBucket[];
   sources: FacetBucket[];
   domains: FacetBucket[];
+  earliestPublishedAt: string | null;
+  latestPublishedAt: string | null;
 }
 
 export interface ShellExecResponse {

@@ -302,6 +302,11 @@ class FacetsResponse(CamelModel):
     severities: list[FacetBucket] = []
     sources: list[FacetBucket] = []
     domains: list[FacetBucket] = []
+    # PublishedAt boundaries across the whole corpus — drives the
+    # "데이터 YYYY.MM.DD ~ YYYY.MM.DD" tag on the dashboard so the
+    # operator can see the time window the visible counts cover.
+    earliest_published_at: datetime | None = None
+    latest_published_at: datetime | None = None
 
 
 @router.get(
@@ -385,10 +390,25 @@ async def search_facets(db: AsyncSession = Depends(get_db)) -> FacetsResponse:
     def _enum_value(v) -> str:
         return v.value if hasattr(v, "value") else str(v)
 
+    # publishedAt boundaries — single MIN/MAX scan over the indexed
+    # column. NULLs filtered so we don't show 1970-01-01 floor.
+    bounds = (
+        await db.execute(
+            select(
+                func.min(Vulnerability.published_at),
+                func.max(Vulnerability.published_at),
+            ).where(Vulnerability.published_at.isnot(None))
+        )
+    ).first()
+    earliest = bounds[0] if bounds else None
+    latest = bounds[1] if bounds else None
+
     return FacetsResponse(
         types=[FacetBucket(value=str(n), count=int(c)) for n, c in type_rows],
         os_families=[FacetBucket(value=_enum_value(o), count=int(c)) for o, c in os_rows],
         severities=[FacetBucket(value=_enum_value(s), count=int(c)) for s, c in sev_rows],
         sources=[FacetBucket(value=_enum_value(s), count=int(c)) for s, c in src_rows],
         domains=[FacetBucket(value=str(d), count=int(c)) for d, c in dom_rows if d],
+        earliest_published_at=earliest,
+        latest_published_at=latest,
     )

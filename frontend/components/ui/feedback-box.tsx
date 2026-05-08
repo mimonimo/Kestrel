@@ -32,7 +32,7 @@ const TONE: Record<
     actionBtn: "border-rose-500/40 text-rose-100 hover:bg-rose-500/15",
   },
   notice: {
-    wrap: "border-amber-500/40 bg-surface-2",
+    wrap: "border-amber-500/40 bg-amber-500/10",
     icon: "text-amber-300",
     title: "text-amber-200",
     body: "text-neutral-100",

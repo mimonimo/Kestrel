@@ -22,6 +22,33 @@ import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 20;
 
+// "데이터 YYYY.MM.DD ~ YYYY.MM.DD" — sourced from /search/facets so it
+// reflects the entire parsed corpus (publishedAt MIN..MAX) rather than
+// the currently filtered slice. Lets the operator gauge how much of the
+// CVE timeline the dashboard covers at a glance.
+function CorpusRange() {
+  const facets = useQuery({
+    queryKey: ["search", "facets"],
+    queryFn: () => api.getSearchFacets(),
+    staleTime: 60_000,
+  });
+  const lo = facets.data?.earliestPublishedAt;
+  const hi = facets.data?.latestPublishedAt;
+  if (!lo || !hi) return null;
+  const fmt = (iso: string) => {
+    const d = new Date(iso);
+    return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
+  };
+  return (
+    <span
+      className="ml-2 inline-flex items-center rounded border border-neutral-800 bg-surface-2 px-2 py-0.5 text-[11px] text-neutral-400"
+      title={`수집 데이터의 publishedAt 범위 — 전체 corpus 기준 (현재 필터와 무관)`}
+    >
+      데이터 {fmt(lo)} ~ {fmt(hi)}
+    </span>
+  );
+}
+
 function Dashboard() {
   const url = useUrlState();
   const [queryInput, setQueryInput] = useState(url.query);
@@ -115,6 +142,7 @@ function Dashboard() {
               총{" "}
               <span className="text-neutral-100 font-semibold">{activeData.total ?? "—"}</span>
               건
+              <CorpusRange />
               {bookmarksOnly && " · 즐겨찾기"}
               {url.query && !bookmarksOnly && (
                 <>

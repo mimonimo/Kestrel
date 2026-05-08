@@ -467,6 +467,46 @@ async def synthesize_cache(
     )
 
 
+@router.post(
+    "/cves/{cve_id}/synth-cooldown/reset",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def reset_synth_cooldown(
+    cve_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Manually clear the 24h synthesis cooldown for *cve_id*.
+
+    When the synthesizer's last attempt for a CVE failed, it stamps a
+    placeholder row (lab_kind=``synthesized/<cve>/pending``,
+    verified=False) carrying ``last_synthesis_attempt_at``. The next
+    /synthesize call refuses for 24h based on that timestamp. This
+    endpoint deletes the placeholder so an operator can immediately
+    retry without waiting — equivalent to the existing
+    ``forceRegenerate=true`` opt-in but exposed as a discrete UI action.
+
+    Idempotent: returns 204 even if no placeholder exists. Verified
+    candidates (lab_kind=``synthesized/<cve>/<sha>``) are NOT touched —
+    only the cooldown placeholder.
+    """
+    placeholder_kind = f"synthesized/{cve_id}/pending"
+    placeholder = await db.scalar(
+        select(CveLabMapping).where(
+            CveLabMapping.cve_id == cve_id,
+            CveLabMapping.kind == LabSourceKind.SYNTHESIZED,
+            CveLabMapping.lab_kind == placeholder_kind,
+        )
+    )
+    if placeholder is not None:
+        await db.delete(placeholder)
+        await db.commit()
+        log.info(
+            "sandbox.cooldown_reset",
+            cve_id=cve_id,
+            mapping_id=placeholder.id,
+        )
+
+
 @router.get(
     "/cves/{cve_id}/synth-candidates",
     response_model=SynthCandidatesResponse,

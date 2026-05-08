@@ -702,6 +702,22 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
     setSynthError(null);
   };
 
+  // Manual cooldown reset (PR 10-N) — DELETE the placeholder row that's
+  // gating the 24h timer, then immediately re-enter the synthesis flow.
+  // Idempotent server-side; UI just clears local state and retries.
+  const resetCooldown = async () => {
+    try {
+      await api.resetSynthCooldown(cveId);
+    } catch {
+      // Best-effort; if the reset failed (rare) we still try the
+      // synthesis — the backend will just answer cooldown again and
+      // the user sees the same NoticeBox.
+    }
+    setSynthLog([]);
+    setSynthError(null);
+    void startSynthesis();
+  };
+
   const stop = useMutation({
     mutationFn: () => api.stopSandbox(sessionId!),
     onSuccess: () => {
@@ -903,6 +919,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
             error={synthError}
             onCancel={cancelSynthesis}
             onRetry={startSynthesis}
+            onResetCooldown={resetCooldown}
           />
         )}
 
@@ -1087,12 +1104,14 @@ function SynthesisTimeline({
   error,
   onCancel,
   onRetry,
+  onResetCooldown,
 }: {
   log: SynthLogEntry[];
   running: boolean;
   error: string | null;
   onCancel: () => void;
   onRetry: () => void;
+  onResetCooldown: () => void;
 }) {
   const seen = new Set(log.map((e) => e.phase));
   // If the backend short-circuited (cooldown / cached_hit), the default
@@ -1204,13 +1223,18 @@ function SynthesisTimeline({
         <NoticeBox
           title="합성 cooldown 중"
           message={error}
-          hint="즉시 재시도가 필요하면 forceRegenerate=true 로 다시 시도하거나 cooldown 만료를 기다리세요."
+          hint="cooldown 을 즉시 해제하고 새 합성 시도를 보내려면 아래 'cooldown 초기화' 버튼을 누르세요. 24시간 만료를 기다려도 됩니다."
           size="sm"
           actions={
-            <FeedbackBoxButton tone="notice" onClick={onRetry}>
-              <RefreshCw className="h-3 w-3" />
-              다시 시도
-            </FeedbackBoxButton>
+            <>
+              <FeedbackBoxButton tone="notice" onClick={onResetCooldown}>
+                <RefreshCw className="h-3 w-3" />
+                cooldown 초기화
+              </FeedbackBoxButton>
+              <FeedbackBoxButton tone="notice" onClick={onRetry}>
+                다시 시도
+              </FeedbackBoxButton>
+            </>
           }
         />
       ) : seen.has("cached_hit") ? (

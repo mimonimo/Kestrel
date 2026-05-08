@@ -84,9 +84,16 @@ html.light .hover\:text-neutral-200:hover { color: #18181b; }
    them to 600/700-range shades that still match the brand hue. */
 html.light .text-sky-200 { color: #0369a1; }
 html.light .text-sky-300 { color: #0369a1; }
+html.light .text-sky-400 { color: #0284c7; }
+html.light .text-emerald-100 { color: #065f46; }
 html.light .text-emerald-200 { color: #047857; }
 html.light .text-emerald-300 { color: #047857; }
+html.light .text-emerald-400 { color: #059669; }
+html.light .text-amber-100 { color: #92400e; }
+html.light .text-amber-100\/90 { color: rgba(146, 64, 14, 0.92); }
+html.light .text-amber-100\/95 { color: rgba(146, 64, 14, 0.95); }
 html.light .text-amber-200 { color: #b45309; }
+html.light .text-amber-200\/85 { color: rgba(180, 83, 9, 0.85); }
 html.light .text-amber-300 { color: #b45309; }
 html.light .text-red-200 { color: #b91c1c; }
 html.light .text-red-200\/90 { color: rgba(185, 28, 28, 0.92); }
@@ -95,6 +102,112 @@ html.light .text-red-400 { color: #dc2626; }
 html.light .text-violet-400 { color: #6d28d9; }
 html.light .hover\:text-red-300:hover { color: #991b1b; }
 html.light .hover\:text-amber-200:hover { color: #b45309; }
+html.light .hover\:text-amber-100:hover { color: #78350f; }
+
+/* Rose family — added in PR 10-L/10-M (ErrorBox, FeedbackBoxButton,
+   inline error text). Tailwind's rose 100-300 are pinks that disappear
+   on a white/pink-tinted background; bump to rose-800/900 for clear
+   readability against the ErrorBox's bg-rose-500/10 surface. */
+html.light .text-rose-100 { color: #881337; }       /* rose-900 */
+html.light .text-rose-100\/90 { color: rgba(136, 19, 55, 0.95); }
+html.light .text-rose-100\/95 { color: rgba(136, 19, 55, 0.97); }
+html.light .text-rose-200 { color: #9f1239; }       /* rose-800 */
+html.light .text-rose-200\/80 { color: rgba(159, 18, 57, 0.92); }
+html.light .text-rose-200\/90 { color: rgba(159, 18, 57, 0.95); }
+html.light .text-rose-300 { color: #be123c; }       /* rose-700 */
+html.light .text-rose-400 { color: #e11d48; }       /* rose-600 */
+html.light .hover\:text-rose-200:hover { color: #881337; }
+html.light .hover\:text-rose-300:hover { color: #881337; }
+html.light .hover\:text-rose-400:hover { color: #9f1239; }
+
+/* Lab-kind chip palette (PR 9-Q / 9-X / 9-Y). The 200 shades work for
+   labels in dark mode but vanish on white-ish chip-bg — bump to 700/800
+   for same-hue identity at light-mode contrast. */
+html.light .text-cyan-200 { color: #155e75; }       /* cyan-800 */
+html.light .text-cyan-300 { color: #155e75; }
+html.light .text-cyan-400 { color: #0e7490; }
+html.light .text-purple-200 { color: #5b21b6; }     /* purple-800 */
+html.light .text-purple-300 { color: #5b21b6; }
+html.light .text-orange-200 { color: #9a3412; }     /* orange-800 */
+html.light .text-orange-300 { color: #9a3412; }
+html.light .text-orange-400 { color: #c2410c; }
+html.light .text-blue-200 { color: #1e40af; }       /* blue-800 */
+html.light .text-blue-300 { color: #1e40af; }
+html.light .text-indigo-200 { color: #3730a3; }     /* indigo-800 */
+html.light .text-indigo-300 { color: #3730a3; }
+html.light .text-teal-200 { color: #115e59; }       /* teal-800 */
+html.light .text-teal-300 { color: #115e59; }
+html.light .text-fuchsia-200 { color: #86198f; }    /* fuchsia-800 */
+html.light .text-fuchsia-300 { color: #86198f; }
+html.light .text-yellow-200 { color: #854d0e; }     /* yellow-800 */
+html.light .text-yellow-300 { color: #854d0e; }
+html.light .text-lime-300 { color: #3f6212; }       /* lime-800 */
+html.light .text-lime-400 { color: #4d7c0f; }
+
+/* Border deepening for tinted boxes (ErrorBox/NoticeBox/chips) — the
+   default 500/40 alpha on a white bg is *too washed out* unboosted but
+   /70 is too loud. /45-/50 strikes the SeverityBadge balance: visible
+   boundary without harsh outline. */
+html.light .border-rose-500\/40 { border-color: rgba(225, 29, 72, 0.45); }
+html.light .border-amber-500\/40 { border-color: rgba(217, 119, 6, 0.45); }
+html.light .border-emerald-500\/40 { border-color: rgba(5, 150, 105, 0.45); }
+html.light .border-cyan-500\/40 { border-color: rgba(8, 145, 178, 0.45); }
+html.light .border-blue-500\/40 { border-color: rgba(37, 99, 235, 0.45); }
+html.light .border-purple-500\/40 { border-color: rgba(147, 51, 234, 0.45); }
+html.light .border-orange-500\/40 { border-color: rgba(234, 88, 12, 0.45); }
+html.light .border-fuchsia-500\/40 { border-color: rgba(192, 38, 211, 0.45); }
+html.light .border-teal-500\/40 { border-color: rgba(13, 148, 136, 0.45); }
+html.light .border-indigo-500\/40 { border-color: rgba(79, 70, 229, 0.45); }
+html.light .border-yellow-500\/40 { border-color: rgba(202, 138, 4, 0.45); }
+html.light .border-red-500\/40 { border-color: rgba(220, 38, 38, 0.45); }
+
+/* ErrorBox / NoticeBox / FeedbackBoxButton tinted backgrounds — use a
+   warm pastel (amber-100 / rose-100 base) instead of bumping the
+   500-shade alpha. Mirrors the SeverityBadge "HIGH" / Memory-Corruption
+   chip patterns the user flagged as good light-mode references —
+   gentle wash + dark text + subtle colored border. */
+html.light .bg-rose-500\/10 { background-color: #fff1f2; }   /* rose-50 */
+html.light .bg-rose-500\/15 { background-color: #ffe4e6; }   /* rose-100 */
+html.light .bg-rose-500\/20 { background-color: #fecdd3; }   /* rose-200 */
+html.light .bg-amber-500\/10 { background-color: #fffbeb; }  /* amber-50 */
+html.light .bg-amber-500\/15 { background-color: #fef3c7; }  /* amber-100 */
+html.light .bg-amber-500\/20 { background-color: #fde68a; }  /* amber-200 */
+html.light .hover\:bg-rose-500\/15:hover { background-color: #fecdd3; }
+html.light .hover\:bg-amber-500\/15:hover { background-color: #fde68a; }
+
+/* Same gentle-wash treatment for chip palette tinted backgrounds. */
+html.light .bg-cyan-500\/10 { background-color: #ecfeff; }
+html.light .bg-cyan-500\/15 { background-color: #cffafe; }
+html.light .bg-cyan-500\/20 { background-color: #a5f3fc; }
+html.light .bg-blue-500\/10 { background-color: #eff6ff; }
+html.light .bg-blue-500\/15 { background-color: #dbeafe; }
+html.light .bg-blue-500\/20 { background-color: #bfdbfe; }
+html.light .bg-emerald-500\/10 { background-color: #ecfdf5; }
+html.light .bg-emerald-500\/15 { background-color: #d1fae5; }
+html.light .bg-emerald-500\/20 { background-color: #a7f3d0; }
+html.light .bg-orange-500\/10 { background-color: #fff7ed; }
+html.light .bg-orange-500\/15 { background-color: #ffedd5; }
+html.light .bg-orange-500\/20 { background-color: #fed7aa; }
+html.light .bg-orange-600\/20 { background-color: #fed7aa; }
+html.light .bg-purple-500\/10 { background-color: #faf5ff; }
+html.light .bg-purple-500\/15 { background-color: #f3e8ff; }
+html.light .bg-purple-500\/20 { background-color: #e9d5ff; }
+html.light .bg-teal-500\/10 { background-color: #f0fdfa; }
+html.light .bg-teal-500\/15 { background-color: #ccfbf1; }
+html.light .bg-teal-500\/20 { background-color: #99f6e4; }
+html.light .bg-fuchsia-500\/10 { background-color: #fdf4ff; }
+html.light .bg-fuchsia-500\/15 { background-color: #fae8ff; }
+html.light .bg-fuchsia-500\/20 { background-color: #f5d0fe; }
+html.light .bg-indigo-500\/10 { background-color: #eef2ff; }
+html.light .bg-indigo-500\/15 { background-color: #e0e7ff; }
+html.light .bg-indigo-500\/20 { background-color: #c7d2fe; }
+html.light .bg-yellow-500\/10 { background-color: #fefce8; }
+html.light .bg-yellow-500\/20 { background-color: #fef08a; }
+html.light .bg-yellow-600\/20 { background-color: #fef08a; }
+html.light .bg-red-500\/10 { background-color: #fee2e2; }
+html.light .bg-red-500\/15 { background-color: #fecaca; }
+html.light .bg-red-600\/20 { background-color: #fecaca; }
+html.light .bg-green-600\/20 { background-color: #bbf7d0; }
 
 html.light ::-webkit-scrollbar-track { background: #fafafa; }
 html.light ::-webkit-scrollbar-thumb { background: #d4d4d8; }
