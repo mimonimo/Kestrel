@@ -20,9 +20,13 @@ Kestrel은 공개 취약점 정보를 한 곳으로 모아 보안 엔지니어, 
 - [아키텍처](#아키텍처)
 - [스크린샷](#스크린샷)
 - [Tech Stack](#tech-stack)
-- [Quick Start (Docker)](#quick-start-docker)
-- [Ubuntu 22.04 원클릭 셋업](#ubuntu-2204-원클릭-셋업)
-- [설정 (환경변수)](#설정-환경변수)
+- [설치 (Installation)](#설치-installation)
+  - [1. 빠른 시작 (Docker · 1분)](#1-빠른-시작-docker--1분)
+  - [2. 사전 요구사항](#2-사전-요구사항)
+  - [3. macOS 호스트 + Claude CLI 자동 sync (선택)](#3-macos-호스트--claude-cli-자동-sync-선택)
+  - [4. Ubuntu 운영 서버 배포](#4-ubuntu-운영-서버-배포)
+  - [5. 환경변수 reference](#5-환경변수-reference)
+  - [6. 업데이트 · 롤백 · 초기화](#6-업데이트--롤백--초기화)
 - [AI 심층 분석](#ai-심층-분석)
 - [샌드박스 (CVE → 격리 컨테이너 → 자동 검증)](#샌드박스-cve--격리-컨테이너--자동-검증)
 - [로컬 개발 (Docker 없이)](#로컬-개발-docker-없이)
@@ -140,7 +144,7 @@ Kestrel은 공개 취약점 정보를 한 곳으로 모아 보안 엔지니어, 
 | Database    | PostgreSQL 16 (JSONB + tsvector + GIN 인덱스)                        |
 | Search      | Meilisearch v1.10 (rankingRules 튜닝, stopWords, typoTolerance)      |
 | Cache       | Redis 7 (sliding window rate limiter)                                |
-| AI          | OpenAI · Anthropic · Gemini · Groq · OpenRouter · Cerebras · Claude Code CLI (다중 제공자, 활성 키 스위치) |
+| AI          | Claude Code CLI (호스트 구독 기반, OAuth Keychain auto-sync) |
 | Sandbox     | Docker SDK for Python · vulhub git harvester · custom AI lab synthesizer · internal bridge network · cgroup/PID 한도 + 옵트인 seccomp |
 | Infra       | Docker Compose (멀티 아키텍처 자동 빌드, DooD via host socket)         |
 | Observability (optional) | Sentry · OpenTelemetry                                   |
@@ -148,14 +152,17 @@ Kestrel은 공개 취약점 정보를 한 곳으로 모아 보안 엔지니어, 
 
 ---
 
-## Quick Start (Docker)
+## 설치 (Installation)
+
+> 가장 빠른 길은 §1 빠른 시작 한 블록만 따라가는 것. 운영 환경 / Claude CLI 연동이 필요하면 §3·§4 추가 단계만 더 보면 됩니다. 환경변수는 §5 한 표에 모두 있고, 설치 후 관리(업데이트/초기화)는 §6.
+
+### 1. 빠른 시작 (Docker · 1분)
 
 ```bash
 git clone https://github.com/mimonimo/Kestrel.git
 cd Kestrel
 cp .env.example .env
-# 선택: .env 의 NVD_API_KEY, GITHUB_TOKEN 을 채우면 외부 API 레이트 리밋이 크게 완화됩니다.
-docker compose up --build
+docker compose up -d --build
 ```
 
 | 서비스 | URL |
@@ -164,162 +171,112 @@ docker compose up --build
 | Backend (Swagger) | http://localhost:8000/docs |
 | Meilisearch | http://localhost:7700 |
 
-첫 기동 시 Alembic 마이그레이션이 자동 적용되고, NVD에서 최근 30일 분 CVE가 백그라운드로 수집됩니다(약 2~5분). 이후에는 스케줄러가 소스별 증분 수집을 자동으로 이어갑니다.
+첫 기동 시 Alembic 마이그레이션이 자동 적용되고, NVD 최근 30일 분 CVE 가 백그라운드로 수집됩니다 (~2-5분). NVD/GitHub 키 없이도 keyless 모드로 동작합니다 (NVD 5 req/30s, GitHub 는 silently skip).
 
-### 지원 플랫폼
+`docker compose ps` 로 컨테이너 상태, `docker compose logs -f backend` 로 첫 수집 로그를 확인할 수 있습니다.
 
-기본 `docker-compose.yml` 은 호스트 아키텍처를 그대로 사용하도록 구성되어 있어, 별도 설정 없이 다음 환경에서 동일한 명령으로 실행됩니다.
+---
 
-| 환경 | 비고 |
-| --- | --- |
-| Apple Silicon macOS (arm64) | 네이티브 빌드, 가장 빠름 |
-| Intel/AMD Linux (amd64) | 운영 서버 권장 |
-| Windows (WSL2) | 호스트 아키텍처와 동일 |
+### 2. 사전 요구사항
 
-`docker compose` (Compose v2, 공백) 와 `docker-compose` (Compose v1, 하이픈) 중 시스템에 설치된 쪽 어느 것을 사용해도 동작합니다.
+**OS / 아키텍처** — 호스트 아키텍처 그대로 빌드하므로 별도 설정 없이 동작:
+- Apple Silicon macOS (arm64) — 네이티브 빌드, 가장 빠름
+- Intel/AMD Linux (amd64) — 운영 서버 권장
+- Windows (WSL2) — 호스트 아키텍처와 동일
 
-### arm64 호스트에서 amd64 이미지를 빌드해야 할 때
+**Docker** — Compose v2 (공백) 또는 v1 (하이픈) 어느 쪽이든 OK.
 
-Apple Silicon에서 빌드한 이미지를 amd64 운영 서버로 푸시·배포해야 하는 경우에만 필요합니다. `buildx` 또는 별도 override 파일을 통해 플랫폼을 명시할 수 있습니다.
-
-**buildx 직접 호출**
-
+**arm64 → amd64 빌드가 필요한 경우** (Apple Silicon 에서 운영 서버용 이미지 빌드):
 ```bash
-docker buildx build --platform linux/amd64 \
-  -t kestrel-backend:latest ./backend --load
-docker buildx build --platform linux/amd64 \
-  -t kestrel-frontend:latest ./frontend --load
-```
-
-**Compose override 사용** — `docker-compose.prod.yml`
-
-```yaml
+# 운영 환경 전용 override (메인 compose 에 platform 박으면 로컬에서 깨짐)
+cat > docker-compose.prod.yml <<EOF
 services:
-  backend:
-    platform: linux/amd64
-  frontend:
-    platform: linux/amd64
-```
-
-```bash
+  backend: { platform: linux/amd64 }
+  frontend: { platform: linux/amd64 }
+EOF
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-> 메인 `docker-compose.yml` 에 `platform: linux/amd64` 를 직접 추가하면 Apple Silicon 로컬 환경에서 빌드와 실행 아키텍처가 어긋나 컨테이너 기동이 실패할 수 있으므로, 운영 환경 전용 override 파일로 분리하는 것을 권장합니다.
+---
+
+### 3. macOS 호스트 + Claude CLI 자동 sync (선택)
+
+macOS 에서 본인 Claude Code 구독을 backend AI 분석에 그대로 쓰려는 경우. 별도 Anthropic API 결제 불필요. Linux 호스트는 호스트의 claude CLI 가 직접 `~/.claude/.credentials.json` 을 갱신하므로 §3-3 의 LaunchAgent 단계 건너뛰고 §3-1 / §3-2 / §3-4 만 따라가면 됩니다.
+
+#### 3-1. 호스트에 Claude CLI 로그인 (없을 때만)
+
+```bash
+npm install -g @anthropic-ai/claude-code
+claude login
+```
+
+#### 3-2. .env 에 플래그 + Claude CLI 오버레이로 기동
+
+```bash
+echo "INSTALL_CLAUDE_CLI=1" >> .env
+docker compose -f docker-compose.yml -f docker-compose.claude-cli.yml up -d --build
+```
+
+이 시점부터 backend 컨테이너에 claude CLI 설치 + `~/.claude` 마운트 동작.
+
+#### 3-3. macOS Keychain → 파일 자동 sync 등록
+
+macOS Claude CLI 는 OAuth 토큰을 **Keychain**(`Claude Code-credentials`) 에 저장. 컨테이너의 Linux CLI 는 Keychain 접근이 없어 stale token → 401/empty response. 자동 mirror 스크립트 + LaunchAgent 한 줄 등록:
+
+```bash
+bash backend/scripts/install_keychain_sync_launchd.sh
+# → installed: ~/Library/LaunchAgents/com.kestrel.creds-sync.plist
+#   · 매 1시간 + 부팅 시 refresh + sync 자동 실행
+#   · 로그: ~/Library/Logs/com.kestrel.creds-sync.{out,err}.log
+```
+
+- `refresh_and_sync_claude_creds.sh` 가 매번 `claude -p 'reply: ok'` 로 OAuth refresh 트리거 → 새 토큰을 file 로 mirror.
+- 컨테이너 backend 는 single-file bind mount inode swap 문제를 피해 mirror 를 매 호출마다 fresh copy + HOME override 로 사용 (PR 10-P).
+
+#### 3-4. 설정 페이지에서 활성화
+
+`/settings` → AI 분석 → 새 credential 추가 → provider `Claude Code CLI (로컬 구독)`, 모델 선택 → 저장 → 라디오로 활성화 → "연결 테스트" 클릭으로 즉시 ✓/✗ 확인. ConnectionTest 가 errorKind 별 한국어 remediation hint 를 보여 줘 무엇을 고쳐야 할지 즉시 안내됩니다.
+
+> ⚠️ `~/.claude/.credentials.json` 에는 세션 토큰이 있으므로 마운트는 읽기 전용. 컨테이너 외부에 노출되지 않도록 주의. 공용/공유 서버에서는 권장하지 않음.
 
 ---
 
-## Ubuntu 22.04 원클릭 셋업
+### 4. Ubuntu 운영 서버 배포
 
-아래 절차는 깨끗한 Ubuntu 22.04 LTS 서버를 기준으로 합니다. 모두 수행하면 Kestrel이 `http://<서버IP>:3000` 에서 즉시 동작합니다.
-
-### 1. Docker · Docker Compose 플러그인 설치
+깨끗한 Ubuntu 22.04 LTS 기준. 모두 수행하면 `http://<서버IP>:3000` 에서 즉시 동작.
 
 ```bash
-# 기본 툴
+# (a) Docker + Compose 플러그인
 sudo apt update && sudo apt install -y ca-certificates curl gnupg git ufw
-
-# Docker 공식 APT 저장소 등록
 sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
-  sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 sudo chmod a+r /etc/apt/keyrings/docker.gpg
-
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-  https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker $USER && newgrp docker
 
-# 현재 사용자에 docker 그룹 부여 (로그아웃 후 재로그인 시 적용)
-sudo usermod -aG docker $USER
-newgrp docker
-
-# 설치 확인
-docker --version
-docker compose version
-```
-
-### 2. 방화벽 설정 (UFW)
-
-공개 서버라면 3000(프런트엔드)과 8000(API) 포트만 열고, 나머지 의존 서비스는 Docker 내부 네트워크에서만 통신하도록 닫아 두는 것을 권장합니다.
-
-```bash
+# (b) 방화벽 — 운영 환경은 8000 노출 대신 nginx/Caddy 로 리버스 프록시 권장
 sudo ufw allow OpenSSH
-sudo ufw allow 3000/tcp   # 프런트엔드
-sudo ufw allow 8000/tcp   # 백엔드 API (리버스 프록시 쓸 땐 생략)
+sudo ufw allow 3000/tcp   # frontend
+sudo ufw allow 8000/tcp   # backend (proxy 쓰면 생략)
 sudo ufw enable
-sudo ufw status
-```
 
-> 운영 환경에서는 8000을 직접 노출하지 말고, Nginx 또는 Caddy를 사용해 3000과 함께 443(TLS) 경로에서 리버스 프록시하는 구성을 권장합니다.
-
-### 3. 저장소 클론 · 환경변수
-
-```bash
+# (c) clone + 기동
 cd /opt
 sudo git clone https://github.com/mimonimo/Kestrel.git
-sudo chown -R $USER:$USER Kestrel
-cd Kestrel
+sudo chown -R $USER:$USER Kestrel && cd Kestrel
 cp .env.example .env
-
-# 선택: 외부 API 호출 한도를 늘리려면 다음 키들을 .env 에 채워 주세요.
-# - NVD_API_KEY: https://nvd.nist.gov/developers/request-an-api-key
-# - GITHUB_TOKEN: https://github.com/settings/tokens (별도 scope 불필요)
-nano .env
-```
-
-### 4. 기동
-
-```bash
-docker compose up -d --build
-docker compose ps
-docker compose logs -f backend       # 첫 수집 로그 확인
-```
-
-- Frontend: `http://<서버IP>:3000`
-- Swagger: `http://<서버IP>:8000/docs`
-
-첫 기동 시 Alembic 마이그레이션과 NVD 최근 30일 분 수집이 자동으로 수행되며, 보통 2~5분 정도 소요됩니다.
-
-### 5. systemd로 부팅 시 자동 기동 (선택)
-
-`docker-compose.yml` 의 모든 서비스는 `restart: unless-stopped` 정책을 사용하므로, Docker 데몬이 시작되면 컨테이너도 자동으로 복구됩니다. Ubuntu 22.04에서는 Docker 데몬이 기본적으로 활성화되어 있어 별도 systemd 유닛을 만들지 않아도 재부팅 후 자동 기동됩니다. 상태를 직접 확인하려면 다음 명령을 사용합니다.
-
-```bash
-sudo systemctl enable docker
-sudo systemctl status docker
-```
-
-### 6. 업데이트 · 롤백
-
-```bash
-cd /opt/Kestrel
-git pull
-docker compose up -d --build
-docker compose logs -f
-```
-
-문제가 생기면:
-
-```bash
-git log --oneline -5
-git checkout <이전_커밋_SHA>
 docker compose up -d --build
 ```
 
-데이터는 Docker named volume(`postgres_data`, `redis_data`, `meili_data`)에 유지되므로 컨테이너 재생성 후에도 살아 있습니다. 완전 초기화가 필요하면:
-
-```bash
-docker compose down -v   # ⚠️ DB · 수집 이력 전부 삭제
-```
+**부팅 시 자동 기동**: `restart: unless-stopped` 정책 + `sudo systemctl enable docker` 로 끝. 별도 systemd unit 불필요.
 
 ---
 
-## 설정 (환경변수)
+### 5. 환경변수 reference
 
-`.env.example`을 참고하세요. 최소 설정으로도 동작하며, 모든 키는 선택입니다.
+`.env` 의 모든 키는 선택. 빈 .env 만으로도 §1 동작.
 
 | Key | 목적 | 기본값 |
 | --- | ---- | ------ |
@@ -327,106 +284,54 @@ docker compose down -v   # ⚠️ DB · 수집 이력 전부 삭제
 | `DATABASE_URL` | 비동기 드라이버 포함 DSN | `postgresql+asyncpg://…` |
 | `REDIS_URL` | Redis 연결 | `redis://redis:6379/0` |
 | `MEILI_HOST` / `MEILI_MASTER_KEY` | Meilisearch | `http://meilisearch:7700` |
-| `NVD_API_KEY` | 5→50 req/30s 한도 상향 | — |
-| `GITHUB_TOKEN` | GHSA GraphQL 호출용 | — |
+| `NVD_API_KEY` | 5→50 req/30s 한도 상향 (없으면 keyless 모드) | — |
+| `GITHUB_TOKEN` | GHSA GraphQL 호출용 (없으면 GHSA 수집 skip) | — |
 | `CORS_ORIGINS` | 허용 오리진 JSON 배열 | `["http://localhost:3000"]` |
 | `SANDBOX_NETWORK` | lab 컨테이너가 붙는 internal-only bridge 이름 | `kestrel_sandbox_net` |
 | `SANDBOX_TTL_SECONDS` | lab 자동 reaping 주기 | `1800` |
 | `SANDBOX_HARDEN` | `true` 시 read-only rootfs · no-new-privileges · seccomp 강화 (옵트인) | `false` |
-| `SANDBOX_RUNTIME` / `SANDBOX_SECCOMP_PATH` | 런타임/seccomp 프로파일 (예: `runsc`, gVisor 환경) | — |
-| `VULHUB_REPO_PATH` / `VULHUB_HOST_PATH` | vulhub 저장소 경로 (컨테이너/호스트 동일하게 두는 것을 권장) | `/data/vulhub` |
-| `VULHUB_REPO_REMOTE` | git clone 원격 | `https://github.com/vulhub/vulhub.git` |
-| `DOCKER_GID` | Linux 호스트에서 docker.sock 그룹 GID (macOS+OrbStack 은 0) | `0` |
-| `INSTALL_CLAUDE_CLI` | `1` 시 backend 이미지에 `claude` CLI 설치 (Claude Code CLI 제공자용) | `0` |
-| `SENTRY_DSN` | Sentry(선택) | — |
-| `OTEL_ENABLED` / `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry(선택) | `false` |
+| `SANDBOX_RUNTIME` / `SANDBOX_SECCOMP_PATH` | 런타임/seccomp 프로파일 (예: `runsc`, gVisor) | — |
+| `VULHUB_REPO_PATH` / `VULHUB_HOST_PATH` | vulhub 저장소 경로 | `/data/vulhub` |
+| `VULHUB_REPO_REMOTE` | vulhub git remote | `https://github.com/vulhub/vulhub.git` |
+| `DOCKER_GID` | Linux docker.sock 그룹 GID (macOS+OrbStack 은 0) | `0` |
+| `INSTALL_CLAUDE_CLI` | `1` 시 backend 이미지에 claude CLI 설치 (§3 참고) | `0` |
+| `CLAUDE_HOME` / `CLAUDE_CONFIG` | claude CLI mount 경로 override | `~/.claude` / `~/.claude.json` |
+| `SENTRY_DSN` | Sentry (선택) | — |
+| `OTEL_ENABLED` / `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry (선택) | `false` |
 
-설정 페이지(`/settings`)에서는 NVD 키, GitHub 토큰, 사용자 자산, 테마 등을 모두 브라우저 localStorage 에 저장합니다. 이 값들은 서버로 영구 전송되지 않으며, 수동 재수집을 트리거할 때만 요청 헤더로 1회성 전달됩니다.
+**dashboard 입력 키** — `/settings` 페이지의 NVD/GitHub 키 입력은 브라우저 localStorage 저장. 수동 새로고침 시에만 backend 로 1회성 전달 (서버 영구 저장 X). AI 활성 credential 만 backend DB 에 저장 (해시 처리, 응답에서 마스킹).
+
+---
+
+### 6. 업데이트 · 롤백 · 초기화
+
+```bash
+# 업데이트
+cd /opt/Kestrel && git pull && docker compose up -d --build
+
+# 롤백 (이전 커밋으로)
+git log --oneline -5
+git checkout <이전_SHA> && docker compose up -d --build
+
+# 완전 초기화 — ⚠️ DB · 수집 이력 모두 삭제
+docker compose down -v
+```
+
+데이터는 named volume (`postgres_data`, `redis_data`, `meili_data`) 에 보존. 컨테이너 재생성 후에도 살아 있음. `down -v` 만 진짜 wipe.
 
 ---
 
 ## AI 심층 분석
 
-CVE 상세 페이지에서 **"AI 심층 분석 요청"** 버튼을 누르면 LLM이 해당 CVE만의 구체적 공격 기법·PoC 페이로드·패치 방안을 한국어로 생성합니다. 페이로드는 취약점 유형(XSS·SQLi·RCE·SSRF·경로 순회 등)에 맞춰 실제 테스트 환경에서 재현할 수 있는 형태로 작성되며, 대응 방안은 그 페이로드가 어떤 검사·패치로 무력화되는지 1:1로 매핑해 제시합니다.
+CVE 상세 페이지에서 **"AI 심층 분석 요청"** 버튼을 누르면 LLM 이 해당 CVE 만의 구체적 공격 기법 + 다중 PoC 페이로드 + 패치/대응 항목을 한국어로 생성합니다. 페이로드는 취약점 유형 (XSS / SQLi / RCE / SSRF / 경로 순회 등) 에 맞춰 실제 테스트 환경에서 재현 가능한 형태로 작성되며, 대응 항목은 그 페이로드가 어떤 검사 / 패치 / WAF 룰로 무력화되는지 1:1 로 매핑.
 
-제공자·모델·키는 설정 페이지(`/settings`)에서 여러 개 등록하고 활성 키를 스위치할 수 있습니다. 저장된 키에서 모델만 즉석 변경도 가능합니다.
+**제공자**: PR 10-T 부터 Claude Code CLI 단일 경로만 지원. macOS 호스트의 Claude 구독으로 동작 — §3 셋업 후 사용. 다른 provider (OpenAI / Anthropic API / Gemini / Groq / OpenRouter / Cerebras) 는 인증/오류 매트릭스 단순화 위해 제거됨.
 
-### 지원 제공자
+**Lab 합성과 공유** — AI 는 두 곳에서 사용됩니다:
+1. **CVE 심층 분석** — 공격 기법 + 페이로드 + 대응 항목 (위)
+2. **Lab 합성** (샌드박스 → vulhub 매핑이 없을 때) — Dockerfile + 앱 코드 + 주입 지점 + 페이로드 + success indicator 를 JSON 으로 생성, backend probe 가 빌드 후 ground-truth 검증
 
-| 제공자 | 등록 방식 | 비고 |
-| --- | --- | --- |
-| **OpenAI** | API 키 | `gpt-5`, `gpt-5-mini`, `gpt-4.1` 계열. `json_schema` strict 응답 형식 사용. |
-| **Anthropic** | API 키 | `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`. Anthropic Messages API 직접 호출. |
-| **Google Gemini (무료 티어)** | API 키 | [aistudio.google.com](https://aistudio.google.com/apikey)에서 발급. Flash 일 1,500 요청 무료. OpenAI 호환 엔드포인트 사용. |
-| **Groq (무료 티어)** | API 키 | [console.groq.com](https://console.groq.com/keys) 발급. Llama 3.3 70B / 3.1 8B / Mixtral / Gemma2, 분당 30·일 14,400 요청 무료. |
-| **OpenRouter (:free 모델)** | API 키 | [openrouter.ai/keys](https://openrouter.ai/keys) 발급. `:free` 접미사 모델만 무료 (DeepSeek, Llama 3.3, Qwen 등). |
-| **Cerebras (무료 티어)** | API 키 | [cloud.cerebras.ai](https://cloud.cerebras.ai)에서 발급. Llama 3.3 70B 일 100만 토큰 무료, 추론 속도 최고 수준. |
-| **Claude Code CLI** | 키 불필요 | 호스트에 설치된 `claude` CLI(본인 구독)로 분석 수행. 아래 섹션 참고. |
-
-### Claude Code CLI 연동
-
-별도 Anthropic API 결제 없이 본인이 이미 쓰고 있는 Claude Code 구독으로 분석을 돌리고 싶을 때 사용합니다. 백엔드 컨테이너에 `claude` CLI를 설치하고, 호스트의 `~/.claude` 로그인 정보를 읽기 전용으로 마운트합니다.
-
-**1. 호스트에서 claude CLI에 먼저 로그인** (아직 안 돼 있다면)
-
-```bash
-npm install -g @anthropic-ai/claude-code
-claude login
-```
-
-**2. (macOS만) 키체인의 OAuth 토큰을 파일로 내보내기**
-
-macOS의 Claude Code CLI는 OAuth 토큰을 **Keychain**(`Claude Code-credentials`)에 저장하므로, `~/.claude` 를 그냥 마운트해도 Linux 컨테이너 안의 CLI는 만료된 legacy `~/.claude/.credentials.json` 으로 폴백해 401 또는 빈 응답이 됩니다. 동기화 헬퍼를 한 번 실행하세요. (Linux 호스트는 호스트 CLI 가 직접 파일을 갱신하므로 건너뛰세요.)
-
-```bash
-backend/scripts/sync_claude_creds_from_keychain.sh
-# → synced: /Users/<you>/.claude/.credentials.json (expiresAt=2026-05-03T21:56:41)
-```
-
-> 스크립트가 Keychain 페이로드의 JSON 모양을 검증한 뒤 원자적으로 `~/.claude/.credentials.json` 에 기록하고, 만료 시각을 출력합니다. 토큰이 만료되거나 401 이 다시 보이면 같은 스크립트를 한 번 더 돌리면 됩니다 (백엔드 재빌드 불필요 — read-only mount 가 호스트 파일의 새 내용을 바로 봅니다). 토큰 만료 패턴이 짧다면 `cron` 또는 macOS LaunchAgent 로 주기적 호출을 권장합니다.
-
-오류 메시지에 `claude CLI 인증 실패. macOS 호스트라면 ...` hint 가 같이 뜨므로 어떤 단계에서 막혔는지 바로 알 수 있고, 컨테이너 안 CLI 가 호스트보다 구버전이라 silent empty 가 발생하면 `_call_claude_cli_text()` 가 `npm install -g @anthropic-ai/claude-code@latest` 로 1회 자동 self-upgrade 후 재시도합니다 (역시 rebuild 불필요).
-
-**3. `.env` 에 플래그 설정**
-
-```env
-INSTALL_CLAUDE_CLI=1
-# 기본은 ~/.claude 를 사용합니다. 다른 경로에 저장한다면:
-# CLAUDE_HOME=/custom/path/.claude
-# CLAUDE_CONFIG=/custom/path/.claude.json
-```
-
-**4. Claude CLI 오버레이와 함께 기동**
-
-```bash
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.claude-cli.yml \
-  up -d --build
-```
-
-**5. 설정 페이지에서 키 추가**
-
-- 제공자: `Claude Code CLI (로컬 구독)` 선택
-- 모델: `claude-opus-4-7` 등
-- API 키 입력란 없음 — 바로 저장
-
-이후 CVE 상세 페이지의 **AI 심층 분석 요청** 이 호스트의 Claude 구독을 통해 동작합니다.
-
-> ⚠️ `~/.claude/.credentials.json` 에는 세션 토큰이 있으므로 마운트는 읽기 전용입니다. 컨테이너 외부에 노출되지 않도록 주의하세요. 공용/공유 서버에서 이 방식을 쓰는 것은 권장하지 않습니다.
-
-### AI 의 두 가지 역할
-
-Kestrel 에서 LLM 은 두 곳에서 쓰입니다 — 같은 활성 키가 두 작업 모두에 사용됩니다.
-
-1. **CVE 심층 분석** (CVE 상세 → "AI 심층 분석 요청") — 공격 기법, 페이로드, 대응 방안을 한국어 마크다운으로 생성.
-2. **Lab 합성** (샌드박스 → vulhub 매핑이 없을 때) — Dockerfile + 앱 코드 + 주입 지점 + 페이로드 + success indicator 를 JSON 으로 생성, backend 가 빌드/검증 후 캐시. 자세한 동작은 다음 섹션 참고.
-
-### 무료·저비용 시작 팁
-
-- **아무 키도 없을 때**: Groq → Cerebras → Gemini 순서로 시도해보세요. 등록이 가장 간단하고 속도도 빠른 건 Groq, 출력 품질은 Gemini가 가장 좋은 경향입니다.
-- **Anthropic API 크레딧 부족 오류가 뜰 때**: `console.anthropic.com` 에서 결제 수단을 등록하거나, Claude Code CLI 방식으로 전환하세요.
-- **Gemini 403 `PERMISSION_DENIED`**: 지역 제한 또는 프로젝트 플래그로 차단된 경우입니다. AI Studio에서 **새 프로젝트**로 키를 다시 발급하면 대부분 해결됩니다.
+같은 활성 credential 을 두 작업 모두에 사용. 합성 verify 실패 시 LLM 호출 / 빌드 다시 안 하고 verify 단계만 재개 가능 (PR 10-S, NoticeBox 의 "verify 단계만 재개" 버튼).
 
 ---
 
@@ -740,7 +645,7 @@ npm run test:e2e
 - [x] 익명 커뮤니티 (게시글 · 댓글 · CVE 단위 토론 스레드)
 - [x] 사용자 자산 등록 + CPE 매칭
 - [x] 즐겨찾기 (백엔드 영속화)
-- [x] AI 심층 분석 — 다중 제공자(OpenAI · Anthropic · Gemini · Groq · OpenRouter · Cerebras · Claude Code CLI) + 활성 키 스위치
+- [x] AI 심층 분석 — Claude Code CLI (호스트 구독, OAuth Keychain auto-sync, ConnectionTest UI)
 - [x] 티켓 시스템 (미확인 / 조치완료 상태 + 주의 / 경고 / 심각 뱃지)
 - [x] 격리 샌드박스 (vulhub reproducer + DooD + internal-only bridge + cgroup/PID 한도 + 옵트인 seccomp)
 - [x] AI lab 합성기 (Dockerfile + 앱 + 페이로드 + indicator 자동 생성 + 검증 후 캐시)
