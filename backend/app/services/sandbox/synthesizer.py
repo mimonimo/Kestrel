@@ -672,6 +672,159 @@ async def _noop_progress(phase: str, message: str, payload: dict | None) -> None
     return None
 
 
+async def resume_verify(
+    db: AsyncSession,
+    vuln: Vulnerability,
+    *,
+    on_event: Callable[[str, str, dict | None], Awaitable[None]] | None = None,
+) -> "SynthesisResult":
+    """Re-run verification from a previously-built image (PR 10-S).
+
+    Skips LLM call + image build. Reads the cached spec from the
+    cooldown placeholder (saved on the last verify attempt) and
+    immediately enters lab_started → wait_ready → probe → cached.
+    Returns the same SynthesisResult shape as ``synthesize``.
+
+    Returns ``verified=False`` with explanatory ``error`` if no resumable
+    state is present (e.g. user pressed resume on a CVE that never got
+    past build).
+    """
+    cve_id = vuln.cve_id
+    placeholder_kind = f"synthesized/{cve_id}/pending"
+
+    async def emit(phase: str, message: str, data: dict | None = None) -> None:
+        if on_event is not None:
+            await on_event(phase, message, data)
+
+    placeholder = await db.scalar(
+        select(CveLabMapping).where(
+            CveLabMapping.cve_id == cve_id,
+            CveLabMapping.kind == LabSourceKind.SYNTHESIZED,
+            CveLabMapping.lab_kind == placeholder_kind,
+        )
+    )
+    saved = (placeholder.spec if placeholder else None) or {}
+    if not saved.get("_resumable") or "image_tag" not in saved or "parsed" not in saved:
+        msg = (
+            "재개할 이전 빌드 상태가 없습니다 — verify 단계까지 도달한 시도가 "
+            "필요합니다. forceRegenerate=true 로 새 합성을 시작하세요."
+        )
+        await emit("failed", msg, None)
+        return SynthesisResult(
+            cve_id=cve_id, image_tag="", verified=False,
+            mapping_id=placeholder.id if placeholder else None,
+            attempts=0, error=msg,
+        )
+
+    image_tag = str(saved["image_tag"])
+    parsed = saved["parsed"]
+    spec_dict = saved.get("spec_dict") or {}
+    sha = saved.get("sha", "resume")
+    attempt_no = int(saved.get("attempts", 1))
+
+    digest = _build_digest(parsed, attempts=attempt_no, sha=sha)
+    spec = LabSpec(
+        run_kind="image",
+        lab_kind=str(saved.get("lab_kind") or f"synthesized/{cve_id}/{sha}"),
+        description=spec_dict.get("description", ""),
+        container_port=int(spec_dict.get("container_port") or 8080),
+        target_path=str(spec_dict.get("target_path") or "/"),
+        injection_points=[_injection_point_from(parsed)],
+        image=image_tag,
+        build_hint=spec_dict.get("build_hint", ""),
+    )
+
+    await emit(
+        "start",
+        f"verify 재개 (이미지 {image_tag} 재사용 — LLM/빌드 스킵)",
+        {"imageTag": image_tag, "fromResume": True},
+    )
+    await emit("lab_started", "검증용 컨테이너 기동 + backend probe 실행", None)
+    try:
+        verdict, exchange = await _verify(spec, parsed)
+    except SandboxError as e:
+        msg = f"검증 단계 실패: {e}"
+        log.warning("synthesizer.resume_verify_failed", cve_id=cve_id, error=str(e))
+        await emit("verify_failed", msg, {"resumable": True})
+        return SynthesisResult(
+            cve_id=cve_id, image_tag=image_tag, verified=False,
+            mapping_id=placeholder.id, attempts=attempt_no, error=msg,
+        )
+
+    body_preview = (exchange.get("body") or "")[:400]
+    status_code = exchange.get("status_code")
+    verification = _verification_dict(verdict)
+    spec_dict["verification"] = verification
+
+    if not verdict.passed:
+        msg = (
+            f"검증 실패 (method={verdict.method}): "
+            f"{verdict.rejection_reason or '(사유 없음)'}"
+        )
+        await emit("verify_failed", msg, {
+            "status": status_code,
+            "bodyPreview": body_preview[:200],
+            "method": verdict.method,
+            "probes": [
+                {"name": r.name, "passed": r.passed, "rationale": r.rationale}
+                for r in verdict.probe_results
+            ],
+            "resumable": True,
+        })
+        return SynthesisResult(
+            cve_id=cve_id, image_tag=image_tag, verified=False,
+            mapping_id=placeholder.id, attempts=attempt_no, error=msg,
+        )
+
+    await emit("verify_ok", f"검증 통과 (method={verdict.method})", {
+        "status": status_code, "method": verdict.method,
+    })
+
+    # Same as the success branch in synthesize() — insert verified row,
+    # leave placeholder for cooldown/state, trim to N candidates.
+    payload_dict = _payload_dict_for_mapping(parsed)
+    existing_same_sha = await db.scalar(
+        select(CveLabMapping).where(
+            CveLabMapping.cve_id == cve_id,
+            CveLabMapping.kind == LabSourceKind.SYNTHESIZED,
+            CveLabMapping.lab_kind == spec.lab_kind,
+        )
+    )
+    if existing_same_sha is None:
+        mapping = CveLabMapping(
+            cve_id=cve_id,
+            kind=LabSourceKind.SYNTHESIZED,
+            lab_kind=spec.lab_kind,
+            spec=spec_dict,
+            known_good_payload=payload_dict,
+            verified=True,
+            last_verified_at=datetime.now(timezone.utc),
+            notes=digest,
+        )
+        db.add(mapping)
+    else:
+        existing_same_sha.spec = spec_dict
+        existing_same_sha.known_good_payload = payload_dict
+        existing_same_sha.verified = True
+        existing_same_sha.last_verified_at = datetime.now(timezone.utc)
+        existing_same_sha.notes = digest
+        existing_same_sha.feedback_up = 0
+        existing_same_sha.feedback_down = 0
+        mapping = existing_same_sha
+    await db.commit()
+
+    await emit("cached", "verify 재개 성공 — 매핑 캐시", {
+        "mappingId": mapping.id, "imageTag": image_tag, "digest": digest,
+    })
+
+    return SynthesisResult(
+        cve_id=cve_id, image_tag=image_tag, verified=True,
+        mapping_id=mapping.id, attempts=attempt_no,
+        spec_dict=spec_dict, payload=payload_dict,
+        response_status=status_code, response_body_preview=body_preview,
+    )
+
+
 async def synthesize(
     db: AsyncSession,
     vuln: Vulnerability,
@@ -881,12 +1034,32 @@ async def synthesize(
             )
 
             await emit("lab_started", "검증용 컨테이너 기동 + backend probe 실행", None)
+            # PR 10-S: persist the build artifacts on the placeholder
+            # *before* running verify, so a subsequent "검증만 재개"
+            # request can skip LLM + build and only retry wait_ready +
+            # probe. The image stays in the cache (we removed the
+            # `remove_image` from the failure paths below for the same
+            # reason). spec_dict carries the parsed LLM output verbatim
+            # so resume rebuilds the LabSpec without re-querying the LLM.
+            placeholder_row = await db.get(CveLabMapping, attempt_mapping_id)
+            if placeholder_row is not None:
+                placeholder_row.spec = {
+                    "_resumable": True,
+                    "image_tag": image_tag,
+                    "parsed": parsed,
+                    "spec_dict": spec_dict,
+                    "lab_kind": spec.lab_kind,
+                    "attempts": attempts,
+                    "sha": sha,
+                }
+                await db.commit()
+
             try:
                 verdict, exchange = await _verify(spec, parsed)
             except SandboxError as e:
                 last_error = f"검증 단계 실패: {e}"
                 log.warning("synthesizer.verify_failed", cve_id=cve_id, error=str(e))
-                await remove_image(image_tag)
+                # Keep the image — resume can retry verify without rebuild
                 continue
 
             body_preview = (exchange.get("body") or "")[:400]
@@ -917,9 +1090,13 @@ async def synthesize(
                             {"name": r.name, "passed": r.passed, "rationale": r.rationale}
                             for r in verdict.probe_results
                         ],
+                        "resumable": True,  # PR 10-S — UI 가 "검증만 재개" 버튼 surface
                     },
                 )
-                await remove_image(image_tag)
+                # Keep the image so /synth-resume-from-verify can rerun
+                # only wait_ready + probe without re-billing LLM tokens
+                # or re-building. Old images are eventually cleaned up
+                # by the LRU GC (PR 9-F).
                 continue
             await emit(
                 "verify_ok",

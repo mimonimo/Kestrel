@@ -358,6 +358,11 @@ export const api = {
       `/sandbox/cves/${encodeURIComponent(cveId)}/synth-cooldown/reset`,
       { method: "POST" },
     ),
+  resumeSynthVerify: (cveId: string) =>
+    request<SynthesizeResponse>(
+      `/sandbox/cves/${encodeURIComponent(cveId)}/synth-resume-verify`,
+      { method: "POST" },
+    ),
   triggerSynthesizerGc: (
     body?: {
       targetTotalMb?: number;

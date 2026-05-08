@@ -463,6 +463,41 @@ async def synthesize_cache(
 
 
 @router.post(
+    "/cves/{cve_id}/synth-resume-verify",
+    response_model=SynthesizeResponse,
+    response_model_by_alias=True,
+)
+async def resume_synth_verify(
+    cve_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> SynthesizeResponse:
+    """PR 10-S: re-run only the verify step using a previously-built
+    image. Skips LLM call + docker build, so retrying after a
+    wait_ready/HTTP-500/probe transient failure is seconds + zero
+    tokens. Returns the same SynthesizeResponse shape as /synthesize.
+    """
+    from app.services.sandbox.synthesizer import resume_verify
+
+    vuln = await db.scalar(select(Vulnerability).where(Vulnerability.cve_id == cve_id))
+    if vuln is None:
+        raise HTTPException(status_code=404, detail=f"{cve_id} not found")
+    result = await resume_verify(db, vuln)
+    return SynthesizeResponse(
+        cve_id=result.cve_id,
+        image_tag=result.image_tag,
+        verified=result.verified,
+        mapping_id=result.mapping_id,
+        attempts=result.attempts,
+        spec=result.spec_dict,
+        payload=result.payload,
+        error=result.error,
+        build_log_tail=result.build_log_tail or [],
+        response_status=result.response_status,
+        response_body_preview=result.response_body_preview,
+    )
+
+
+@router.post(
     "/cves/{cve_id}/synth-cooldown/reset",
     status_code=status.HTTP_204_NO_CONTENT,
 )

@@ -553,6 +553,27 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
     void startSynthesis();
   };
 
+  // PR 10-S: re-run verify only on the previously-built image. Skips
+  // LLM call + docker build, so transient wait_ready/HTTP-500 retries
+  // cost zero LLM tokens + ~5s instead of full 60-90s synthesis.
+  const resumeVerify = async () => {
+    setSynthError(null);
+    setSynthRunning(true);
+    try {
+      const res = await api.resumeSynthVerify(cveId);
+      if (res.verified) {
+        // Sandbox session can now spawn off the cached mapping
+        start.mutate(undefined);
+      } else {
+        setSynthError(res.error ?? "verify 재개 실패");
+      }
+    } catch (e) {
+      setSynthError((e as Error).message);
+    } finally {
+      setSynthRunning(false);
+    }
+  };
+
   const stop = useMutation({
     mutationFn: () => api.stopSandbox(sessionId!),
     onSuccess: () => {
@@ -755,6 +776,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
             onCancel={cancelSynthesis}
             onRetry={startSynthesis}
             onResetCooldown={resetCooldown}
+            onResumeVerify={resumeVerify}
           />
         )}
 
@@ -940,6 +962,7 @@ function SynthesisTimeline({
   onCancel,
   onRetry,
   onResetCooldown,
+  onResumeVerify,
 }: {
   log: SynthLogEntry[];
   running: boolean;
@@ -947,6 +970,7 @@ function SynthesisTimeline({
   onCancel: () => void;
   onRetry: () => void;
   onResetCooldown: () => void;
+  onResumeVerify: () => void;
 }) {
   const seen = new Set(log.map((e) => e.phase));
   // If the backend short-circuited (cooldown / cached_hit), the default
@@ -1078,12 +1102,25 @@ function SynthesisTimeline({
         <ErrorBox
           title="합성 실패"
           message={error}
+          hint={
+            verifyFailed
+              ? "이미 빌드된 이미지가 캐시되어 있어 'verify 단계만 재개' 로 LLM 호출/빌드 없이 검증만 다시 시도할 수 있습니다 (수 초)."
+              : undefined
+          }
           size="sm"
           actions={
-            <FeedbackBoxButton onClick={onRetry}>
-              <RefreshCw className="h-3 w-3" />
-              다시 시도
-            </FeedbackBoxButton>
+            <>
+              {verifyFailed && (
+                <FeedbackBoxButton onClick={onResumeVerify}>
+                  <RefreshCw className="h-3 w-3" />
+                  verify 단계만 재개
+                </FeedbackBoxButton>
+              )}
+              <FeedbackBoxButton onClick={onRetry}>
+                <RefreshCw className="h-3 w-3" />
+                처음부터 다시
+              </FeedbackBoxButton>
+            </>
           }
         />
       ))}
