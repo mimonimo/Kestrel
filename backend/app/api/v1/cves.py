@@ -59,8 +59,8 @@ async def get_cve(cve_id: str, db: AsyncSession = Depends(get_db)) -> Vulnerabil
 
 class AiAnalysisResponse(CamelModel):
     attack_method: str
-    payload_example: str
-    mitigation: list[str]
+    payload_examples: list[str]
+    mitigations: list[str]
 
 
 @router.post(
@@ -79,6 +79,6 @@ async def analyze_cve(cve_id: str, db: AsyncSession = Depends(get_db)) -> AiAnal
     result = await analyze_vulnerability(db, vuln)
     return AiAnalysisResponse(
         attack_method=result.attack_method,
-        payload_example=result.payload_example,
-        mitigation=result.mitigation,
+        payload_examples=result.payload_examples,
+        mitigations=result.mitigations,
     )

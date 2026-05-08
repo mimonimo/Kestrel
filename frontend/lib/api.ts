@@ -445,8 +445,8 @@ export interface AiCredentialUpdate {
 
 export interface AiAnalysisResponse {
   attackMethod: string;
-  payloadExample: string;
-  mitigation: string[];
+  payloadExamples: string[];
+  mitigations: string[];
 }
 
 export type SandboxStatus =

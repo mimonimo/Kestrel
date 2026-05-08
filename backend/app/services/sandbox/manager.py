@@ -37,7 +37,11 @@ _LABEL_OWNER = "kestrel.sandbox"
 # bridge — no external hops involved — so anything > a few seconds means
 # the lab is hung or the payload triggered something heavy.
 _HTTP_TIMEOUT = httpx.Timeout(15.0, connect=3.0)
-_READY_TIMEOUT_SECONDS = 20.0
+# 합성 lab 은 처음 부팅 시 gunicorn worker 초기화 + DB 시드 + 첫 요청
+# 응답까지 길어질 수 있어 60s 로 확장 (구 20s 는 cold-start 도중
+# HTTP 500 으로 자주 reject 됐음). 단발 health check 가 빠르면 wait_ready
+# 는 그 즉시 return 하므로 ceiling 만 늘려도 일반 케이스 성능 영향 없음.
+_READY_TIMEOUT_SECONDS = 60.0
 
 
 class SandboxError(Exception):
@@ -241,6 +245,7 @@ async def wait_ready(target_url: str, spec: LabSpec) -> None:
     deadline = asyncio.get_event_loop().time() + _READY_TIMEOUT_SECONDS
     url = f"{target_url}{spec.target_path}"
     last_err: Exception | None = None
+    last_500_body = ""
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
         while asyncio.get_event_loop().time() < deadline:
             try:
@@ -248,11 +253,21 @@ async def wait_ready(target_url: str, spec: LabSpec) -> None:
                 if res.status_code < 500:
                     return
                 last_err = RuntimeError(f"HTTP {res.status_code}")
+                # Capture a snippet of the 500 body so the error surface
+                # has actionable content (stack trace head etc.) instead
+                # of bare 'HTTP 500'.
+                try:
+                    last_500_body = (res.text or "")[:240]
+                except Exception:
+                    last_500_body = ""
             except httpx.HTTPError as e:
                 last_err = e
             await asyncio.sleep(0.4)
+    detail = str(last_err)
+    if last_500_body:
+        detail += f" — body head: {last_500_body!r}"
     raise SandboxError(
-        f"랩 컨테이너가 {_READY_TIMEOUT_SECONDS:.0f}초 안에 응답하지 않았습니다: {last_err}"
+        f"랩 컨테이너가 {_READY_TIMEOUT_SECONDS:.0f}초 안에 응답하지 않았습니다: {detail}"
     )
 
 

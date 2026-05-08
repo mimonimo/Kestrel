@@ -79,11 +79,8 @@ function CodeBlock({ source }: { source: string }) {
 }
 
 export function AiAnalysisPanel({ cveId }: { cveId: string }) {
-  const [checked, setChecked] = useState<Record<number, boolean>>({});
-
   const analyze = useMutation<AiAnalysisResponse, Error>({
     mutationFn: () => api.analyzeCve(cveId),
-    onSuccess: () => setChecked({}),
   });
 
   const data = analyze.data;
@@ -167,37 +164,34 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
 
             <section>
               <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                페이로드 예시
+                예시 페이로드 ({data.payloadExamples.length}종)
               </h3>
-              <CodeBlock source={data.payloadExample} />
+              <div className="space-y-3">
+                {data.payloadExamples.map((p, i) => (
+                  <div key={i} className="space-y-1">
+                    <div className="text-[11px] font-medium text-neutral-500">
+                      #{i + 1}
+                    </div>
+                    <CodeBlock source={p} />
+                  </div>
+                ))}
+              </div>
             </section>
 
             <section>
               <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                대응 방안 체크리스트
+                패치 / 대응 항목 ({data.mitigations.length}개)
               </h3>
               <ul className="space-y-2">
-                {data.mitigation.map((item, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      id={`mitigation-${i}`}
-                      checked={!!checked[i]}
-                      onChange={(e) =>
-                        setChecked((prev) => ({ ...prev, [i]: e.target.checked }))
-                      }
-                      className="mt-0.5 h-4 w-4 flex-shrink-0 cursor-pointer accent-violet-500"
-                    />
-                    <label
-                      htmlFor={`mitigation-${i}`}
-                      className={
-                        checked[i]
-                          ? "cursor-pointer text-neutral-500 line-through"
-                          : "cursor-pointer text-neutral-200"
-                      }
-                    >
-                      {item}
-                    </label>
+                {data.mitigations.map((item, i) => (
+                  <li
+                    key={i}
+                    className="rounded-md border border-neutral-800 bg-surface-2 p-3 text-sm leading-relaxed text-neutral-200"
+                  >
+                    <span className="mr-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-[11px] font-semibold text-violet-300">
+                      {i + 1}
+                    </span>
+                    <span className="whitespace-pre-line align-middle">{item}</span>
                   </li>
                 ))}
               </ul>
