@@ -15,6 +15,7 @@ PR-A (Step 10) additions
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import datetime, timezone
 from typing import Literal
@@ -309,12 +310,38 @@ class FacetsResponse(CamelModel):
     latest_published_at: datetime | None = None
 
 
+# Facets change at ingestion frequency (~every 30 min by the scheduler),
+# not per-request. Frontend FilterPanel + CorpusRange + future surfaces
+# all hit /search/facets — a 60s TTL cache turns N concurrent requests
+# into one DB round-trip without staleness anyone notices.
+_FACETS_CACHE: dict[str, tuple[float, "FacetsResponse"]] = {}
+_FACETS_CACHE_TTL = 60.0
+_FACETS_CACHE_LOCK = asyncio.Lock()
+
+
 @router.get(
     "/facets",
     response_model=FacetsResponse,
     response_model_by_alias=True,
 )
 async def search_facets(db: AsyncSession = Depends(get_db)) -> FacetsResponse:
+    import time as _time
+    now = _time.monotonic()
+    cached = _FACETS_CACHE.get("v1")
+    if cached and now - cached[0] < _FACETS_CACHE_TTL:
+        return cached[1]
+    async with _FACETS_CACHE_LOCK:
+        # Re-check inside lock — another concurrent request may have
+        # populated the cache while we were waiting.
+        cached = _FACETS_CACHE.get("v1")
+        if cached and now - cached[0] < _FACETS_CACHE_TTL:
+            return cached[1]
+        result = await _build_facets(db)
+        _FACETS_CACHE["v1"] = (now, result)
+        return result
+
+
+async def _build_facets(db: AsyncSession) -> FacetsResponse:
     """Filter facet counts derived from the parsed CVE corpus.
 
     Replaces hardcoded chip lists in the frontend — chips are rendered

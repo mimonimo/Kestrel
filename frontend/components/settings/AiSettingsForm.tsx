@@ -444,7 +444,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
             type="text"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder="예: 개인 OpenAI 계정"
+            placeholder="예: 메인 Claude 구독"
             maxLength={64}
           />
         </label>
@@ -507,7 +507,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
               type="url"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder={providerMeta.defaultBaseUrl ?? "https://api.openai.com/v1"}
+              placeholder={providerMeta.defaultBaseUrl ?? "https://example.com/v1"}
               autoComplete="off"
               spellCheck={false}
               className="font-mono"
