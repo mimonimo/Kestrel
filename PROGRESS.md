@@ -1109,6 +1109,63 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-AD — 대시보드 내 Claude 로그인 (호스트 ~/.claude 마운트 제거) ✅
+
+**완료일:** 2026-05-09
+
+> 사용자 보고: "자꾸 CLI Claude code 오류 나네. 차라리 방법을 개선해서 내 서비스 안에 키 넣는거 처럼 로그인 API 이런식으로는 개선 못하나? 근본 개선하고 나는 API 키 가져다 쓸 일 없음 CLI 말고 대시보드 내 설정에서 로그인 가능하면 저런식으로 구현 바람." 그동안 claude_cli 인증이 macOS 호스트 ~/.claude 바인드 + Keychain 동기화 + launchd 크론에 묶여 있어 컨테이너 재생성 / Linux 배포 / 인덱스 swap 등에서 끊임없이 깨졌음. 사용자가 한 번도 터미널에 들어가지 않고 설정 화면에서 로그인 한 번이면 끝나는 구조로 전면 전환.
+
+**Backend — `app/api/v1/claude_auth.py` (신규)**
+- 핵심 통찰: `claude setup-token` 이 device-code OAuth 플로우 — localhost callback 필요 없이 사용자가 코드 받아서 붙여넣기. 우리 UI 에 딱 맞음.
+- `pty.openpty()` + `TIOCSWINSZ(rows=1, cols=400)` 로 와이드 가상 TTY 만들어 `claude setup-token` 실행 — CLI 가 isTTY 검사 통과하고, OAuth URL 이 줄바꿈 없이 한 줄로 출력되어 regex 한 방에 캡처. ANSI escape sequence 는 `_strip_ansi()` 로 제거.
+- 4 endpoints: `GET /status` (자격증명 파일 파싱) / `POST /start` (서브프로세스 + URL 캡처, 25s 타임아웃) / `POST /{sid}/submit` (master fd 에 코드 + \n 쓰고 30s 종료 대기) / `POST /{sid}/cancel` (SIGTERM + 2s grace + SIGKILL) / `POST /logout` (자격증명 파일 unlink).
+- 세션 레지스트리는 in-memory `dict[sid → _LoginSession(proc, master_fd, url, started_at)]` + 10분 TTL GC. 단일 백엔드 인스턴스 가정 (self-hosted).
+- Non-blocking master fd read 로 startup banner / ASCII art 동안 polling 가능.
+
+**Backend — 인프라 변경**
+- `docker-compose.yml`: `claude_credentials` named volume → `/home/app/.claude` 마운트. `INSTALL_CLAUDE_CLI` 기본값 0 → 1. 이제 호스트 바인드 없이 컨테이너 자체가 인증 상태를 영구 보유.
+- `backend/Dockerfile`: `ARG INSTALL_CLAUDE_CLI=1` 기본값으로 — node + claude CLI 베이스 이미지에 baked.
+- `backend/app/services/ai_analyzer.py`: `_ensure_kestrel_claude_home()` 이 mirror 파일 존재 여부로 분기. 없으면 (named volume 모드) 그냥 HOME=/home/app, 있으면 (legacy macOS 호스트 마운트) 기존 scratch HOME workaround. 두 토폴로지가 한 코드 패스.
+
+**Frontend — `components/settings/ClaudeAuthPanel.tsx` (신규)**
+- 상태 카드 — 로그인됨 = emerald (CheckCircle2 + 만료 시각 + 권한 list + 로그아웃 버튼), 미로그인 = amber (ShieldAlert + 안내).
+- `start mutate` 성공 시 자동으로 새 탭에서 OAuth URL 열고, 코드 입력 필드에 포커스 — 사용자 motion 1번 (창 열기 + 코드 받기 + 한 번 paste).
+- 2 단계 안내 (`<ol>`) — 1: URL 열기/복사 + 직접 클릭 가능한 truncated chip, 2: 코드 입력 폼 + 로그인 완료 / 취소 버튼.
+- 컴포넌트 unmount 시 `cancelClaudeAuth(sid)` best-effort — 사용자가 페이지 떠나면 PTY 자동 정리.
+- `cliPresent: false` 일 때는 시작 버튼 대신 NoticeBox 로 `INSTALL_CLAUDE_CLI=1 + bash scripts/update.sh --no-pull` 안내.
+- `lib/api.ts`: 5 helper (status/start/submit/cancel/logout) + 4 타입.
+
+**설정 페이지 재배치**
+- 새 섹션 "Claude 로그인" — 'AI 분석 키' 자리. 인증 상태가 *AI 기능의 prerequisite* 이라 가장 위에 둔다.
+- 기존 `AiSettingsForm` 섹션은 "AI 분석 모델 선택" 으로 리네임 — 더 이상 키 입력이 아니라 *어떤 모델로 호출할지* 의 의미만 남음.
+
+**왜 device-code 흐름인가 (vs localhost callback)**
+- `claude login` 의 일반 플로우는 CLI 가 자동 포트에 listen → Anthropic 이 그 포트로 redirect. 우리 컨테이너 안에서는 (a) 포트 forwarding 필요 (b) 호스트 / 컨테이너 localhost 가 다르다 (c) 자동 포트 캡처 fragile.
+- `claude setup-token` 은 redirect 없이 *Anthropic 가 코드를 화면에 표시 → 사용자가 복사 → CLI stdin 에 paste* 흐름. 포트도 callback 도 필요 없고, 우리는 stdin 에 1줄 쓰면 된다. 컨테이너에 가장 자연스러운 선택.
+
+**왜 PTY 인가 (vs 그냥 Pipe)**
+- `claude setup-token` 이 stdin/stdout/stderr 의 isTTY 검사를 함 — 일반 Pipe 면 OAuth flow 자체를 시작하지 않고 헤드리스 모드로 떨어진다. `pty.openpty()` 로 진짜 TTY 슬레이브를 자식에게 주고 마스터 fd 는 우리가 read/write.
+- 추가 보너스: `TIOCSWINSZ` 로 cols=400 박아서 OAuth URL 이 줄바꿈으로 분리되지 않게 → regex 매치 단순화. 80-col 기본이면 URL 이 5줄에 걸쳐 잘려 reassembly 가 골치아픔.
+
+**왜 named volume 인가 (vs DB 저장)**
+- `claude` CLI 가 OAuth 토큰 자동 갱신을 직접 수행 — 우리가 만지면 갱신 로직을 다시 짜야 한다. 파일 1개 (`~/.claude/.credentials.json`) 로 두면 CLI 가 알아서 refresh, 우리 코드는 거기 없음. named volume 으로 컨테이너 재생성에도 살아남음.
+- 보안: named volume 은 docker daemon 권한 필요 — 호스트 사용자가 평범한 ls 로 못 봄. DB 저장 vs encrypted column 등 추가 인프라 불필요.
+
+**검증 (라이브)**
+- 풀 빌드 (`bash scripts/update.sh --no-pull`) → claude_credentials volume 생성 → 백엔드 재기동 → /api/v1/health 200.
+- `GET /api/v1/settings/claude-auth/status` → `{loggedIn:false, cliPresent:true, cliVersion:"2.1.126"}`.
+- `POST /api/v1/settings/claude-auth/start` → `{sessionId, url:"https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&response_type=code&redirect_uri=...&scope=user%3Ainference&code_challenge=...&state=..."}` — 한 줄 캡처 OK, `code=true` 로 device-code 모드 확인.
+- `POST /{sid}/cancel` → 200, 서브프로세스 SIGTERM 후 정상 종료.
+- 풀 OAuth round-trip (사용자가 코드 paste 까지) 은 본 PR 시점에서는 자동 검증 불가 — 사용자가 다음 로그인 시도에서 검증.
+- `tsc --noEmit` 통과.
+
+**알려진 한계 / 다음 PR 으로 넘김**
+- `claude` CLI 가 토큰 만료 시 *자동 갱신* 을 시도하지만 갱신 실패 시 사용자에게 surface 가 부족 — Status 패널이 expiresAt 만 보여주지 "갱신 실패" 같은 errorKind 는 ai_analyzer 호출 실패 후에야 알 수 있음. errorKind 가 `auth_expired` 면 ClaudeAuthPanel 의 status 를 자동 invalidate 하는 cross-component 훅이 향후 개선 여지.
+- `docker-compose.claude-cli.yml` overlay 는 macOS 호스트 마운트 모드를 위해 *deprecation 으로* 그대로 유지. README 업데이트는 별도 PR.
+- 단일 백엔드 인스턴스 가정 — 멀티 워커 환경에서는 in-memory 세션 레지스트리가 sticky session 필요. self-hosted 단일 노드에서만 동작 보장.
+
+---
+
 ### PR 10-Z — 설정 → 내부 자원 관리 서브 페이지 (DB / Redis / Meili) ✅
 
 **완료일:** 2026-05-09
