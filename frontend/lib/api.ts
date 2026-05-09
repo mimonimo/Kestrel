@@ -163,6 +163,19 @@ export const api = {
   },
   getStatus: () => request<StatusReport>(`/status`),
   getVersion: () => request<VersionReport>(`/version`),
+  getResources: () => request<ResourceReport>(`/resources`),
+  flushRedis: () =>
+    request<ResourceActionResponse>(`/resources/redis/flush`, {
+      method: "POST",
+    }),
+  analyzeDb: () =>
+    request<ResourceActionResponse>(`/resources/db/analyze`, {
+      method: "POST",
+    }),
+  dropMeiliIndex: () =>
+    request<ResourceActionResponse>(`/resources/meili/drop`, {
+      method: "POST",
+    }),
   matchAssets: (assets: Asset[], limit = 100) =>
     request<SearchResponse>(`/assets/match`, {
       method: "POST",
@@ -573,6 +586,50 @@ export interface VersionReport {
   buildTime: string;
   alembicRevision: string | null;
   startedAt: string;
+}
+
+export interface TableSize {
+  name: string;
+  rows: number;
+  totalBytes: number;
+}
+
+export interface DbResource {
+  healthy: boolean;
+  pgVersion: string | null;
+  dbSizeBytes: number | null;
+  tableSizes: TableSize[];
+  error: string | null;
+}
+
+export interface RedisResource {
+  healthy: boolean;
+  usedMemoryBytes: number | null;
+  keyCount: number | null;
+  redisVersion: string | null;
+  error: string | null;
+}
+
+export interface MeiliResource {
+  healthy: boolean;
+  indexUid: string;
+  documentCount: number | null;
+  rawSizeBytes: number | null;
+  indexCount: number | null;
+  meiliVersion: string | null;
+  error: string | null;
+}
+
+export interface ResourceReport {
+  db: DbResource;
+  redis: RedisResource;
+  meili: MeiliResource;
+}
+
+export interface ResourceActionResponse {
+  ok: boolean;
+  detail: string;
+  payload: Record<string, unknown> | null;
 }
 
 export interface AdaptedPayload {

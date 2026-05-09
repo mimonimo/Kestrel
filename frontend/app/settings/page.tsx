@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { ChevronRight, Server } from "lucide-react";
 import { AiSettingsForm } from "@/components/settings/AiSettingsForm";
 import { ApiKeyField } from "@/components/settings/ApiKeyField";
 import { AssetsManager } from "@/components/settings/AssetsManager";
@@ -71,6 +73,31 @@ export default function SettingsPage() {
         description="vulhub 공식 재현 / 표준 환경 / AI 합성 비율과 취약점 유형별 점유율을 보여줍니다. 한쪽으로 쏠려 있다면 합성 품질을 점검할 신호일 수 있습니다."
       >
         <LabKindStatsPanel />
+      </Section>
+
+      <Section
+        title="내부 자원 관리"
+        description="데이터베이스 / Redis / 검색 인덱스의 사용량을 확인하고 점검 동작을 실행하는 별도 화면입니다."
+      >
+        <Link
+          href="/settings/resources"
+          className="group flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-surface-1 p-4 transition-colors hover:border-sky-500/40 hover:bg-surface-2"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/30">
+              <Server className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="text-sm font-medium text-neutral-100">
+                내부 자원 관리 화면 열기
+              </div>
+              <p className="mt-0.5 text-xs text-neutral-500">
+                DB / Redis / Meilisearch 사용량 + 통계 갱신·캐시 비우기·인덱스 초기화
+              </p>
+            </div>
+          </div>
+          <ChevronRight className="h-4 w-4 text-neutral-500 transition-transform group-hover:translate-x-0.5 group-hover:text-neutral-200" />
+        </Link>
       </Section>
 
       <Section

@@ -17,6 +17,7 @@ interface FeedbackBoxProps {
   hint?: string;
   actions?: ReactNode;
   size?: "sm" | "md";
+  className?: string;
 }
 
 const TONE: Record<
@@ -48,6 +49,7 @@ function _Box({
   hint,
   actions,
   size = "md",
+  className,
 }: FeedbackBoxProps & { tone: "error" | "notice" }) {
   const t = TONE[tone];
   return (
@@ -57,6 +59,7 @@ function _Box({
         "space-y-1.5 rounded-md border",
         t.wrap,
         size === "sm" ? "p-2.5 text-[11px]" : "p-3 text-xs",
+        className,
       )}
     >
       <div className={cn("flex items-center gap-1.5 font-medium", t.title)}>
