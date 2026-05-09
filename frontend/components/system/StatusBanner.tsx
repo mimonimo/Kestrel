@@ -244,10 +244,10 @@ export function StatusBanner() {
         className={cn(
           "pointer-events-auto flex items-center gap-2 rounded-full border px-3.5 py-2 text-xs font-medium shadow-lg shadow-black/30 backdrop-blur transition-colors",
           warnCount > 0
-            ? "border-amber-500/40 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25"
+            ? "border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
             : hasIssues
-              ? "border-sky-500/40 bg-sky-500/15 text-sky-300 hover:bg-sky-500/25"
-              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20",
+              ? "border-sky-500/40 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
+              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20",
         )}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -265,9 +265,21 @@ export function StatusBanner() {
         </span>
         <Icon className={cn("h-4 w-4", iconTint)} />
         <span>{hasIssues ? "경고 보기" : "상태 보기"}</span>
-        <span className="rounded-full bg-black/30 px-1.5 py-0.5 text-[10px] text-neutral-100">
-          {label}
-        </span>
+        {/* Healthy 상태에서는 아이콘 + 점이 이미 "정상" 을 충분히 전달하므로
+            중복되는 카운트 칩을 생략. 경고/알림 일 때만 *새로운 정보 (수)* 를
+            칩으로 노출하고, 부모 버튼과 같은 톤을 공유해 톤 불일치 제거. */}
+        {hasIssues && (
+          <span
+            className={cn(
+              "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
+              warnCount > 0
+                ? "bg-amber-500/25 text-amber-100"
+                : "bg-sky-500/25 text-sky-100",
+            )}
+          >
+            {label}
+          </span>
+        )}
       </button>
     </div>
   );

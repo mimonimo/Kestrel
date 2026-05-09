@@ -10,7 +10,7 @@ interface Props {
 
 export function SortSelect({ value, onChange }: Props) {
   return (
-    <label className="inline-flex items-center gap-1.5 rounded-md border border-neutral-700 bg-surface-2 px-2 py-1 text-xs text-neutral-300 hover:border-neutral-500">
+    <label className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 bg-surface-2 px-2.5 py-1 text-xs text-neutral-300 hover:border-neutral-500">
       <ArrowUpDown className="h-3.5 w-3.5 text-neutral-500" />
       <select
         value={value}
