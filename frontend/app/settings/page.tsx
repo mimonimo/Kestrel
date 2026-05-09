@@ -42,17 +42,27 @@ export default function SettingsPage() {
       </Section>
 
       <Section
-        title="Claude 로그인"
-        description="대시보드에서 직접 Claude 구독으로 로그인합니다. 호스트의 CLI 인증을 마운트할 필요 없이, 로그인 한 번으로 백엔드의 영구 저장 공간에 자격증명이 저장되어 컨테이너를 재시작해도 유지됩니다."
+        title="AI 분석"
+        description="CVE 상세 화면의 'AI 심층 분석' 과 실습 환경 합성에 사용되는 Claude 인증과 모델 설정입니다. 호스트의 CLI 인증을 마운트할 필요 없이, 대시보드에서 한 번 로그인하면 자격증명이 백엔드의 영구 저장 공간에 저장되어 컨테이너를 재시작해도 유지됩니다."
       >
-        <ClaudeAuthPanel />
-      </Section>
-
-      <Section
-        title="AI 분석 모델 선택"
-        description="위에서 로그인한 Claude 구독을 어떤 모델로 호출할지 선택합니다. 한 번에 하나의 라벨만 활성화됩니다."
-      >
-        <AiSettingsForm />
+        <div className="space-y-6">
+          <div>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              1. Claude 인증
+            </h3>
+            <ClaudeAuthPanel />
+          </div>
+          <div className="border-t border-neutral-800 pt-6">
+            <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              2. 모델 라벨
+            </h3>
+            <p className="mb-3 text-[11px] text-neutral-500">
+              위에서 로그인한 Claude 구독을 어떤 모델로 호출할지 라벨 단위로
+              관리합니다. 여러 라벨을 두고 한 번에 하나만 활성화할 수 있습니다.
+            </p>
+            <AiSettingsForm />
+          </div>
+        </div>
       </Section>
 
       <Section

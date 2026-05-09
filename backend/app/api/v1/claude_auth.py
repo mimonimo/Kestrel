@@ -349,32 +349,55 @@ async def submit_route(session_id: str, body: SubmitIn) -> ActionOut:
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"코드 전송 실패: {e}")
 
-    # Wait for the subprocess to exit. Successful flow takes ~3s; we cap
-    # at 30s so a stuck CLI doesn't hang the request.
-    try:
-        await asyncio.wait_for(sess.proc.wait(), timeout=30.0)
-    except asyncio.TimeoutError:
+    # Drain master_fd while waiting for the subprocess to exit so we have
+    # full diagnostic output if it hangs (the CLI sometimes prompts again
+    # after the code, e.g. asking the user to confirm a workspace, which
+    # we want to surface in the timeout message). 60s cap covers slow
+    # OAuth token exchange on poor networks.
+    deadline = asyncio.get_event_loop().time() + 60.0
+    timed_out = False
+    while True:
+        try:
+            chunk = await asyncio.to_thread(_read_nonblocking, sess.master_fd)
+            if chunk:
+                sess.output += chunk
+        except OSError:
+            pass
+        if sess.proc.returncode is not None:
+            break
+        try:
+            await asyncio.wait_for(sess.proc.wait(), timeout=0.4)
+            break
+        except asyncio.TimeoutError:
+            if asyncio.get_event_loop().time() > deadline:
+                timed_out = True
+                break
+
+    if timed_out:
+        # Capture one final drain before killing.
+        try:
+            chunk = await asyncio.to_thread(_read_nonblocking, sess.master_fd)
+            if chunk:
+                sess.output += chunk
+        except OSError:
+            pass
         try:
             sess.proc.kill()
         except ProcessLookupError:
             pass
+        snippet = _strip_ansi(sess.output)[-800:].decode(
+            "utf-8", errors="replace"
+        ).strip()
         await _drop_session(session_id)
         raise HTTPException(
             status_code=504,
             detail=(
-                "Claude CLI 가 30초 안에 응답하지 않았습니다. "
-                "코드가 잘못되었거나 OAuth 만료일 수 있습니다 — 다시 시도해 주세요."
+                "Claude CLI 가 60초 안에 응답하지 않았습니다. CLI 출력 발췌: "
+                f"{snippet or '(없음)'}"
             ),
         )
 
-    # Drain remaining output for diagnostics.
-    try:
-        tail = await asyncio.to_thread(_read_nonblocking, sess.master_fd)
-    except OSError:
-        tail = b""
-    sess.output += tail
     rc = sess.proc.returncode
-
     await _drop_session(session_id)
 
     creds = _read_credentials()
@@ -385,10 +408,10 @@ async def submit_route(session_id: str, body: SubmitIn) -> ActionOut:
             detail="Claude 로그인 완료. 이 창을 닫아도 자격증명은 안전하게 저장되었습니다.",
         )
 
-    snippet = _strip_ansi(sess.output)[-400:].decode(
+    snippet = _strip_ansi(sess.output)[-800:].decode(
         "utf-8", errors="replace"
     ).strip()
-    log.warning("claude_auth.login_failed", rc=rc, snippet=snippet[:200])
+    log.warning("claude_auth.login_failed", rc=rc, snippet=snippet[:400])
     raise HTTPException(
         status_code=400,
         detail=(

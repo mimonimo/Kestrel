@@ -121,10 +121,18 @@ def sync_repo() -> Path:
         return repo_path
 
     log.info("vulhub.pull.start", path=str(repo_path))
-    _run(["git", "fetch", "--depth", "1", "origin"], cwd=str(repo_path))
-    # Hard reset to origin's tip — vulhub upstream is the source of truth.
-    head = _run(["git", "rev-parse", "origin/HEAD"], cwd=str(repo_path)).strip()
-    _run(["git", "reset", "--hard", head], cwd=str(repo_path))
+    # Fetch the remote's default-branch tip explicitly into FETCH_HEAD —
+    # avoids depending on the ``origin/HEAD`` symref, which isn't set when
+    # the repo was bootstrapped via ``init + remote add + fetch`` (the
+    # clone path above) instead of ``git clone``. Hard-reset to FETCH_HEAD
+    # because vulhub upstream is the source of truth.
+    _run(
+        ["git", "fetch", "--depth", "1", "origin", "HEAD"],
+        cwd=str(repo_path),
+        timeout=900,
+    )
+    _run(["git", "reset", "--hard", "FETCH_HEAD"], cwd=str(repo_path))
+    head = _run(["git", "rev-parse", "FETCH_HEAD"], cwd=str(repo_path)).strip()
     log.info("vulhub.pull.done", path=str(repo_path), head=head[:12])
     return repo_path
 
