@@ -176,6 +176,24 @@ export const api = {
     request<ResourceActionResponse>(`/resources/meili/drop`, {
       method: "POST",
     }),
+  getClaudeAuthStatus: () =>
+    request<ClaudeAuthStatus>(`/settings/claude-auth/status`),
+  startClaudeAuth: () =>
+    request<ClaudeAuthStart>(`/settings/claude-auth/start`, { method: "POST" }),
+  submitClaudeAuthCode: (sessionId: string, code: string) =>
+    request<ClaudeAuthAction>(
+      `/settings/claude-auth/${encodeURIComponent(sessionId)}/submit`,
+      { method: "POST", body: JSON.stringify({ code }) },
+    ),
+  cancelClaudeAuth: (sessionId: string) =>
+    request<ClaudeAuthAction>(
+      `/settings/claude-auth/${encodeURIComponent(sessionId)}/cancel`,
+      { method: "POST" },
+    ),
+  logoutClaudeAuth: () =>
+    request<ClaudeAuthAction>(`/settings/claude-auth/logout`, {
+      method: "POST",
+    }),
   matchAssets: (assets: Asset[], limit = 100) =>
     request<SearchResponse>(`/assets/match`, {
       method: "POST",
@@ -630,6 +648,26 @@ export interface ResourceActionResponse {
   ok: boolean;
   detail: string;
   payload: Record<string, unknown> | null;
+}
+
+// Claude Code OAuth (PR 10-AD): dashboard-driven login flow.
+export interface ClaudeAuthStatus {
+  loggedIn: boolean;
+  expiresAt: number | null; // epoch seconds
+  scopes: string[];
+  cliPresent: boolean;
+  cliVersion: string | null;
+}
+
+export interface ClaudeAuthStart {
+  sessionId: string;
+  url: string;
+  expiresInSeconds: number;
+}
+
+export interface ClaudeAuthAction {
+  ok: boolean;
+  detail: string;
 }
 
 export interface AdaptedPayload {

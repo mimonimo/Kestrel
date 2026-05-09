@@ -17,22 +17,33 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 
-# Workaround for the macOS host bind-mount inode-swap problem (PR 10-P).
-# claude-code on macOS atomically saves ~/.claude.json (write tmp + rename)
-# whenever it refreshes OAuth, which orphans the docker bind mount of
-# that single file. We side-step by *never* using the mounted single
-# file directly: the host's launchd cron mirrors it into the directory
-# mount at ~/.claude/_kestrel_claude_json_mirror.json, and on each CLI
-# call we copy that mirror into a writable HOME and run the CLI with
-# HOME=that_path. The directory mount stays stable because docker
-# resolves entries through the dir's inode each time.
+# PR 10-AD: dashboard-driven Claude login writes credentials directly into
+# /home/app/.claude (named-volume backed), so the simple HOME = /home/app
+# path "just works". The legacy mirror dance below is kept as a
+# *fallback* for users still running the host-bind macOS overlay (PR 10-P)
+# where the single-file ~/.claude.json bind mount gets orphaned on every
+# OAuth refresh — in that mode the host's launchd cron writes the latest
+# .claude.json into the dir-mounted mirror file, and we copy it into a
+# scratch HOME so the CLI always sees a fresh on-disk copy.
 _KESTREL_CLAUDE_HOME = "/tmp/kestrel_claude_home"
 _CLAUDE_JSON_MIRROR = "/home/app/.claude/_kestrel_claude_json_mirror.json"
+_NATIVE_CLAUDE_HOME = "/home/app"
 
 
 def _ensure_kestrel_claude_home() -> str:
-    """Build a writable HOME with .claude/ symlinked to the mounted dir
-    + .claude.json refreshed from the mirror. Idempotent; safe per call."""
+    """Pick the right HOME for the claude CLI subprocess.
+
+    Default (PR 10-AD): the credentials live in the named volume at
+    ``/home/app/.claude``, written by the dashboard login flow — so HOME
+    = /home/app and the CLI reads/refreshes credentials in place.
+
+    Legacy fallback (PR 10-P macOS overlay): if a mirror file exists, the
+    user is still running the host-bind topology — copy the mirror into
+    a scratch HOME so the CLI sees a stable file even after the host
+    atomic-rename orphans the original bind mount.
+    """
+    if not os.path.exists(_CLAUDE_JSON_MIRROR):
+        return _NATIVE_CLAUDE_HOME
     os.makedirs(_KESTREL_CLAUDE_HOME, exist_ok=True)
     sym = os.path.join(_KESTREL_CLAUDE_HOME, ".claude")
     if not os.path.lexists(sym):
@@ -40,11 +51,10 @@ def _ensure_kestrel_claude_home() -> str:
             os.symlink("/home/app/.claude", sym)
         except FileExistsError:
             pass
-    if os.path.exists(_CLAUDE_JSON_MIRROR):
-        try:
-            shutil.copy2(_CLAUDE_JSON_MIRROR, os.path.join(_KESTREL_CLAUDE_HOME, ".claude.json"))
-        except OSError:
-            pass
+    try:
+        shutil.copy2(_CLAUDE_JSON_MIRROR, os.path.join(_KESTREL_CLAUDE_HOME, ".claude.json"))
+    except OSError:
+        pass
     return _KESTREL_CLAUDE_HOME
 
 import httpx

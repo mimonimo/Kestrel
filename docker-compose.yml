@@ -17,9 +17,13 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       args:
-        # Set INSTALL_CLAUDE_CLI=1 in your shell or .env to install Claude
-        # Code CLI for the "claude_cli" AI analysis provider.
-        INSTALL_CLAUDE_CLI: ${INSTALL_CLAUDE_CLI:-0}
+        # Claude Code CLI is now baked in by default — the dashboard's
+        # "Claude 로그인" flow runs `claude setup-token` inside the
+        # container to obtain OAuth credentials. Set INSTALL_CLAUDE_CLI=0
+        # in your shell or .env to skip the install (~200 MB image savings,
+        # but disables AI analysis entirely until you wire a different
+        # provider).
+        INSTALL_CLAUDE_CLI: ${INSTALL_CLAUDE_CLI:-1}
     ports:
       - "8000:8000"
     environment:
@@ -55,6 +59,12 @@ services:
       # vulhub repo bind mount — same path on host & container so the host
       # docker daemon can read compose files at the path our code passes.
       - ${VULHUB_HOST_PATH:-/data/vulhub}:${VULHUB_REPO_PATH:-/data/vulhub}
+      # Claude Code OAuth credentials persist here. The dashboard's
+      # "Claude 로그인" panel runs `claude setup-token` inside this
+      # container, which writes ~/.claude/.credentials.json — the named
+      # volume keeps that file across container recreates so the user
+      # only authenticates once. (PR 10-AD)
+      - claude_credentials:/home/app/.claude
     # The non-root app user needs membership in whatever group owns the host
     # docker.sock. On macOS+OrbStack the socket appears as root:root inside
     # the container, so adding GID 0 grants access. On Linux hosts set
@@ -120,6 +130,7 @@ volumes:
   postgres_data:
   redis_data:
   meili_data:
+  claude_credentials:
 
 networks:
   default:

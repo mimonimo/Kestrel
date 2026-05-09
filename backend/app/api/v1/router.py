@@ -4,6 +4,7 @@ from app.api.v1 import (
     admin,
     assets,
     bookmarks,
+    claude_auth,
     community,
     cves,
     health,
@@ -26,3 +27,4 @@ api_router.include_router(tickets.router)
 api_router.include_router(settings.router)
 api_router.include_router(sandbox.router)
 api_router.include_router(resources.router)
+api_router.include_router(claude_auth.router)

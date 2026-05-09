@@ -4,6 +4,7 @@ import { ChevronRight, Server } from "lucide-react";
 import { AiSettingsForm } from "@/components/settings/AiSettingsForm";
 import { ApiKeyField } from "@/components/settings/ApiKeyField";
 import { AssetsManager } from "@/components/settings/AssetsManager";
+import { ClaudeAuthPanel } from "@/components/settings/ClaudeAuthPanel";
 import { LabKindStatsPanel } from "@/components/settings/LabKindStatsPanel";
 import { SandboxSessionsPanel } from "@/components/settings/SandboxSessionsPanel";
 import { SynthesizerCachePanel } from "@/components/settings/SynthesizerCachePanel";
@@ -41,8 +42,15 @@ export default function SettingsPage() {
       </Section>
 
       <Section
-        title="AI 분석 키"
-        description="CVE 상세 화면의 'AI 심층 분석' 과 실습 환경 합성에 사용됩니다. 키는 안전하게 저장되며 응답에는 다시 표시되지 않습니다."
+        title="Claude 로그인"
+        description="대시보드에서 직접 Claude 구독으로 로그인합니다. 호스트의 CLI 인증을 마운트할 필요 없이, 로그인 한 번으로 백엔드의 영구 저장 공간에 자격증명이 저장되어 컨테이너를 재시작해도 유지됩니다."
+      >
+        <ClaudeAuthPanel />
+      </Section>
+
+      <Section
+        title="AI 분석 모델 선택"
+        description="위에서 로그인한 Claude 구독을 어떤 모델로 호출할지 선택합니다. 한 번에 하나의 라벨만 활성화됩니다."
       >
         <AiSettingsForm />
       </Section>

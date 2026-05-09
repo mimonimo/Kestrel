@@ -31,10 +31,12 @@ RUN ARCH="$(dpkg --print-architecture)" \
     && mv /tmp/docker/docker /usr/local/bin/docker \
     && rm -rf /tmp/docker
 
-# --- Optional: Claude Code CLI for the "claude_cli" AI analysis provider ---
-# Enable with: docker compose build --build-arg INSTALL_CLAUDE_CLI=1
-# See README "AI 심층 분석 — Claude Code CLI".
-ARG INSTALL_CLAUDE_CLI=0
+# --- Claude Code CLI for the in-dashboard "Claude 로그인" flow (PR 10-AD) ---
+# Default: installed. The settings page runs `claude setup-token` inside
+# this container to drive OAuth without ever exposing the CLI to the user.
+# Set INSTALL_CLAUDE_CLI=0 to skip (~200 MB image savings, disables AI
+# analysis entirely until you wire a different provider).
+ARG INSTALL_CLAUDE_CLI=1
 RUN if [ "$INSTALL_CLAUDE_CLI" = "1" ]; then \
       apt-get update \
       && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
