@@ -17,45 +17,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 
-# PR 10-AD: dashboard-driven Claude login writes credentials directly into
-# /home/app/.claude (named-volume backed), so the simple HOME = /home/app
-# path "just works". The legacy mirror dance below is kept as a
-# *fallback* for users still running the host-bind macOS overlay (PR 10-P)
-# where the single-file ~/.claude.json bind mount gets orphaned on every
-# OAuth refresh — in that mode the host's launchd cron writes the latest
-# .claude.json into the dir-mounted mirror file, and we copy it into a
-# scratch HOME so the CLI always sees a fresh on-disk copy.
-_KESTREL_CLAUDE_HOME = "/tmp/kestrel_claude_home"
-_CLAUDE_JSON_MIRROR = "/home/app/.claude/_kestrel_claude_json_mirror.json"
+# Claude CLI looks at ``$HOME/.claude/.credentials.json`` for OAuth tokens.
+# Dashboard login (PR 10-AD) writes that file directly into the named
+# volume at /home/app/.claude, so the analyzer subprocess just inherits
+# HOME=/home/app and the CLI handles read + refresh in place. The macOS
+# host-bind workaround (PR 10-P) was removed in PR 10-AG.
 _NATIVE_CLAUDE_HOME = "/home/app"
-
-
-def _ensure_kestrel_claude_home() -> str:
-    """Pick the right HOME for the claude CLI subprocess.
-
-    Default (PR 10-AD): the credentials live in the named volume at
-    ``/home/app/.claude``, written by the dashboard login flow — so HOME
-    = /home/app and the CLI reads/refreshes credentials in place.
-
-    Legacy fallback (PR 10-P macOS overlay): if a mirror file exists, the
-    user is still running the host-bind topology — copy the mirror into
-    a scratch HOME so the CLI sees a stable file even after the host
-    atomic-rename orphans the original bind mount.
-    """
-    if not os.path.exists(_CLAUDE_JSON_MIRROR):
-        return _NATIVE_CLAUDE_HOME
-    os.makedirs(_KESTREL_CLAUDE_HOME, exist_ok=True)
-    sym = os.path.join(_KESTREL_CLAUDE_HOME, ".claude")
-    if not os.path.lexists(sym):
-        try:
-            os.symlink("/home/app/.claude", sym)
-        except FileExistsError:
-            pass
-    try:
-        shutil.copy2(_CLAUDE_JSON_MIRROR, os.path.join(_KESTREL_CLAUDE_HOME, ".claude.json"))
-    except OSError:
-        pass
-    return _KESTREL_CLAUDE_HOME
 
 import httpx
 from fastapi import HTTPException, status
@@ -437,23 +404,22 @@ async def _call_claude_cli_text(
 ) -> str:
     """Invoke the local Claude Code CLI in headless mode.
 
-    Uses the host's Claude Code authentication (mounted via ``~/.claude``),
-    so the user's existing subscription is used instead of a separate
-    Anthropic API key / billing. The CLI binary must be on PATH inside the
-    backend container — see README section "AI 심층 분석 — Claude Code CLI".
+    Uses the OAuth credentials placed in /home/app/.claude by the
+    dashboard's Claude 로그인 flow (PR 10-AD). HOME is forced to that
+    path so the CLI reads the named-volume credentials regardless of the
+    process's inherited environment.
 
     Failure-handling: any failure (non-zero exit OR exit 0 + empty stdout)
     triggers a one-shot in-container CLI self-upgrade and ONE retry. This
-    transparently recovers from version drift between host CLI (which auto-
-    updates and may write a newer auth-file format) and container CLI
-    (pinned to image build time).
+    transparently recovers from version drift between auth-file format
+    expected by the runtime CLI vs. the version baked into the image.
     """
     if shutil.which("claude") is None:
         raise HTTPException(
             status_code=502,
             detail=(
-                "claude CLI를 찾을 수 없습니다. 백엔드 이미지에 Claude Code CLI가 "
-                "설치되어 있어야 합니다. README의 'Claude Code CLI' 섹션을 참고하세요."
+                "claude CLI를 찾을 수 없습니다. INSTALL_CLAUDE_CLI=1 (기본값) 로 "
+                "백엔드 이미지를 다시 빌드한 뒤 설정 페이지에서 Claude 로그인을 진행해 주세요."
             ),
         )
     prompt = system + "\n\n" + user
@@ -466,11 +432,8 @@ async def _call_claude_cli_text(
         "--output-format",
         "text",
     ]
-    # Override HOME to a writable dir that always has a fresh .claude.json
-    # (from the mounted-directory mirror). See _ensure_kestrel_claude_home
-    # for why — works around macOS atomic-save inode swap.
     env = os.environ.copy()
-    env["HOME"] = _ensure_kestrel_claude_home()
+    env["HOME"] = _NATIVE_CLAUDE_HOME
     try:
         proc = await asyncio.create_subprocess_exec(
             *args,

@@ -43,11 +43,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import get_db
 from app.core.logging import get_logger
+from app.models import AiCredential, AppSettings
 
 router = APIRouter(prefix="/settings/claude-auth", tags=["claude-auth"])
 log = get_logger(__name__)
@@ -316,12 +320,65 @@ async def start_route() -> StartOut:
     return StartOut(session_id=sid, url=url)
 
 
+_DEFAULT_LABEL = "Claude 구독 (대시보드 로그인)"
+_DEFAULT_PROVIDER = "claude_cli"
+_DEFAULT_MODEL = "claude-sonnet-4-6"
+
+
+async def _ensure_active_credential(db: AsyncSession) -> AiCredential:
+    """Make sure there's exactly one ``claude_cli`` credential and it's active.
+
+    Called right after a successful dashboard login so the user doesn't
+    have to also visit the model-label form to activate something —
+    the analyzer can immediately route to the freshly-saved OAuth.
+
+    Picks the first existing claude_cli row if any (preserves the user's
+    chosen model), otherwise creates one with the default model. Always
+    sets it as the active credential in the singleton AppSettings.
+    """
+    cred = (
+        await db.execute(
+            select(AiCredential)
+            .where(AiCredential.provider == _DEFAULT_PROVIDER)
+            .order_by(AiCredential.id.asc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if cred is None:
+        cred = AiCredential(
+            label=_DEFAULT_LABEL,
+            provider=_DEFAULT_PROVIDER,
+            model=_DEFAULT_MODEL,
+            # claude_cli reads OAuth from disk; the api_key column is
+            # NOT NULL so a sentinel keeps the schema happy without
+            # storing real secrets.
+            api_key="oauth-from-disk",
+        )
+        db.add(cred)
+        await db.flush()
+
+    settings_row = (
+        await db.execute(select(AppSettings).where(AppSettings.id == 1))
+    ).scalar_one_or_none()
+    if settings_row is None:
+        settings_row = AppSettings(id=1)
+        db.add(settings_row)
+    settings_row.active_credential_id = cred.id
+    await db.commit()
+    await db.refresh(cred)
+    return cred
+
+
 @router.post(
     "/{session_id}/submit",
     response_model=ActionOut,
     response_model_by_alias=True,
 )
-async def submit_route(session_id: str, body: SubmitIn) -> ActionOut:
+async def submit_route(
+    session_id: str,
+    body: SubmitIn,
+    db: AsyncSession = Depends(get_db),
+) -> ActionOut:
     async with _sessions_lock:
         sess = _sessions.get(session_id)
     if sess is None or sess.proc is None:
@@ -402,10 +459,21 @@ async def submit_route(session_id: str, body: SubmitIn) -> ActionOut:
 
     creds = _read_credentials()
     if rc == 0 and creds is not None:
+        # Auto-create + activate the AI credential row so the analyzer
+        # can immediately use the new OAuth without a second click.
+        try:
+            cred = await _ensure_active_credential(db)
+            cred_msg = f"활성 모델: {cred.model}"
+        except Exception as e:
+            log.warning("claude_auth.activate_failed", error=str(e))
+            cred_msg = "단, AI 키 활성화에 실패했습니다 — 설정에서 수동으로 활성화해 주세요."
         log.info("claude_auth.login_success")
         return ActionOut(
             ok=True,
-            detail="Claude 로그인 완료. 이 창을 닫아도 자격증명은 안전하게 저장되었습니다.",
+            detail=(
+                "Claude 로그인 완료. 자격증명이 저장되고 AI 키가 자동으로 활성화되었습니다. "
+                f"({cred_msg})"
+            ),
         )
 
     snippet = _strip_ansi(sess.output)[-800:].decode(

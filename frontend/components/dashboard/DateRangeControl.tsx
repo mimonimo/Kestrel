@@ -55,7 +55,10 @@ function presetForDates(from: string, to: string): PresetKey | null {
 
 function fmtIso(iso: string | null | undefined): string | null {
   if (!iso) return null;
-  return iso.replace(/-/g, ".");
+  // Take only the YYYY-MM-DD prefix so timezone-suffixed timestamps
+  // (e.g. "2026-05-09T01:16:09Z") render as "2026.05.09" — operator
+  // cares about the *day* of the corpus boundary, not the second.
+  return iso.slice(0, 10).replace(/-/g, ".");
 }
 
 interface Props {

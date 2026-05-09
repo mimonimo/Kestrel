@@ -75,6 +75,10 @@ export function ClaudeAuthPanel() {
       setSession(null);
       setCode("");
       qc.invalidateQueries({ queryKey: STATUS_KEY });
+      // Auto-created AiCredential row needs to surface in the model-label
+      // panel below — invalidate its query key (see AiSettingsForm).
+      qc.invalidateQueries({ queryKey: ["ai-credentials"] });
+      qc.invalidateQueries({ queryKey: ["app-settings"] });
     },
   });
 
@@ -91,7 +95,11 @@ export function ClaudeAuthPanel() {
 
   const logout = useMutation({
     mutationFn: () => api.logoutClaudeAuth(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: STATUS_KEY }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: STATUS_KEY });
+      qc.invalidateQueries({ queryKey: ["ai-credentials"] });
+      qc.invalidateQueries({ queryKey: ["app-settings"] });
+    },
   });
 
   // If user navigates away while a session is open, kill it server-side

@@ -228,6 +228,10 @@ async def _upsert(session: AsyncSession, parsed: ParsedVulnerability) -> str:
             source_url=parsed.source_url,
             raw_data=parsed.raw_data,
             domains=domains,
+            # PR 10-AF: track every contributing feed in the multi-source
+            # array. Mirrors the singular ``source`` for new rows; existing
+            # rows append below.
+            sources=[parsed.source.value],
             types=type_rows,
             affected_products=products,
             references=refs,
@@ -237,6 +241,12 @@ async def _upsert(session: AsyncSession, parsed: ParsedVulnerability) -> str:
 
     # Existing row — relationships were eagerly loaded above, so iteration is safe.
     changed = False
+    # PR 10-AF: always record this feed's contribution, even when the
+    # parsed row is older than what we already have. Tracks "MITRE has
+    # this CVE too" without overwriting NVD's enriched fields.
+    if parsed.source.value not in (existing.sources or []):
+        existing.sources = list(existing.sources or []) + [parsed.source.value]
+        changed = True
     if parsed.modified_at and (not existing.modified_at or parsed.modified_at > existing.modified_at):
         existing.title = parsed.title
         existing.description = parsed.description
