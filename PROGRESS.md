@@ -1109,6 +1109,56 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-Z — 설정 → 내부 자원 관리 서브 페이지 (DB / Redis / Meili) ✅
+
+**완료일:** 2026-05-09
+
+> 사용자 보고: "설정 창 내에 한페이지에서 내부 프론트엔트 백엔드 DB 자원 관리 가능하도록 페이지도 한개 생성." 그동안 운영자가 "Redis 가 멈춘 것 같다 / 검색 인덱스가 비었다 / 큰 수집 후 검색이 느리다" 같은 상황에서 컨테이너에 들어가 `psql` / `redis-cli` / `curl meilisearch:7700/indexes` 를 직접 쳐야 했음. UI 한 화면에서 사용량 + 점검 동작을 끝낼 수 있도록 별도 서브 페이지 신설.
+
+**Backend — `app/api/v1/resources.py` (신규)**
+- `GET /api/v1/resources` — DB / Redis / Meili 한 번에 조회.
+  - DB: `SHOW server_version`, `pg_database_size(current_database())`, `pg_total_relation_size` + `reltuples` 로 18개 추적 테이블 별 row 추정 + 디스크 사용량. `pg_class` 조인 한 번으로 N+1 없음.
+  - Redis: `client.info()` + `dbsize()`. 사용량 / 키 수 / 버전.
+  - Meili: SDK `index.get_stats()` + `client.get_all_stats()` + `client.get_version()` — sync 호출이라 `asyncio.to_thread` 로 offload (event loop block 회피).
+- `POST /resources/db/analyze` — 추적 테이블 18개에 `ANALYZE` (autocommit 필요해 `raw = await db.connection(); raw.execute("COMMIT"); for t: raw.execute(f'ANALYZE "{t}"')`). VACUUM FULL 은 의도적으로 노출 안 함 (ACCESS EXCLUSIVE 잠금).
+- `POST /resources/redis/flush` — `FLUSHDB`. 전후 `dbsize` 캡처해 "삭제된 키 N개" 응답.
+- `POST /resources/meili/drop` — `client.delete_index(meili_index)`. 응답에 *재색인 명령* (`python -m scripts.reindex_meili`) 명시 — 빈 인덱스만 다음 startup `ensure_index()` 가 다시 만들고 본문 채움은 운영자 책임.
+- 모든 응답 `_CamelOut` 베이스 + `ActionResponse {ok, detail, payload}` 통일 — 프론트가 한 가지 모양으로 처리.
+
+**Frontend — `app/settings/resources/page.tsx` 별도 라우트**
+- 메인 설정 페이지의 마지막 직전에 진입 카드 추가 (Server 아이콘 + ChevronRight). 운영 점검은 일상 설정과 *맥락이 다른* 작업이라 한 화면에 섞지 않고 sub-route 로 분리.
+- 상단에 `← 설정으로 돌아가기` 링크. `max-w-5xl` 로 메인 설정(`max-w-3xl`)보다 넓게 — 카드 3장이 유의미한 폭을 차지.
+
+**`components/settings/ResourcesPanel.tsx`**
+- 카드 3장 (`DbCard` / `RedisCard` / `MeiliCard`) — 각 카드 = 헤더(아이콘 + 이름 + 정상/오류 배지) + 통계 chip 그리드 + 점검 동작.
+- DB 카드는 `<details>` 안에 테이블별 크기 표 (이름 / 추정 행수 / 크기) — 펼치지 않으면 카드가 짧아 위치 차지가 적음.
+- `ActionRow` 컴포넌트 — destructive 액션은 *inline confirm* 패턴 (한 번 누르면 amber 경고 + "확인하고 실행" 두 번째 버튼 제시 + amber 알림 박스). 모달 안 띄움 — 점검 동작이 짧고 컨텍스트 잃지 않게.
+- React Query — 30s staleTime + 60s refetchInterval. 액션 성공 시 자동 `invalidateQueries` 로 통계 새로고침.
+- 결과 표시: 성공 = NoticeBox (amber), 실패 = ErrorBox (rose). 두 컴포넌트 모두 `className` prop 받도록 `feedback-box.tsx` 시그니처 확장 (외부 컴포넌트가 마진 주려고 매번 wrap div 만드는 건 조잡함).
+
+**`lib/api.ts`**
+- `getResources()` + `flushRedis()` + `analyzeDb()` + `dropMeiliIndex()` helper. `ResourceReport` / `DbResource` / `RedisResource` / `MeiliResource` / `TableSize` / `ResourceActionResponse` 타입 추가.
+
+**왜 별도 페이지인가 (vs 메인 설정에 누적)**
+- 메인 설정은 *개인 설정* (테마, 키, 자산) 중심 — 평소 자주 안 들춤. 자원 관리는 *문제 진단/해결* 흐름 — 들어올 때 의도가 명확하다 (`Redis 캐시를 비울 때` / `ANALYZE 돌릴 때`). 두 흐름을 섞으면 한쪽이 다른쪽의 노이즈가 됨. 메인에는 entry card 한 장만 두고 풀 surface 는 sub-route 로.
+
+**왜 destructive 액션을 inline-confirm 으로 했는가 (vs 모달)**
+- 모달은 컨텍스트 단절을 만들어서, *어느 카드의 어떤 액션을 누르려 했는지* 확인 단계에서 잠깐 헷갈린다. inline-confirm 은 그 액션 카드 안에서 amber 박스로 "이 동작이 무엇을 비우는지" 한 번 더 보여준 뒤 두 번째 클릭 — 카드 시각적 위치가 그대로 유지되어 실수가 줄어든다.
+
+**검증 (라이브)**
+- `GET /api/v1/resources` → 200. DB(`pg 16.13` / 794 MB / 18 테이블) / Redis(`7.4.8` / 0 keys / 1.x MB) / Meili(`1.10.3` / 95285 docs / 569 MB).
+- `POST /resources/db/analyze` → 200, `"ANALYZE 완료 (18개 테이블)"`.
+- `POST /resources/redis/flush` → 200, `"Redis 캐시를 비웠습니다 (삭제된 키 0개)"`.
+- `POST /resources/meili/drop` 은 라이브 테스트 안 함 (95k 문서 다시 색인하는 비용이 큼) — 단위 동작은 SDK API 호출만 wrapping 이라 unit-test 만으로 안전 판단.
+- `tsc --noEmit` 통과.
+
+**알려진 한계 / 다음 PR 으로 넘김**
+- "프론트엔드 자원" 항목은 본 PR 범위 밖 — 브라우저 측 React Query 캐시 size / localStorage usage 같은 metric 은 client-only 라 backend endpoint 가 아닌 frontend self-instrumentation 이 필요. 사용자 가치 대비 구현 부담이 커서 별도 PR.
+- `ANALYZE` 는 autocommit 필요한 statement 라 SQLAlchemy AsyncSession 의 transaction 안에서 못 돈다 — 우회로 `raw connection + COMMIT` 사용. 깔끔하지 않으나 이 endpoint 한정이라 helper 까지 짜진 않음.
+- table 별 row 추정 (`reltuples`) 은 ANALYZE 가 돈 시점 기준 stale 일 수 있음 — UI 가 "추정" 라벨 명시.
+
+---
+
 ### PR 10-Y — 기존 설치본 안전 업데이트 흐름 (`scripts/update.sh` + `/api/v1/version`) ✅
 
 **완료일:** 2026-05-09
