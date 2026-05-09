@@ -305,8 +305,37 @@ docker compose up -d --build
 
 ### 6. 업데이트 · 롤백 · 초기화
 
+#### 권장: `scripts/update.sh` 한 줄
+
 ```bash
-# 업데이트
+cd /opt/Kestrel && bash scripts/update.sh
+```
+
+이 스크립트는 다음을 자동으로 수행합니다.
+
+| 단계 | 동작 | 안전장치 |
+|------|------|----------|
+| 1 | `git pull --ff-only` | 작업 트리에 커밋 안 된 변경이 있으면 즉시 중단 |
+| 2 | `.env` 와 `.env.example` 비교 | 새 환경변수가 추가됐다면 경고만 띄우고 계속 |
+| 3 | `docker compose build backend frontend` | 빌드 인자로 git SHA + build time 을 이미지에 baked → `/api/v1/version` 으로 확인 가능 |
+| 4 | `docker compose up -d` | backend 시작 시 `alembic upgrade head` 자동 실행 |
+| 5 | `/api/v1/health` 200 응답 대기 (최대 60초) | 헬스 체크 실패 시 종료코드 1 + 로그 안내 |
+| 6 | (선택) `python -m scripts.reindex_meili` | `--reindex-meili` 플래그 지정 시에만 |
+
+**옵션**:
+
+```bash
+bash scripts/update.sh --reindex-meili   # 검색 인덱스 스키마가 바뀐 릴리스
+bash scripts/update.sh --skip-build      # 의존성 변화 없이 코드만 받았을 때
+bash scripts/update.sh --no-pull         # 이미 git pull 한 경우
+```
+
+업데이트 후 설정 페이지의 **"버전 정보 / 업데이트"** 섹션에서 baked git SHA + 빌드 시각 + 현재 alembic revision 을 확인할 수 있습니다.
+
+#### 수동
+
+```bash
+# 단순 업데이트
 cd /opt/Kestrel && git pull && docker compose up -d --build
 
 # 롤백 (이전 커밋으로)

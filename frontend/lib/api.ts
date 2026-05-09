@@ -162,6 +162,7 @@ export const api = {
     return request<SearchResponse["items"]>(`/cves/batch?${params.toString()}`);
   },
   getStatus: () => request<StatusReport>(`/status`),
+  getVersion: () => request<VersionReport>(`/version`),
   matchAssets: (assets: Asset[], limit = 100) =>
     request<SearchResponse>(`/assets/match`, {
       method: "POST",
@@ -564,6 +565,14 @@ export interface VulhubSyncResponse {
   upserted: number;
   skipped: number;
   errors: string[];
+}
+
+export interface VersionReport {
+  gitCommit: string;
+  gitCommitShort: string;
+  buildTime: string;
+  alembicRevision: string | null;
+  startedAt: string;
 }
 
 export interface AdaptedPayload {

@@ -60,6 +60,15 @@ USER app
 EXPOSE 8000
 ENV PORT=8000
 
+# Build provenance — exposed via /api/v1/version so an operator can
+# confirm `update.sh` actually rolled new code into the container.
+# Pass --build-arg KESTREL_GIT_COMMIT=$(git rev-parse HEAD) at build time
+# to populate; defaults to "unknown" for ad-hoc local builds.
+ARG KESTREL_GIT_COMMIT=unknown
+ARG KESTREL_BUILD_TIME=unknown
+ENV KESTREL_GIT_COMMIT=$KESTREL_GIT_COMMIT
+ENV KESTREL_BUILD_TIME=$KESTREL_BUILD_TIME
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -fsS http://localhost:8000/api/v1/health || exit 1
 

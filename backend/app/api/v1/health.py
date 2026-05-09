@@ -8,9 +8,14 @@ masking real outages with downstream-dependency checks.
 that the frontend banner consumes. Splitting this avoids healthcheck
 flapping when, say, Meilisearch is restarting — the API itself is fine
 and the search path falls back to Postgres tsvector.
+
+`/version` reports the running build (git commit SHA, build time,
+alembic revision) so the operator can confirm an `update.sh` run
+actually rolled new code into the container.
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
@@ -97,4 +102,50 @@ async def status(db: AsyncSession = Depends(get_db)) -> StatusReport:
         github_token_present=bool(settings.github_token),
         ingestions=snapshots,
         server_time=datetime.now(timezone.utc),
+    )
+
+
+class VersionReport(_CamelOut):
+    git_commit: str
+    git_commit_short: str
+    build_time: str
+    alembic_revision: str | None
+    started_at: datetime
+
+
+# Captured once at import time so /version reflects the *running* process
+# (uvicorn worker uptime), not when the latest request arrived.
+_PROCESS_STARTED_AT = datetime.now(timezone.utc)
+
+
+@router.get(
+    "/version", response_model=VersionReport, response_model_by_alias=True
+)
+async def version(db: AsyncSession = Depends(get_db)) -> VersionReport:
+    """Identify the running build.
+
+    `git_commit` / `build_time` come from build-args baked into the
+    backend image during `docker compose build` (default = "unknown"
+    when developers `docker compose up` against a partially-staged
+    tree). `alembic_revision` is read live from the DB so a user who
+    forgot to restart after `git pull` can see "DB is at 0014 but image
+    expects 0015" mismatches.
+    """
+    git_commit = os.environ.get("KESTREL_GIT_COMMIT", "unknown")
+    build_time = os.environ.get("KESTREL_BUILD_TIME", "unknown")
+
+    rev: str | None = None
+    try:
+        rev = (
+            await db.execute(text("SELECT version_num FROM alembic_version"))
+        ).scalar_one_or_none()
+    except Exception:
+        rev = None
+
+    return VersionReport(
+        git_commit=git_commit,
+        git_commit_short=git_commit[:7] if git_commit != "unknown" else "unknown",
+        build_time=build_time,
+        alembic_revision=rev,
+        started_at=_PROCESS_STARTED_AT,
     )

@@ -6,6 +6,7 @@ import { LabKindStatsPanel } from "@/components/settings/LabKindStatsPanel";
 import { SandboxSessionsPanel } from "@/components/settings/SandboxSessionsPanel";
 import { SynthesizerCachePanel } from "@/components/settings/SynthesizerCachePanel";
 import { ThemeSwitcher } from "@/components/settings/ThemeSwitcher";
+import { VersionPanel } from "@/components/settings/VersionPanel";
 
 export const metadata: Metadata = {
   title: "설정 — Kestrel",
@@ -70,6 +71,13 @@ export default function SettingsPage() {
         description="vulhub 공식 재현 / 표준 환경 / AI 합성 비율과 취약점 유형별 점유율을 보여줍니다. 한쪽으로 쏠려 있다면 합성 품질을 점검할 신호일 수 있습니다."
       >
         <LabKindStatsPanel />
+      </Section>
+
+      <Section
+        title="버전 정보 / 업데이트"
+        description="현재 실행 중인 빌드와 DB 마이그레이션 상태입니다. 새 버전이 나오면 아래 명령 한 줄로 안전하게 업데이트할 수 있습니다."
+      >
+        <VersionPanel />
       </Section>
 
       <Section title="설정 저장 위치 안내" description="" muted>
