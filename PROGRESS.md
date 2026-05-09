@@ -1109,6 +1109,52 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-Y — 기존 설치본 안전 업데이트 흐름 (`scripts/update.sh` + `/api/v1/version`) ✅
+
+**완료일:** 2026-05-09
+
+> 사용자 보고: "기존 레포지토리에서 설치된 버전에서 신규로 내가 프로젝트 업데이트하면 적용 가능하도록 개선." 그동안 README 의 업데이트 안내가 `git pull && docker compose up -d --build` 한 줄뿐이었고, (a) `.env` 에 새로 추가된 환경변수가 있어도 모름 (b) 빌드된 이미지가 어느 commit 에서 나온 건지 확인 불가 (c) Meilisearch 인덱스 스키마가 바뀐 릴리스인지 모름 — 운영자가 *맞게 적용됐는지 확신* 할 surface 가 없었음. 한-줄 스크립트 + 백엔드 `/version` endpoint + 설정 페이지 패널로 업데이트 흐름을 안전하게 보강.
+
+**`scripts/update.sh` (신규, +chmod +x)**
+- 6 단계 정해진 시퀀스 — `git pull --ff-only` → `.env`/`.env.example` 키 diff → `docker compose build backend frontend` (build-arg 로 git SHA + ISO date 주입) → `docker compose up -d` → `/api/v1/health` 60s polling → optional `python -m scripts.reindex_meili`.
+- 안전장치 — 작업 트리 dirty 면 `git status --short` 보여주고 exit 1, `.env` 누락 키 발견 시 stderr 경고 후 사용자 확인 유도, 헬스체크 실패 시 `docker compose logs backend | tail -50` 안내 후 exit 1.
+- 옵션 — `--reindex-meili` (스키마 바뀐 릴리스 전용), `--skip-build` (코드만 받았을 때), `--no-pull` (이미 pull 한 경우). `INSTALL_CLAUDE_CLI=1` 이 `.env` 에 있으면 `docker-compose.claude-cli.yml` 오버레이 자동 추가.
+- 색깔 prefix (`▸ ▸ ▸` cyan info / `⚠` amber warn / `✔` green ok / `✘` red err) — 운영자가 진행 상황을 한눈에 읽을 수 있게.
+
+**`backend/Dockerfile`**
+- `ARG KESTREL_GIT_COMMIT=unknown` + `ARG KESTREL_BUILD_TIME=unknown` 후 `ENV` 로 승격. update.sh 가 `git rev-parse HEAD` + `date -u +%Y-%m-%dT%H:%M:%SZ` 를 그대로 baked. 수동 `docker compose build` 시에는 default `unknown` 으로 떨어져 frontend 패널에서 amber "기록 없음 (수동 빌드)" 표시.
+
+**`backend/app/api/v1/health.py`**
+- `GET /api/v1/version` 신규 — `gitCommit`/`gitCommitShort`/`buildTime`/`alembicRevision`/`startedAt` 반환.
+- `alembicRevision` 은 `SELECT version_num FROM alembic_version` 으로 *DB 상태* 직접 조회 — 이미지가 기대하는 revision 과 DB 가 실제로 적용한 revision 이 다른 mismatch (예: 새 이미지 받았지만 alembic upgrade 가 실패해서 DB 는 아직 0015) 를 별도 surface 없이 비교 가능.
+- `_PROCESS_STARTED_AT = datetime.now(...)` 를 import 시점에 캡처 — uvicorn worker uptime 기록. 매 호출마다 갱신되지 않음.
+
+**`frontend/components/settings/VersionPanel.tsx` (신규)**
+- 두 칸 Stat 그리드 — 좌: 현재 빌드 (gitCommitShort + GitHub commit 링크 + 빌드 시각), 우: DB 마이그레이션 (alembicRevision + 프로세스 시작 시각 상대 표시).
+- 업데이트 명령 코드블록 + `Copy` 버튼 (clipboard API + 1.5s 토글). `<details>` 안에 옵션 3종 (`--reindex-meili / --skip-build / --no-pull`) 한 줄씩 설명 — 평소엔 접혀 있어 패널이 짧음.
+- 안내 문구 — *"저장소를 클론한 디렉터리에서 아래 한 줄을 실행하면 최신 코드를 받아 이미지를 재빌드하고 DB 마이그레이션까지 자동으로 적용합니다. 작업 트리에 커밋되지 않은 변경이 있으면 안전하게 중단됩니다."* (사용자 톤 — PR 10-AA 와 일관).
+
+**`frontend/lib/api.ts`**
+- `api.getVersion()` helper + `VersionReport` 타입 추가.
+
+**`app/settings/page.tsx`**
+- 새 섹션 "버전 정보 / 업데이트" 를 "저장 위치 안내" 바로 위 (페이지 마지막에서 두 번째) 에 배치 — 평소 자주 들춰보지 않는 위치이지만 *문제가 생긴 후 진단할 때* 정확히 그 자리에서 찾는다.
+
+**`README.md` "6. 업데이트 · 롤백 · 초기화"**
+- 권장 = `bash scripts/update.sh` 한 줄 + 6 단계 표 (단계/동작/안전장치). 옵션 3종 별도 표시. 수동 fallback (`git pull && docker compose up -d --build`) 도 유지.
+
+**검증**
+- `bash -n scripts/update.sh` 통과.
+- 라이브 `GET /api/v1/version` 200 — `{alembicRevision:"0016", startedAt:"2026-05-08T14:03:14Z", 나머지 unknown}` (현재 image 가 새 build-arg 없이 빌드돼 unknown — 사용자가 첫 update.sh 실행 시 baked 됨).
+- frontend `tsc --noEmit` 통과.
+
+**알려진 한계**
+- update.sh 는 git 기반 설치 가정 — Docker Hub pre-built image 배포는 별도 흐름 필요.
+- Meilisearch 스키마 변경을 자동 감지하지 않음 — `to_document()` 의 field set hash 를 인덱스 메타에 저장하고 변경 시 자동 reindex 하는 건 PR 10-Y 범위 밖. 현재는 release notes 가 명시할 때 운영자가 `--reindex-meili` 추가.
+- `git_commit` baked 가 unknown 인 환경 (수동 build, CI baked 아님) 에서는 GitHub commit 링크가 안 뜸 — VersionPanel 이 amber 경고로 표시.
+
+---
+
 ### PR 10-X — 설정 페이지 샌드박스 세션 관리 + vulhub 동기화 패널 ✅
 
 **완료일:** 2026-05-08
