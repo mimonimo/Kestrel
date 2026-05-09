@@ -142,7 +142,11 @@ export function FilterPanel({ value, onChange }: Props) {
   );
 
   return (
-    <aside className="space-y-6 rounded-lg border border-neutral-800 bg-surface-1 p-5">
+    // ``lg:sticky`` 으로 스크롤해도 필터가 좌측에 따라옴. 헤더 높이(h-14)
+    // 만큼 ``top-20`` 으로 띄우고, 패널 자체가 뷰포트보다 길어지면 칩 영역
+    // 만 내부에서 스크롤되도록 ``overflow-y-auto + max-h``. ``self-start``
+    // 가 없으면 부모 grid 가 row 높이로 stretch 시켜 sticky 가 무력화됨.
+    <aside className="space-y-6 rounded-lg border border-neutral-800 bg-surface-1 p-5 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
       <FilterGroup title="심각도">
         {SEVERITIES.map((s) => (
           <Chip
