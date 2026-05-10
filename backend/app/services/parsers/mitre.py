@@ -136,11 +136,18 @@ def sync_repo() -> Path:
 def _first_desc(descriptions: list[dict[str, Any]] | None) -> str:
     if not descriptions:
         return ""
-    # Prefer English; fall back to whichever lang is first.
+    # Prefer English; fall back to whichever lang is first. Defensive
+    # isinstance because some records carry malformed entries (lists or
+    # bare strings) where the schema expects a dict.
     for d in descriptions:
+        if not isinstance(d, dict):
+            continue
         if (d.get("lang") or "").lower().startswith("en"):
             return (d.get("value") or "").strip()
-    return (descriptions[0].get("value") or "").strip()
+    first = descriptions[0]
+    if isinstance(first, dict):
+        return (first.get("value") or "").strip()
+    return ""
 
 
 def _coerce_severity(raw: str | None, score: float | None) -> Severity | None:
@@ -168,6 +175,8 @@ def _extract_metric(metrics: list[dict[str, Any]] | None) -> tuple[float | None,
         return None, None, None
     keys = ("cvssV4_0", "cvssV3_1", "cvssV3_0", "cvssV3", "cvssV2_0", "cvssV2")
     for m in metrics:
+        if not isinstance(m, dict):
+            continue
         for key in keys:
             v = m.get(key)
             if not isinstance(v, dict):
@@ -188,9 +197,13 @@ def _extract_cwes(problem_types: list[dict[str, Any]] | None) -> list[str]:
         return []
     out: list[str] = []
     for pt in problem_types:
+        if not isinstance(pt, dict):
+            continue
         for d in pt.get("descriptions") or []:
+            if not isinstance(d, dict):
+                continue
             cwe = d.get("cweId") or ""
-            if cwe.startswith("CWE-"):
+            if isinstance(cwe, str) and cwe.startswith("CWE-"):
                 out.append(cwe)
     # De-dup preserving order.
     seen: set[str] = set()
@@ -214,20 +227,21 @@ def _extract_products(affected: list[dict[str, Any]] | None, fallback_text: str)
     if not affected:
         return out
     for a in affected:
-        vendor = (a.get("vendor") or "").strip()
-        product = (a.get("product") or "").strip()
+        if not isinstance(a, dict):
+            continue
+        vendor = (a.get("vendor") or "").strip() if isinstance(a.get("vendor"), str) else ""
+        product = (a.get("product") or "").strip() if isinstance(a.get("product"), str) else ""
         if not vendor and not product:
             continue
-        # Aggregate version ranges into a human string. cvelistV5
-        # versions[] entries look like {version: "1.0", status: "affected",
-        # versionType: "semver", lessThan: "1.5"}.
         ranges: list[str] = []
         for v in (a.get("versions") or []):
+            if not isinstance(v, dict):
+                continue
             if (v.get("status") or "").lower() != "affected":
                 continue
-            ver = (v.get("version") or "").strip()
-            lt = (v.get("lessThan") or "").strip()
-            lte = (v.get("lessThanOrEqual") or "").strip()
+            ver = (v.get("version") or "").strip() if isinstance(v.get("version"), str) else ""
+            lt = (v.get("lessThan") or "").strip() if isinstance(v.get("lessThan"), str) else ""
+            lte = (v.get("lessThanOrEqual") or "").strip() if isinstance(v.get("lessThanOrEqual"), str) else ""
             if ver and lt:
                 ranges.append(f"{ver} ≤ x < {lt}")
             elif ver and lte:
@@ -236,8 +250,6 @@ def _extract_products(affected: list[dict[str, Any]] | None, fallback_text: str)
                 ranges.append(ver)
         version_range = ", ".join(ranges)[:128] or None
 
-        # CPE strings (where present) are the canonical identifier; pick
-        # the first if available.
         cpe_string = None
         for cpe in a.get("cpes") or []:
             if isinstance(cpe, str) and cpe.startswith("cpe:"):
@@ -263,10 +275,16 @@ def _extract_refs(refs: list[dict[str, Any]] | None) -> list[ParsedReference]:
         return []
     out: list[ParsedReference] = []
     for r in refs:
-        url = (r.get("url") or "").strip()
-        if not url or not url.startswith(("http://", "https://")):
+        if not isinstance(r, dict):
             continue
-        tags = [t.lower() for t in (r.get("tags") or [])]
+        url = r.get("url") or ""
+        if not isinstance(url, str):
+            continue
+        url = url.strip()
+        if not url.startswith(("http://", "https://")):
+            continue
+        raw_tags = r.get("tags") or []
+        tags = [t.lower() for t in raw_tags if isinstance(t, str)]
         if any("exploit" in t for t in tags):
             ref_type = RefType.EXPLOIT
         elif any("patch" in t for t in tags):
@@ -291,20 +309,30 @@ def _parse_iso(s: str | None) -> datetime | None:
 
 
 def _record_to_parsed(record: dict[str, Any]) -> ParsedVulnerability | None:
-    meta = record.get("cveMetadata") or {}
-    cve_id = meta.get("cveId")
-    if not cve_id:
+    if not isinstance(record, dict):
         return None
-    state = (meta.get("state") or "").upper()
+    meta = record.get("cveMetadata")
+    if not isinstance(meta, dict):
+        return None
+    cve_id = meta.get("cveId")
+    if not cve_id or not isinstance(cve_id, str):
+        return None
+    state = (meta.get("state") or "").upper() if isinstance(meta.get("state"), str) else ""
     if state != "PUBLISHED":
         # REJECTED / RESERVED records have empty containers — skip.
         return None
-    cna = (record.get("containers") or {}).get("cna") or {}
-    description = _first_desc(cna.get("descriptions"))
+    containers = record.get("containers")
+    if not isinstance(containers, dict):
+        return None
+    cna = containers.get("cna")
+    if not isinstance(cna, dict):
+        return None
+    description = _first_desc(cna.get("descriptions") if isinstance(cna.get("descriptions"), list) else None)
     if not description:
         # Without a description there's nothing useful to display.
         return None
-    title = (cna.get("title") or "").strip() or description.split("\n", 1)[0][:200]
+    title_raw = cna.get("title")
+    title = (title_raw.strip() if isinstance(title_raw, str) else "") or description.split("\n", 1)[0][:200]
 
     score, vector, severity_raw = _extract_metric(cna.get("metrics"))
     severity = _coerce_severity(severity_raw, score)

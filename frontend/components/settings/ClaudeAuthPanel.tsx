@@ -243,13 +243,16 @@ export function ClaudeAuthPanel() {
 
       {/* ── 진행 중 세션 ─────────────────────────────────────────── */}
       {session && (
-        <div className="space-y-3 rounded-md border border-sky-500/30 bg-sky-500/5 p-4">
+        // ``min-w-0`` chain — flex/grid descendants need every ancestor
+        // to allow shrink, otherwise a 400-char OAuth URL stretches the
+        // whole panel and breaks the settings page layout.
+        <div className="min-w-0 space-y-3 overflow-hidden rounded-md border border-sky-500/30 bg-sky-500/5 p-4">
           <h3 className="text-sm font-semibold text-sky-200">
             로그인 진행 중 — 두 단계로 끝납니다
           </h3>
 
-          <ol className="space-y-3 text-xs text-neutral-300">
-            <li className="space-y-2">
+          <ol className="min-w-0 space-y-3 text-xs text-neutral-300">
+            <li className="min-w-0 space-y-2">
               <p>
                 <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500/20 text-[11px] font-semibold text-sky-200">
                   1
@@ -258,21 +261,21 @@ export function ClaudeAuthPanel() {
                 아래 링크를 클릭하세요. Anthropic 인증 후 화면에 표시되는{" "}
                 <span className="font-mono text-amber-200">코드</span>를 복사하세요.
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <a
                   href={session.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex min-w-0 flex-1 items-center gap-1.5 truncate rounded border border-sky-500/30 bg-surface-2 px-2.5 py-1.5 font-mono text-[11px] text-sky-200 hover:border-sky-400/60"
+                  className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden rounded border border-sky-500/30 bg-surface-2 px-2.5 py-1.5 font-mono text-[11px] text-sky-200 hover:border-sky-400/60"
                   title={session.url}
                 >
                   <ExternalLink className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{session.url}</span>
+                  <span className="min-w-0 flex-1 truncate">{session.url}</span>
                 </a>
                 <button
                   type="button"
                   onClick={onCopyUrl}
-                  className="inline-flex items-center gap-1 rounded border border-neutral-700 px-2 py-1.5 text-[11px] text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
+                  className="inline-flex shrink-0 items-center gap-1 rounded border border-neutral-700 px-2 py-1.5 text-[11px] text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
                 >
                   {copied ? (
                     <Check className="h-3 w-3 text-emerald-400" />
