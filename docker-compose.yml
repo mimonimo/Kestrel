@@ -65,6 +65,11 @@ services:
       # volume keeps that file across container recreates so the user
       # only authenticates once. (PR 10-AD)
       - claude_credentials:/home/app/.claude
+      # MITRE cvelistV5 repo persisted in a named volume — the parser
+      # `git clone`s ~5GB on first backfill and `git pull`s deltas after.
+      # Bind mount not needed because nothing else (host docker daemon
+      # included) reads this path. (PR 10-AF)
+      - mitre_cvelist:/data/mitre_cvelist
     # The non-root app user needs membership in whatever group owns the host
     # docker.sock. On macOS+OrbStack the socket appears as root:root inside
     # the container, so adding GID 0 grants access. On Linux hosts set
@@ -131,6 +136,7 @@ volumes:
   redis_data:
   meili_data:
   claude_credentials:
+  mitre_cvelist:
 
 networks:
   default:

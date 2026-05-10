@@ -15,6 +15,7 @@ export const MOCK_VULNERABILITIES: Vulnerability[] = [
     publishedAt: "2026-04-17T09:15:00Z",
     modifiedAt: "2026-04-18T12:00:00Z",
     source: "nvd",
+  sources: ["nvd"],
     sourceUrl: "https://nvd.nist.gov/vuln/detail/CVE-2026-31415",
     types: ["RCE"],
     affectedProducts: [
@@ -40,6 +41,7 @@ export const MOCK_VULNERABILITIES: Vulnerability[] = [
     publishedAt: "2026-04-15T18:00:00Z",
     modifiedAt: "2026-04-15T18:00:00Z",
     source: "nvd",
+  sources: ["nvd"],
     sourceUrl: "https://nvd.nist.gov/vuln/detail/CVE-2026-20482",
     types: ["Auth"],
     affectedProducts: [
@@ -63,6 +65,7 @@ export const MOCK_VULNERABILITIES: Vulnerability[] = [
     publishedAt: "2026-04-10T10:00:00Z",
     modifiedAt: "2026-04-12T08:30:00Z",
     source: "github_advisory",
+  sources: ["github_advisory"],
     sourceUrl: "https://github.com/vercel/next.js/security/advisories/GHSA-xxxx-xxxx-xxxx",
     types: ["Auth"],
     affectedProducts: [
@@ -86,6 +89,7 @@ export const MOCK_VULNERABILITIES: Vulnerability[] = [
     publishedAt: "2026-04-08T00:00:00Z",
     modifiedAt: "2026-04-08T00:00:00Z",
     source: "exploit_db",
+  sources: ["exploit_db"],
     sourceUrl: "https://www.exploit-db.com/exploits/52001",
     types: ["XSS"],
     affectedProducts: [
@@ -105,6 +109,7 @@ export const MOCK_VULNERABILITIES: Vulnerability[] = [
     publishedAt: "2026-04-05T14:00:00Z",
     modifiedAt: "2026-04-06T09:00:00Z",
     source: "nvd",
+  sources: ["nvd"],
     sourceUrl: "https://nvd.nist.gov/vuln/detail/CVE-2026-8822",
     types: ["SQLi"],
     affectedProducts: [
@@ -124,6 +129,7 @@ export const MOCK_VULNERABILITIES: Vulnerability[] = [
     publishedAt: "2026-03-28T00:00:00Z",
     modifiedAt: "2026-03-30T00:00:00Z",
     source: "nvd",
+  sources: ["nvd"],
     sourceUrl: "https://nvd.nist.gov/vuln/detail/CVE-2026-7711",
     types: ["Auth"],
     affectedProducts: [
@@ -144,6 +150,7 @@ export const MOCK_VULNERABILITIES: Vulnerability[] = [
     publishedAt: "2026-03-20T00:00:00Z",
     modifiedAt: "2026-03-22T00:00:00Z",
     source: "nvd",
+  sources: ["nvd"],
     sourceUrl: "https://nvd.nist.gov/vuln/detail/CVE-2026-4455",
     types: ["Auth"],
     affectedProducts: [
@@ -166,6 +173,7 @@ export const MOCK_VULNERABILITIES: Vulnerability[] = [
     publishedAt: "2026-03-18T12:00:00Z",
     modifiedAt: "2026-03-19T00:00:00Z",
     source: "nvd",
+  sources: ["nvd"],
     sourceUrl: "https://nvd.nist.gov/vuln/detail/CVE-2026-2301",
     types: ["RCE"],
     affectedProducts: [
@@ -189,6 +197,7 @@ export const MOCK_VULNERABILITIES: Vulnerability[] = [
     publishedAt: "2026-03-12T00:00:00Z",
     modifiedAt: "2026-03-14T00:00:00Z",
     source: "github_advisory",
+  sources: ["github_advisory"],
     sourceUrl: "https://github.com/spring-projects/spring-framework/security/advisories/GHSA-xxxx-2026-13500",
     types: ["RCE"],
     affectedProducts: [
@@ -210,6 +219,7 @@ export const MOCK_VULNERABILITIES: Vulnerability[] = [
     publishedAt: "2026-03-05T00:00:00Z",
     modifiedAt: "2026-03-07T00:00:00Z",
     source: "nvd",
+  sources: ["nvd"],
     sourceUrl: "https://nvd.nist.gov/vuln/detail/CVE-2026-9912",
     types: ["RCE"],
     affectedProducts: [
@@ -231,6 +241,7 @@ export const MOCK_VULNERABILITIES: Vulnerability[] = [
     publishedAt: "2026-02-28T00:00:00Z",
     modifiedAt: "2026-03-01T00:00:00Z",
     source: "nvd",
+  sources: ["nvd"],
     sourceUrl: "https://nvd.nist.gov/vuln/detail/CVE-2026-5566",
     types: ["RCE"],
     affectedProducts: [
@@ -252,6 +263,7 @@ export const MOCK_VULNERABILITIES: Vulnerability[] = [
     publishedAt: "2026-02-20T00:00:00Z",
     modifiedAt: "2026-02-21T00:00:00Z",
     source: "github_advisory",
+  sources: ["github_advisory"],
     sourceUrl: "https://about.gitlab.com/releases/2026/02/20/security-release/",
     types: ["SSRF"],
     affectedProducts: [
@@ -273,6 +285,7 @@ export const MOCK_VULNERABILITIES: Vulnerability[] = [
     publishedAt: "2026-02-15T00:00:00Z",
     modifiedAt: "2026-02-16T00:00:00Z",
     source: "nvd",
+  sources: ["nvd"],
     sourceUrl: "https://nvd.nist.gov/vuln/detail/CVE-2026-3388",
     types: ["Auth", "RCE"],
     affectedProducts: [
@@ -294,6 +307,7 @@ export const MOCK_VULNERABILITIES: Vulnerability[] = [
     publishedAt: "2026-02-08T00:00:00Z",
     modifiedAt: "2026-02-10T00:00:00Z",
     source: "nvd",
+  sources: ["nvd"],
     sourceUrl: "https://nvd.nist.gov/vuln/detail/CVE-2026-1800",
     types: ["Auth"],
     affectedProducts: [
@@ -315,6 +329,7 @@ export const MOCK_VULNERABILITIES: Vulnerability[] = [
     publishedAt: "2026-01-25T00:00:00Z",
     modifiedAt: "2026-01-26T00:00:00Z",
     source: "nvd",
+  sources: ["nvd"],
     sourceUrl: "https://nvd.nist.gov/vuln/detail/CVE-2026-0502",
     types: ["Auth"],
     affectedProducts: [

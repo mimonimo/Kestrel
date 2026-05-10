@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     vulhub_repo_path: str = "/data/vulhub"
     vulhub_host_path: str = "/data/vulhub"
     vulhub_repo_remote: str = "https://github.com/vulhub/vulhub.git"
+    # ---- MITRE cvelistV5 bulk source (PR 10-AF) ---------------------
+    # The official CVE Program canonical store — every published CVE as
+    # one JSON file under cves/{year}/{thousand}xxx/. Cloned once,
+    # pulled daily for delta. Covers ~340k records vs NVD's ~95k slice
+    # in our DB.
+    mitre_repo_path: str = "/data/mitre_cvelist"
+    mitre_repo_remote: str = "https://github.com/CVEProject/cvelistV5.git"
+    mitre_interval_seconds: int = 21600  # 6 hours — MITRE delta is small
     sandbox_compose_project_prefix: str = "kestrel-sandbox"
     # ---- Sandbox isolation hardening (PR9-C, opt-in) -----------------
     # When ``sandbox_harden`` is true, image-mode containers run with

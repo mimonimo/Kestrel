@@ -111,6 +111,7 @@ def to_document(v: Vulnerability) -> dict[str, Any]:
         "cvssScore": float(v.cvss_score) if v.cvss_score is not None else None,
         "publishedAt": int(v.published_at.timestamp()) if v.published_at else None,
         "source": v.source.value,
+        "sources": list(v.sources or [v.source.value]),
         "sourceUrl": v.source_url,
         "types": [t.name for t in v.types],
         "osFamilies": sorted({p.os_family.value for p in v.affected_products if p.os_family}),

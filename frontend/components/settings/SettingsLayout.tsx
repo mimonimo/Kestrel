@@ -317,7 +317,7 @@ export function SettingsLayout() {
                               "block rounded-md border-l-2 px-3 py-1.5 text-xs transition-colors",
                               isActive
                                 ? "border-sky-400 bg-sky-500/10 text-sky-200"
-                                : "border-transparent text-neutral-400 hover:border-neutral-700 hover:bg-surface-1 hover:text-neutral-200",
+                                : "border-transparent text-neutral-400 hover:border-sky-500/30 hover:bg-sky-500/5 hover:text-sky-200",
                             )}
                           >
                             {s.title}

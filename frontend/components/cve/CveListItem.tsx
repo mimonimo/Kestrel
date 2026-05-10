@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BookmarkButton } from "./BookmarkButton";
 import { SeverityBadge } from "./SeverityBadge";
+import { SourceBadgeCluster } from "./SourceBadgeCluster";
 import { TicketBadge } from "./TicketBadge";
 import { timeAgo } from "@/lib/utils";
 import type { VulnerabilityListItem as Item } from "@/lib/types";
@@ -15,8 +16,9 @@ export function CveListItem({ vuln }: { vuln: Item }) {
       <Card>
         <CardHeader className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="font-mono text-sm font-semibold text-neutral-500">{vuln.cveId}</span>
+              <SourceBadgeCluster sources={vuln.sources ?? [vuln.source]} />
               <TicketBadge cveId={vuln.cveId} />
             </div>
             <div className="flex items-center gap-1">

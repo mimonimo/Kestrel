@@ -72,7 +72,7 @@ export const DOMAINS: readonly Domain[] = [
   "messaging",
 ] as const;
 
-export type Source = "nvd" | "exploit_db" | "github_advisory";
+export type Source = "nvd" | "exploit_db" | "github_advisory" | "mitre";
 
 export interface AffectedProduct {
   vendor: string;
@@ -99,6 +99,7 @@ export interface Vulnerability {
   publishedAt: string;
   modifiedAt: string;
   source: Source;
+  sources: Source[];
   sourceUrl: string;
   types: VulnType[];
   affectedProducts: AffectedProduct[];
@@ -123,6 +124,10 @@ export interface VulnerabilityListItem {
   cvssScore: number | null;
   publishedAt: string | null;
   source: Source;
+  // PR 10-AF: every upstream feed contributing data — MITRE alone, NVD
+  // alone, both together, etc. ``source`` (singular) stays as primary
+  // attribution; this array drives the multi-source badge cluster.
+  sources: Source[];
   types: string[];
   osFamilies: string[];
   domains: string[];

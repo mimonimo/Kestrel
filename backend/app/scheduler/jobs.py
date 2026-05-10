@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.services.ingestion import run_parser
 from app.services.parsers import ExploitDbParser, GithubAdvisoryParser, NvdParser
+from app.services.parsers.mitre import MitreParser
 
 log = get_logger(__name__)
 
@@ -24,6 +25,10 @@ def build_scheduler() -> AsyncIOScheduler:
         (NvdParser, settings.nvd_interval_seconds, 30),
         (GithubAdvisoryParser, settings.github_advisory_interval_seconds, 90),
         (ExploitDbParser, settings.exploit_db_interval_seconds, 150),
+        # MITRE delta — only walks files modified in git in the last
+        # ``since_days`` so each tick is fast even though the repo is
+        # ~5GB. Initial backfill is done out-of-band via /admin/mitre-backfill.
+        (MitreParser, settings.mitre_interval_seconds, 210),
     ]
 
     for parser_cls, interval, first_delay in schedule:

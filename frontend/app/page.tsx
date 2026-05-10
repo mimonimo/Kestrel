@@ -10,8 +10,8 @@ import { CveListSkeleton } from "@/components/cve/CveListSkeleton";
 import { EmptyState, ErrorState } from "@/components/cve/CveListStates";
 import { Pagination } from "@/components/search/Pagination";
 import { RefreshBar } from "@/components/dashboard/RefreshBar";
-import { MyAssetsPanel } from "@/components/dashboard/MyAssetsPanel";
 import { SortSelect } from "@/components/dashboard/SortSelect";
+import { VulnDistributionPanel } from "@/components/dashboard/VulnDistributionPanel";
 import { DateRangeControl } from "@/components/dashboard/DateRangeControl";
 import { useCveSearch } from "@/hooks/useCveSearch";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -103,7 +103,7 @@ function Dashboard() {
         <RefreshBar />
       </div>
 
-      <MyAssetsPanel />
+      <VulnDistributionPanel />
 
       <section className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6 pb-12">
         <FilterPanel

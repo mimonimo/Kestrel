@@ -13,6 +13,7 @@ const SOURCE_LABEL: Record<Source, string> = {
   nvd: "NVD",
   exploit_db: "Exploit-DB",
   github_advisory: "GitHub Advisory",
+  mitre: "MITRE",
 };
 
 function latestFinishedAt(ingestions: IngestionSnapshot[] | undefined): string | null {

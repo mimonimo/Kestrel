@@ -6,6 +6,7 @@ import { AiAnalysisPanel } from "./AiAnalysisPanel";
 import { BookmarkButton } from "./BookmarkButton";
 import { SandboxPanel } from "./SandboxPanel";
 import { SeverityBadge } from "./SeverityBadge";
+import { SourceBadgeCluster } from "./SourceBadgeCluster";
 import { TicketControl } from "./TicketControl";
 import { CommentThread } from "@/components/community/CommentThread";
 import { formatDate } from "@/lib/utils";
@@ -31,6 +32,7 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
         <div className="flex flex-wrap items-center gap-3">
           <span className="font-mono text-sm font-semibold text-neutral-500">{vuln.cveId}</span>
           <SeverityBadge severity={vuln.severity} score={vuln.cvssScore} />
+          <SourceBadgeCluster sources={vuln.sources ?? [vuln.source]} size="md" />
           <BookmarkButton cveId={vuln.cveId} size="md" stopPropagation={false} />
           <span className="text-xs text-neutral-500">게시일: {formatDate(vuln.publishedAt)}</span>
           <span className="text-xs text-neutral-500">수정일: {formatDate(vuln.modifiedAt)}</span>
