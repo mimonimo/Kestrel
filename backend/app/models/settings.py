@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, func
+from sqlalchemy import DateTime, ForeignKey, Integer, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -24,6 +24,13 @@ class AppSettings(Base):
         ForeignKey("ai_credentials.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # PR 10-AJ: server-side persisted external API keys. The dashboard's
+    # /admin/refresh writes them here so the background scheduler can also
+    # use them — without this GHSA scheduler runs ran token-less and
+    # returned zero rows. Env vars take precedence; these are the
+    # fallback.
+    nvd_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    github_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

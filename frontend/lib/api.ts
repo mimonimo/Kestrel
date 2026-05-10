@@ -194,6 +194,11 @@ export const api = {
     request<ClaudeAuthAction>(`/settings/claude-auth/logout`, {
       method: "POST",
     }),
+  mitreBackfill: (body: { mode: "full" | "delta"; sinceDays?: number; maxRecords?: number }) =>
+    request<MitreBackfillResponse>(`/admin/mitre-backfill`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   matchAssets: (assets: Asset[], limit = 100) =>
     request<SearchResponse>(`/assets/match`, {
       method: "POST",
@@ -670,6 +675,12 @@ export interface ClaudeAuthAction {
   detail: string;
 }
 
+export interface MitreBackfillResponse {
+  queued: boolean;
+  mode: string;
+  detail: string;
+}
+
 export interface AdaptedPayload {
   method: string;
   path: string;
@@ -814,6 +825,10 @@ export interface FacetBucket {
 }
 
 export interface SearchFacetsResponse {
+  // Authoritative whole-corpus row count. Always render absolute counts
+  // against this number — facet bucket sums (severities/types) are
+  // unreliable because they exclude NULLs or double-count M:N rows.
+  total: number;
   types: FacetBucket[];
   osFamilies: FacetBucket[];
   severities: FacetBucket[];

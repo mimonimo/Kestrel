@@ -298,6 +298,12 @@ class FacetBucket(CamelModel):
 
 
 class FacetsResponse(CamelModel):
+    # Authoritative total over the whole vulnerabilities table — facet
+    # bucket sums (severities/types/etc.) often *underrepresent* this
+    # because they exclude NULLs (severity), or *overrepresent* (types
+    # is M:N — one CVE can carry multiple labels). Always render
+    # absolute counts against this number.
+    total: int = 0
     types: list[FacetBucket] = []
     os_families: list[FacetBucket] = []
     severities: list[FacetBucket] = []
@@ -430,7 +436,13 @@ async def _build_facets(db: AsyncSession) -> FacetsResponse:
     earliest = bounds[0] if bounds else None
     latest = bounds[1] if bounds else None
 
+    # Authoritative whole-corpus count — single SELECT COUNT(*).
+    total = (
+        await db.execute(select(func.count()).select_from(Vulnerability))
+    ).scalar_one()
+
     return FacetsResponse(
+        total=int(total or 0),
         types=[FacetBucket(value=str(n), count=int(c)) for n, c in type_rows],
         os_families=[FacetBucket(value=_enum_value(o), count=int(c)) for o, c in os_rows],
         severities=[FacetBucket(value=_enum_value(s), count=int(c)) for s, c in sev_rows],

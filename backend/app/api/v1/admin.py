@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, BackgroundTasks, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, Header
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import SessionLocal, get_db
 from app.core.logging import get_logger
+from app.models import AppSettings
 from app.services.ingestion import run_parser
 from app.services.parsers import ExploitDbParser, GithubAdvisoryParser, NvdParser
 from app.services.parsers.mitre import MitreParser
@@ -25,13 +29,30 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 @router.post("/refresh")
 async def refresh_ingestion(
     background: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
     x_nvd_api_key: str | None = Header(default=None, alias="X-NVD-API-Key"),
     x_github_token: str | None = Header(default=None, alias="X-GitHub-Token"),
 ) -> dict:
     """Kick off one ingestion run per source, using the provided keys if any.
 
     Runs in the background so the HTTP call returns immediately — the caller
-    should poll ``/status`` to see each source's latest log row update."""
+    should poll ``/status`` to see each source's latest log row update.
+
+    PR 10-AJ: when keys are provided, persist them to ``app_settings`` so
+    the background scheduler also uses them on subsequent ticks (previously
+    only this-request was authenticated; scheduler ran token-less and GHSA
+    returned 0 rows).
+    """
+    if x_nvd_api_key or x_github_token:
+        row = await db.scalar(select(AppSettings).where(AppSettings.id == 1))
+        if row is None:
+            row = AppSettings(id=1)
+            db.add(row)
+        if x_nvd_api_key:
+            row.nvd_api_key = x_nvd_api_key
+        if x_github_token:
+            row.github_token = x_github_token
+        await db.commit()
 
     async def _run_all() -> None:
         await asyncio.gather(

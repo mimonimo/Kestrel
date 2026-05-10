@@ -57,6 +57,14 @@ COPY alembic.ini ./
 # Non-root user
 RUN groupadd --gid 1001 app && useradd --uid 1001 --gid app --shell /bin/bash --create-home app \
     && chown -R app:app /app
+
+# Pre-create named-volume mount points with app ownership *in the image*
+# so docker copies these permissions to the empty volume on first mount.
+# Without this, named volumes are root-owned by default and the non-root
+# app user can't `git init` / write credentials. (PR 10-AF / 10-AD.)
+RUN mkdir -p /data/mitre_cvelist /home/app/.claude \
+    && chown -R app:app /data /home/app/.claude
+
 USER app
 
 EXPOSE 8000

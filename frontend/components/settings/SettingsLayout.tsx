@@ -17,6 +17,7 @@ import { ApiKeyField } from "@/components/settings/ApiKeyField";
 import { AssetsManager } from "@/components/settings/AssetsManager";
 import { ClaudeAuthPanel } from "@/components/settings/ClaudeAuthPanel";
 import { LabKindStatsPanel } from "@/components/settings/LabKindStatsPanel";
+import { MitreBackfillPanel } from "@/components/settings/MitreBackfillPanel";
 import { SandboxSessionsPanel } from "@/components/settings/SandboxSessionsPanel";
 import { SynthesizerCachePanel } from "@/components/settings/SynthesizerCachePanel";
 import { ThemeSwitcher } from "@/components/settings/ThemeSwitcher";
@@ -76,6 +77,13 @@ const CATEGORIES: CategoryDef[] = [
             <ApiKeyField settingKey="githubToken" />
           </div>
         ),
+      },
+      {
+        id: "mitre-backfill",
+        title: "MITRE 전체 백필",
+        description:
+          "MITRE 공식 cvelistV5 저장소에서 전체 CVE를 받아와 NVD enrichment 가 빠진 historical 항목까지 채웁니다. 6시간마다 델타 sync 는 자동으로 돌고 있으며, 첫 도입 시에만 전체 백필을 한 번 실행하면 됩니다.",
+        render: () => <MitreBackfillPanel />,
       },
     ],
   },

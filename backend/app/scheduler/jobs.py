@@ -7,14 +7,42 @@ import asyncio
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core.database import SessionLocal
 from app.core.logging import get_logger
+from app.models import AppSettings
 from app.services.ingestion import run_parser
 from app.services.parsers import ExploitDbParser, GithubAdvisoryParser, NvdParser
 from app.services.parsers.mitre import MitreParser
 
 log = get_logger(__name__)
+
+
+async def _resolve_external_keys() -> tuple[str | None, str | None]:
+    """Pull NVD/GitHub keys from app_settings as a fallback for the env vars.
+
+    PR 10-AJ — without this the scheduler ran token-less even when the user
+    had set keys via the dashboard, because /admin/refresh used to keep
+    them in-request only.
+    """
+    settings = get_settings()
+    nvd = settings.nvd_api_key or None
+    gh = settings.github_token or None
+    if nvd and gh:
+        return nvd, gh
+    try:
+        async with SessionLocal() as session:
+            row = await session.scalar(select(AppSettings).where(AppSettings.id == 1))
+            if row is not None:
+                if not nvd:
+                    nvd = row.nvd_api_key or None
+                if not gh:
+                    gh = row.github_token or None
+    except Exception:
+        log.exception("scheduler.app_settings_load_failed")
+    return nvd, gh
 
 
 def build_scheduler() -> AsyncIOScheduler:
@@ -49,7 +77,13 @@ def build_scheduler() -> AsyncIOScheduler:
 
 
 async def _run(parser_cls):
-    parser = parser_cls()
+    nvd, gh = await _resolve_external_keys()
+    if parser_cls is NvdParser:
+        parser = parser_cls(api_key_override=nvd)
+    elif parser_cls is GithubAdvisoryParser:
+        parser = parser_cls(token_override=gh)
+    else:
+        parser = parser_cls()
     try:
         await run_parser(parser)
     except Exception:
