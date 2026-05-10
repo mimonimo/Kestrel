@@ -112,8 +112,14 @@ def sync_repo() -> Path:
         return repo_path
 
     log.info("mitre.pull.start", path=str(repo_path))
+    # Deepen by 200 commits per pull so ``git log --since=<N days>`` has
+    # enough history to actually find recent commits. With depth=1 the
+    # repo only knows a single commit and ``git log --since`` returns
+    # every tracked file every time, defeating the delta optimization.
+    # 200 commits ≈ a few weeks of cvelistV5 activity, which the 6h
+    # scheduler tick is well within.
     _run(
-        ["git", "fetch", "--depth", "1", "origin", "HEAD"],
+        ["git", "fetch", "--deepen=200", "origin", "HEAD"],
         cwd=str(repo_path),
         timeout=1800,
     )

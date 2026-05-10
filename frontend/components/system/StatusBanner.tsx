@@ -274,8 +274,8 @@ export function StatusBanner() {
             className={cn(
               "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
               warnCount > 0
-                ? "bg-amber-500/25 text-amber-100"
-                : "bg-sky-500/25 text-sky-100",
+                ? "bg-amber-500/25 text-amber-200"
+                : "bg-sky-500/25 text-sky-200",
             )}
           >
             {label}

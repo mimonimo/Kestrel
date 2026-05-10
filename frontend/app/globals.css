@@ -99,7 +99,24 @@ html.light .text-red-200 { color: #b91c1c; }
 html.light .text-red-200\/90 { color: rgba(185, 28, 28, 0.92); }
 html.light .text-red-300 { color: #b91c1c; }
 html.light .text-red-400 { color: #dc2626; }
+/* Violet — used by MITRE provenance chips, Claude AI panels, and the
+   MITRE backfill button in settings. Without these the 200/300 shades
+   default to lavender-pastels that vanish on white bg. */
+html.light .text-violet-200 { color: #5b21b6; }       /* violet-800 */
+html.light .text-violet-300 { color: #6d28d9; }       /* violet-700 */
 html.light .text-violet-400 { color: #6d28d9; }
+html.light .bg-violet-500\/10 { background-color: #f5f3ff; }  /* violet-50 */
+html.light .bg-violet-500\/15 { background-color: #ede9fe; }  /* violet-100 */
+html.light .bg-violet-500\/20 { background-color: #ddd6fe; }  /* violet-200 */
+/* Fuchsia — used in VulnDistributionPanel bars + pie. */
+html.light .text-fuchsia-200 { color: #86198f; }      /* fuchsia-800 */
+html.light .text-fuchsia-300 { color: #a21caf; }      /* fuchsia-700 */
+/* Cyan — used in VulnDistributionPanel domain bars + ContainerAccessHelper. */
+html.light .text-cyan-300 { color: #0e7490; }         /* cyan-700 */
+html.light .text-cyan-200 { color: #155e75; }         /* cyan-800 */
+/* Orange — severity 'high' tint. */
+html.light .text-orange-300 { color: #c2410c; }       /* orange-700 */
+html.light .text-orange-400 { color: #ea580c; }       /* orange-600 */
 html.light .hover\:text-red-300:hover { color: #991b1b; }
 html.light .hover\:text-amber-200:hover { color: #b45309; }
 html.light .hover\:text-amber-100:hover { color: #78350f; }
