@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.redis_client import get_redis
-from app.models import IngestionLog, Source
+from app.models import AppSettings, IngestionLog, Source
 from app.services.search_service import meili_healthy
 
 router = APIRouter(tags=["health"])
@@ -82,6 +82,12 @@ async def status(db: AsyncSession = Depends(get_db)) -> StatusReport:
     meili_ok = meili_healthy()
 
     snapshots: list[IngestionSnapshot] = []
+    # Persisted keys: PR 10-AJ stores user-supplied NVD/GitHub keys in
+    # ``app_settings`` so the scheduler keeps using them across restarts.
+    # The status flag must reflect EITHER source so the dashboard banner
+    # stops nagging "키 미설정" after the user saves a key via the UI.
+    nvd_present = bool(settings.nvd_api_key)
+    gh_present = bool(settings.github_token)
     if db_ok:
         for source in Source:
             stmt = (
@@ -93,13 +99,18 @@ async def status(db: AsyncSession = Depends(get_db)) -> StatusReport:
             row = (await db.execute(stmt)).scalar_one_or_none()
             if row is not None:
                 snapshots.append(IngestionSnapshot.model_validate(row))
+        if not (nvd_present and gh_present):
+            saved = await db.scalar(select(AppSettings).where(AppSettings.id == 1))
+            if saved is not None:
+                nvd_present = nvd_present or bool(saved.nvd_api_key)
+                gh_present = gh_present or bool(saved.github_token)
 
     return StatusReport(
         db=db_ok,
         redis=redis_ok,
         meili=meili_ok,
-        nvd_key_present=bool(settings.nvd_api_key),
-        github_token_present=bool(settings.github_token),
+        nvd_key_present=nvd_present,
+        github_token_present=gh_present,
         ingestions=snapshots,
         server_time=datetime.now(timezone.utc),
     )

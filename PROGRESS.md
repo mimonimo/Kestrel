@@ -1109,6 +1109,50 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-AM — Claude 로그인 진단·라이트 분석 + 설정 페이지 wrap 방지 + status 토큰 영속 인식 ✅
+
+> 사용자 보고 3건 한 번에:
+> 1) "로그인 완료 버튼 클릭 시 로딩만 되고 타임아웃 걸림" — 60초 후 504, snippet 은 항상 "(없음)".
+> 2) "클로드 로그인 시 UI 깨지는거도 체크해서 마저 수정 해" — PR 10-AL 의 panel 내부 `min-w-0` chain 만으로는 부족했음.
+> 3) GHSA / NVD 토큰을 대시보드에서 저장해도 status 배너가 계속 "키 미설정" 으로 표시.
+
+**Backend — `app/api/v1/claude_auth.py`**
+- PTY 윈도우 1×400 → 40×200: Ink 가 코드 입력 후 그리는 mask-echo (`****`) + verifying spinner 가 1-row 뷰포트 밖으로 떨어져 매번 0~14 byte 만 캡처됐음. 정상적 터미널 크기로 키우니 코드 수신 직후 80 byte 캡처되어 timeout snippet 이 실제로 의미를 가짐 — "(없음)" 대신 "수신 바이트: 80 byte. 표시 출력: ****..." 가 나옴.
+- URL 캡처 regex 가 wrap 1회 허용: 40×200 윈도우에선 ~350자 OAuth URL 이 한 번 줄바꿈됨. `_URL_CHARS + (?:\r*\n + _URL_CHARS)?` + `_join_url` 로 wrap 지점 CR/LF 제거. wrap 을 무제한 허용하면 뒤따라오는 "Paste code here if prompted" 까지 끌어들이는 부작용이 있어 정확히 1회만 허용.
+- code 전송 `b"\n"` → `b"\r"`: PTY cooked mode 에선 두 코드가 동일 처리되지만 Ink raw-mode stdin 에선 `\r` 만 Enter 키 — 차후 cooked mode 가 비활성화되거나 다른 raw-mode TUI 호출 시에도 안전.
+- 504 timeout 메시지 강화: 수신 바이트 수 + 표시 출력 발췌 + "CLI 가 코드는 받았지만 토큰 교환에서 멈췄음, 취소 후 새 세션으로 재시도" 안내. log 라인에도 raw_tail 추가해 운영자가 docker compose logs 로 진단 가능.
+
+**Backend — `app/api/v1/health.py`**
+- `/status` 의 `nvdKeyPresent` / `githubTokenPresent` 가 환경변수(`get_settings()`) 만 확인했었음 — 대시보드에서 사용자가 저장한 키는 `app_settings` 테이블에 들어가지만 status 에서는 보이지 않아 "키 미설정" 배너가 계속 떴음. PR 10-AJ 의 스케줄러는 이미 DB fallback 으로 키를 사용하고 있었으므로 status 만 false negative 였음. env 우선 / DB fallback 패턴으로 통일.
+
+**Frontend — `components/settings/SettingsLayout.tsx`**
+- 우측 본문 컬럼 `<div>` 에 `min-w-0` 추가. CSS Grid item 의 implicit min-width 가 content intrinsic size 라, `min-w-0` 가 없으면 패널 내부 어느 곳에서든 unbounded text (예: OAuth URL chip) 가 칼럼을 grid template 밖으로 밀어내 페이지 비율을 깨뜨림. ClaudeAuthPanel 내부의 min-w-0 chain (PR 10-AL) 은 그 자체로는 정확하지만 상위 grid item 이 함께 shrink-allowed 여야 의도대로 동작.
+
+**검증 (라이브)**
+```
+# /status 토큰 인식
+$ curl /api/v1/status | jq '{nvd: .nvdKeyPresent, gh: .githubTokenPresent}'
+{"nvd":true,"gh":true}   ← 이전에는 false,false 였음 (env 비어 있고 DB 만 채워져 있을 때)
+
+# OAuth URL 캡처
+$ curl -X POST /api/v1/settings/claude-auth/start | jq '.url | length'
+346    ← wrap 처리 후 정상 (이전 wrap-aware regex 미적용 시 200 에서 잘리거나 "Pastecode..." 가 붙음)
+
+# Submit fake code (가짜 코드는 CLI 가 토큰 교환 실패로 멈춤 — timeout 진단만 검증)
+$ curl -X POST /api/v1/settings/claude-auth/<sid>/submit -d '{"code":"fake#aaa"}'
+{"detail":"Claude CLI 가 60초 안에 응답하지 않았습니다. 수신 바이트: 80 byte.
+  표시 출력: ****************************************************************
+  — CLI 가 코드 입력은 받았으나 토큰 교환 단계에서 멈췄습니다. 1) '취소' 후
+  '다시 로그인' 으로 새 세션을 시작하고, 2) Anthropic 페이지에서 갓 받은 코드를
+  그대로 한 번에 붙여넣어 보세요 (이전에 받은 코드는 만료됩니다)."}
+```
+
+**알려진 잔여 이슈**
+- 토큰 교환 자체가 실패할 때 CLI 가 어떤 메시지도 stdout 으로 남기지 않는 동작은 그대로 — `claude.exe` 가 Bun-compiled native binary 라 내부 진단 출력 추가가 어려움. 사용자 안내 문구로 "코드 만료/세션 mismatch 가 가장 흔한 원인" 을 알리는 것이 현재 최선.
+- GHSA "지금 3개밖에 없음" 보고 건은 사용자가 어느 화면을 봤는지 명확하지 않아 별건. DB 에는 250 row 가 있고 facets 도 250 으로 응답. 추후 사용자 화면 확인 후 후속.
+
+---
+
 ### PR 10-AD — 대시보드 내 Claude 로그인 (호스트 ~/.claude 마운트 제거) ✅
 
 **완료일:** 2026-05-09

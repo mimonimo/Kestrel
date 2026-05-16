@@ -142,19 +142,44 @@ def _gc_sessions() -> None:
 # Subprocess helpers
 # ---------------------------------------------------------------------------
 
-def _set_window_size(fd: int, rows: int = 1, cols: int = 400) -> None:
-    """Tell the kernel the TTY is wide enough that the URL won't wrap."""
+def _set_window_size(fd: int, rows: int = 40, cols: int = 200) -> None:
+    """Normal terminal viewport for the spawned CLI.
+
+    A 1-row window (the previous default) made the URL fit on one line
+    for the extraction regex, but it also stripped every post-paste
+    Ink redraw (mask-echo, spinner, success/failure status) off the
+    viewport so timeout snippets always ended up "(없음)". 40×200 is
+    a normal-sized terminal — the URL still wraps at col 200, so
+    ``_URL_RE`` joins wrapped halves itself before matching.
+    """
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
 
 _ANSI_ESC_RE = re.compile(rb"\x1b\[[0-9;?]*[a-zA-Z]")
 _OSC_RE = re.compile(rb"\x1b\][^\x07]*\x07")
-_URL_RE = re.compile(rb"https://claude\.com/cai/oauth/authorize\?[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+")
+# Ink wraps the URL at the terminal column width — at 200 cols the
+# ~350-char URL splits exactly once. Allow at most ONE ``\r?\n``
+# interruption inside the URL char run, then collapse it in
+# ``_join_url``. Allowing arbitrary linebreaks let the match swallow
+# the "Paste code here if prompted" line that follows.
+_URL_CHARS = rb"[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+"
+# Ink emits ``\r\r\n`` (CR CR LF) at a wrap point — the raw-mode TTY
+# echoes the implicit CR plus the explicit LF the renderer inserts.
+_URL_RE = re.compile(
+    rb"https://claude\.com/cai/oauth/authorize\?"
+    + _URL_CHARS
+    + rb"(?:\r*\n" + _URL_CHARS + rb")?"
+)
 
 
 def _strip_ansi(buf: bytes) -> bytes:
     """Remove escape sequences so the URL regex matches cleanly."""
     return _OSC_RE.sub(b"", _ANSI_ESC_RE.sub(b"", buf))
+
+
+def _join_url(raw: bytes) -> str:
+    """Strip inline newlines a wrapped Ink renderer added to the URL."""
+    return raw.decode().replace("\r\n", "").replace("\n", "").replace("\r", "")
 
 
 async def _spawn_setup_token() -> tuple[asyncio.subprocess.Process, int, str]:
@@ -204,7 +229,7 @@ async def _spawn_setup_token() -> tuple[asyncio.subprocess.Process, int, str]:
             stripped = _strip_ansi(buf)
             m = _URL_RE.search(stripped)
             if m:
-                url = m.group(0).decode()
+                url = _join_url(m.group(0))
                 break
         if proc.returncode is not None:
             # CLI exited before printing a URL — usually because it's
@@ -399,10 +424,13 @@ async def submit_route(
 
     code = body.code.strip()
     try:
-        # Strip newlines from the user's paste so trailing CR doesn't
-        # double-submit. Append our own \n to actually submit.
+        # Strip newlines from the user's paste so trailing whitespace
+        # doesn't double-submit. Use ``\r`` (carriage return) — the PTY's
+        # cooked-mode line discipline maps it to LF on the slave side,
+        # but Ink puts stdin in raw mode where ``\r`` is the canonical
+        # Enter keypress.
         cleaned = code.replace("\r", "").replace("\n", "")
-        os.write(sess.master_fd, cleaned.encode() + b"\n")
+        os.write(sess.master_fd, cleaned.encode() + b"\r")
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"코드 전송 실패: {e}")
 
@@ -442,17 +470,39 @@ async def submit_route(
             sess.proc.kill()
         except ProcessLookupError:
             pass
-        snippet = _strip_ansi(sess.output)[-800:].decode(
+        # Show both ANSI-stripped (human-readable) and raw-byte hex
+        # snippets — when the CLI hangs silently after receiving the
+        # code, the visible chars are empty but the redraw escape
+        # sequences in raw still tell us the keypress was consumed.
+        stripped = _strip_ansi(sess.output)[-300:].decode(
             "utf-8", errors="replace"
         ).strip()
+        raw_tail = sess.output[-200:].decode("utf-8", errors="replace")
         await _drop_session(session_id)
-        raise HTTPException(
-            status_code=504,
-            detail=(
-                "Claude CLI 가 60초 안에 응답하지 않았습니다. CLI 출력 발췌: "
-                f"{snippet or '(없음)'}"
-            ),
+        log.warning(
+            "claude_auth.login_timeout",
+            captured_bytes=len(sess.output),
+            stripped_tail=stripped[:300],
+            raw_tail=repr(raw_tail)[:400],
         )
+        detail = (
+            "Claude CLI 가 60초 안에 응답하지 않았습니다. "
+            f"수신 바이트: {len(sess.output)} byte. "
+            f"표시 출력: {stripped or '(없음)'}"
+        )
+        if len(sess.output) > 0 and not stripped:
+            # Got control codes but no visible text — CLI consumed the
+            # keypress but is hanging in token exchange. Most common
+            # cause: code/state mismatch (a stale code from a previous
+            # 로그인 시도, or a code that was edited during copy/paste).
+            # Guide the user to retry cleanly.
+            detail += (
+                " — CLI 가 코드 입력은 받았으나 토큰 교환 단계에서 멈췄습니다. "
+                "1) '취소' 후 '다시 로그인' 으로 새 세션을 시작하고, "
+                "2) Anthropic 페이지에서 갓 받은 코드를 그대로 한 번에 붙여넣어 보세요 "
+                "(이전에 받은 코드는 만료됩니다)."
+            )
+        raise HTTPException(status_code=504, detail=detail)
 
     rc = sess.proc.returncode
     await _drop_session(session_id)

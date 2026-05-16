@@ -341,7 +341,11 @@ export function SettingsLayout() {
         </nav>
 
         {/* ── 우측 본문 ───────────────────────────────────────────── */}
-        <div>
+        {/* min-w-0: a grid item's implicit min-width is its content's
+            intrinsic size, so an un-truncated long string (e.g. the
+            OAuth URL chip in ClaudeAuthPanel) can stretch this column
+            past the template and break the page ratio. */}
+        <div className="min-w-0">
           {sections.map((s, i) => (
             <Section
               key={s.id}
