@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff, Loader2, Save, Trash2 } from "lucide-react";
+import { Eye, EyeOff, History, Loader2, Save, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -13,6 +13,14 @@ type RefreshField = "nvdApiKey" | "githubToken";
 const REFRESH_HEADER_FIELD: Record<SettingKey, RefreshField> = {
   nvdApiKey: "nvdApiKey",
   githubToken: "githubToken",
+};
+
+// Per-source token for X-Full-Resync. Maps the settings key to the
+// parser identifier the backend expects so the field surfaces a
+// "전체 다시 받기" button bound to the right source.
+const FULL_RESYNC_TOKEN: Record<SettingKey, "ghsa" | "nvd"> = {
+  nvdApiKey: "nvd",
+  githubToken: "ghsa",
 };
 
 export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
@@ -41,6 +49,24 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
       await queryClient.invalidateQueries({ queryKey: ["status"] });
       await queryClient.invalidateQueries({ queryKey: ["cve-search"] });
       setDraft("");
+      setStatus("saved");
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "알 수 없는 오류");
+      setStatus("error");
+    }
+  };
+
+  const fullResync = async () => {
+    setStatus("submitting");
+    setErrorMsg(null);
+    try {
+      const keys: { nvdApiKey?: string; githubToken?: string } = {};
+      if (value) {
+        keys[REFRESH_HEADER_FIELD[settingKey]] = value;
+      }
+      await api.refreshIngestion(keys, [FULL_RESYNC_TOKEN[settingKey]]);
+      await queryClient.invalidateQueries({ queryKey: ["status"] });
+      await queryClient.invalidateQueries({ queryKey: ["search", "facets"] });
       setStatus("saved");
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : "알 수 없는 오류");
@@ -123,6 +149,30 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
           {status === "submitting" ? "저장 중" : "저장하고 즉시 재수집"}
         </Button>
       </form>
+
+      {ready && value && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">
+          <span className="text-[11px] leading-snug text-amber-200/80">
+            과거 토큰 미설정/실패로 since-window 가 앞당겨져 누락분이 있을 때
+            사용하세요. last_success 무시하고 처음부터 다시 가져옵니다.
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => void fullResync()}
+            disabled={status === "submitting"}
+            className="shrink-0 text-amber-200 hover:bg-amber-500/10"
+          >
+            {status === "submitting" ? (
+              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <History className="mr-1 h-3.5 w-3.5" />
+            )}
+            전체 다시 받기
+          </Button>
+        </div>
+      )}
 
       {status === "saved" && (
         <p className="text-xs text-emerald-400">저장되었습니다. 새 키로 데이터 재수집을 백그라운드에서 시작했습니다.</p>

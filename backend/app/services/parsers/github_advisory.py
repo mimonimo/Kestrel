@@ -93,8 +93,19 @@ class GithubAdvisoryParser(BaseParser):
                         payload = resp.json()
 
                 if "errors" in payload:
+                    # Surface the error to the ingestion_logs row instead
+                    # of returning silently as "success: 0 items". Common
+                    # causes: token revoked / scopes wrong / rate limited
+                    # (5000 pts/hour for auth'd, 60 unauth'd) / GHSA API
+                    # schema shift. The user-facing status panel then has
+                    # something actionable.
+                    summary = ", ".join(
+                        e.get("message") or str(e) for e in payload["errors"][:3]
+                    )
                     log.error("github.graphql_errors", errors=payload["errors"])
-                    return
+                    raise RuntimeError(
+                        f"GHSA GraphQL 오류: {summary[:400]}"
+                    )
 
                 data = payload["data"]["securityAdvisories"]
                 for node in data["nodes"]:

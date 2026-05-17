@@ -102,8 +102,14 @@ CWE_TO_TYPE = {
 }
 
 
-async def run_parser(parser: BaseParser) -> dict:
-    """Execute one parser end-to-end. Creates an IngestionLog row."""
+async def run_parser(parser: BaseParser, full_resync: bool = False) -> dict:
+    """Execute one parser end-to-end. Creates an IngestionLog row.
+
+    ``full_resync=True`` ignores ``_last_success`` and re-pulls from the
+    source's natural beginning — used to recover when a transient token
+    failure left ``finished_at`` advanced past advisories that were
+    never actually fetched (the since-window gap).
+    """
     started = datetime.now(timezone.utc)
     counts = {"processed": 0, "new": 0, "updated": 0}
     error: str | None = None
@@ -116,7 +122,10 @@ async def run_parser(parser: BaseParser) -> dict:
         await session.commit()
 
         try:
-            async for parsed in parser.fetch(since=await _last_success(session, parser.source)):
+            since = (
+                None if full_resync else await _last_success(session, parser.source)
+            )
+            async for parsed in parser.fetch(since=since):
                 result = await _upsert(session, parsed)
                 counts["processed"] += 1
                 if result == "new":

@@ -238,14 +238,21 @@ export const api = {
       method: "DELETE",
       headers: clientHeaders(),
     }),
-  refreshIngestion: (keys: { nvdApiKey?: string; githubToken?: string }) => {
+  refreshIngestion: (
+    keys: { nvdApiKey?: string; githubToken?: string },
+    fullResync?: Array<"ghsa" | "nvd" | "exploit_db" | "all">,
+  ) => {
     const headers: Record<string, string> = {};
     if (keys.nvdApiKey) headers["X-NVD-API-Key"] = keys.nvdApiKey;
     if (keys.githubToken) headers["X-GitHub-Token"] = keys.githubToken;
-    return request<{ queued: boolean; usedKeys: { nvd: boolean; github: boolean } }>(
-      `/admin/refresh`,
-      { method: "POST", headers },
-    );
+    if (fullResync && fullResync.length > 0) {
+      headers["X-Full-Resync"] = fullResync.join(",");
+    }
+    return request<{
+      queued: boolean;
+      usedKeys: { nvd: boolean; github: boolean };
+      fullResync?: { nvd: boolean; ghsa: boolean; exploit_db: boolean };
+    }>(`/admin/refresh`, { method: "POST", headers });
   },
   getBookmarks: () =>
     request<BookmarkListResponse>(`/bookmarks`, { headers: clientHeaders() }),

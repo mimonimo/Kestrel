@@ -32,6 +32,7 @@ async def refresh_ingestion(
     db: AsyncSession = Depends(get_db),
     x_nvd_api_key: str | None = Header(default=None, alias="X-NVD-API-Key"),
     x_github_token: str | None = Header(default=None, alias="X-GitHub-Token"),
+    full_resync: str | None = Header(default=None, alias="X-Full-Resync"),
 ) -> dict:
     """Kick off one ingestion run per source, using the provided keys if any.
 
@@ -42,9 +43,16 @@ async def refresh_ingestion(
     the background scheduler also uses them on subsequent ticks (previously
     only this-request was authenticated; scheduler ran token-less and GHSA
     returned 0 rows).
+
+    ``X-Full-Resync: ghsa`` (or ``all``) bypasses the per-source
+    ``last_success`` watermark so the parser walks from its natural
+    beginning again. Use this to recover from a since-window gap — when
+    earlier runs returned 0 items due to a transient token issue,
+    ``finished_at`` advanced past advisories that were never actually
+    fetched.
     """
+    row = await db.scalar(select(AppSettings).where(AppSettings.id == 1))
     if x_nvd_api_key or x_github_token:
-        row = await db.scalar(select(AppSettings).where(AppSettings.id == 1))
         if row is None:
             row = AppSettings(id=1)
             db.add(row)
@@ -54,11 +62,27 @@ async def refresh_ingestion(
             row.github_token = x_github_token
         await db.commit()
 
+    # Fall back to persisted keys when the caller didn't send headers —
+    # the scheduler already does this (jobs._resolve_external_keys), so
+    # without this fallback "전체 다시 받기" from a device without the
+    # key in localStorage runs token-less and fails the same way the
+    # original since-window gap was caused.
+    nvd_token = x_nvd_api_key or (row.nvd_api_key if row else None)
+    gh_token = x_github_token or (row.github_token if row else None)
+
+    resync_tokens = {t.strip().lower() for t in (full_resync or "").split(",") if t.strip()}
+    ghsa_full = "ghsa" in resync_tokens or "all" in resync_tokens
+    nvd_full = "nvd" in resync_tokens or "all" in resync_tokens
+    edb_full = "exploit_db" in resync_tokens or "all" in resync_tokens
+
     async def _run_all() -> None:
         await asyncio.gather(
-            run_parser(NvdParser(api_key_override=x_nvd_api_key)),
-            run_parser(GithubAdvisoryParser(token_override=x_github_token)),
-            run_parser(ExploitDbParser()),
+            run_parser(NvdParser(api_key_override=nvd_token), full_resync=nvd_full),
+            run_parser(
+                GithubAdvisoryParser(token_override=gh_token),
+                full_resync=ghsa_full,
+            ),
+            run_parser(ExploitDbParser(), full_resync=edb_full),
             return_exceptions=True,
         )
 
@@ -66,8 +90,13 @@ async def refresh_ingestion(
     return {
         "queued": True,
         "usedKeys": {
-            "nvd": bool(x_nvd_api_key),
-            "github": bool(x_github_token),
+            "nvd": bool(nvd_token),
+            "github": bool(gh_token),
+        },
+        "fullResync": {
+            "nvd": nvd_full,
+            "ghsa": ghsa_full,
+            "exploit_db": edb_full,
         },
     }
 

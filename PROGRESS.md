@@ -1109,6 +1109,69 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-AN — GHSA since-window 갭 복구 ("전체 다시 받기") + GraphQL 오류 surface ✅
+
+> 사용자 보고: "GHSA 이거는 정상 수집 안되는듯 지금 3개밖에 없음." 대시보드 수집
+> 분포 패널에서 GHSA 막대가 거의 안 보임. DB 점검 결과 다른 출처는 수만 건인데
+> source='github_advisory' 만 250개대. 첫 ingestion 만 241건 채우고 그 뒤로는
+> publishedSince=last_success 가 새 advisory 가 없는 짧은 구간을 가리켜 0건 반환만
+> 반복 — 한 번 since 가 앞당겨지면 그 사이에 publish 된 advisory 는 다시 못 잡는
+> 구조였음.
+
+**Backend — `app/services/parsers/github_advisory.py`**
+- GraphQL `errors` payload 가 오면 조용히 return 하던 부분을 `RuntimeError` 로
+  raise — `run_parser` 의 try/except 가 `error_message` 컬럼에 사유를 적어 사용자
+  설정 패널 status 행에서 "토큰 만료" / "rate limit" 등 실제 원인이 보임.
+  이전엔 같은 상황이 status='success', items_processed=0 으로 기록돼 사용자가
+  뭐가 잘못됐는지 알 수 없었음.
+
+**Backend — `app/services/ingestion.py` + `app/api/v1/admin.py`**
+- `run_parser(..., full_resync: bool = False)` 추가. True 일 때 `_last_success`
+  을 무시하고 `since=None` 으로 fetch 호출 → publishedSince 필터 해제, 처음부터
+  다시 walk. since-window 갭으로 누락된 advisory 를 회수.
+- `POST /admin/refresh` 가 `X-Full-Resync: ghsa | nvd | exploit_db | all`
+  헤더 (쉼표 분리) 수용. 응답 payload 에 `fullResync` 객체 추가.
+- 같은 엔드포인트가 헤더 미제공 시 `app_settings` 의 저장 토큰을 fallback 으로
+  사용하도록 통일 — 스케줄러는 PR 10-AJ 이래 이미 그렇게 동작했지만 manual
+  refresh 만 env+header 만 보고 있었음. 다른 기기/브라우저에서 "전체 다시 받기"
+  눌러도 token-less 로 떨어지지 않음.
+
+**Frontend — `components/settings/ApiKeyField.tsx` + `lib/api.ts`**
+- `refreshIngestion(keys, fullResync?)` 가 `X-Full-Resync` 헤더 부착.
+- 키가 저장된 상태일 때 카드 안에 "전체 다시 받기" 버튼 + 안내 한 줄 노출 —
+  "과거 토큰 미설정/실패로 since-window 가 앞당겨져 누락분이 있을 때
+  사용하세요" 문구로 의도 명확화. 한 번 누르면 background 로 풀-리싱크 트리거.
+
+**검증 (라이브)**
+```
+# Before
+GHSA: 250
+
+# Trigger full resync
+$ curl -X POST -H 'X-Full-Resync: ghsa' /api/v1/admin/refresh
+{"queued":true,"usedKeys":{"nvd":true,"github":true},
+ "fullResync":{"nvd":false,"ghsa":true,"exploit_db":false}}
+
+# Watch ingestion_logs (took ~10 min)
+items_processed=26973 items_new=219 items_updated=26521 status=success
+
+# After
+GHSA primary-source count: 469 (+219)
+sources[] containing 'github_advisory' total: ~27,000
+(많은 advisory 가 NVD/MITRE 에 먼저 등록되어 primary=다른 출처 + sources 에 ghsa 가 append 됨)
+```
+
+**알려진 잔여**
+- 풀-리싱크 도중 스케줄러가 같은 source 의 정기 tick 을 별도 ingestion_logs
+  행으로 동시에 실행할 수 있음 (manual 트리거는 scheduler 의 max_instances=1
+  락을 우회). GitHub GraphQL 의 rate-limit (5000 pts/h) 안에서 충돌은 무해하나
+  같은 시간대 두 행이 비슷한 카운트를 기록해 혼란 가능성. 후속.
+- 다중-출처 표시: VulnDistributionPanel 의 "출처" 막대는 여전히 primary
+  source 만 카운트 — "이 CVE 는 GHSA 에도 있다" 를 시각화하려면 sources[]
+  unnest 도 별도 그룹으로 추가하는 추가 작업 필요.
+
+---
+
 ### PR 10-AM — Claude 로그인 진단·라이트 분석 + 설정 페이지 wrap 방지 + status 토큰 영속 인식 ✅
 
 > 사용자 보고 3건 한 번에:
