@@ -1109,6 +1109,48 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-AO — 설정 페이지 안내 문구 간결화 + ClaudeAuthPanel 방어 추가 ✅
+
+> 사용자 보고: "MITRE cvelistV5 백필 / MITRE 가 canonical 로 보유한 ~340k 전체
+> CVE 를 받아옵니다… 이런 멘트들도 너무 TMI 임 핵심만 남겨" 그리고 "로그인
+> 버튼 클릭하면 화면 비율 이상해지는건 왜 개선안함?"
+
+**Frontend — `components/settings/SettingsLayout.tsx`**
+- 페이지 상단 부제 + 모든 섹션 description 을 한 줄 핵심 문장으로 압축.
+  - "내 자산", "외부 데이터 소스 API 키", "MITRE 전체 백필", "Claude 인증 +
+    모델 라벨", "실행 중인 샌드박스 세션", "합성된 실습 환경 저장 공간",
+    "실습 환경 출처별 분포", "내부 자원 관리", "버전 정보 / 업데이트" 9개.
+- 헤더의 "테마와 외부 API 키, 자산 정보 등을 관리합니다. 화면 설정과 외부 API
+  키는 이 기기 안에만 저장되며…" 한 문단 제거 — 같은 내용이 페이지 하단 "설정
+  저장 위치 안내" 섹션에 이미 더 정확히 있음.
+
+**Frontend — `components/settings/ClaudeAuthPanel.tsx`**
+- 패널 root 에 `min-w-0` 추가. PR 10-AM 에서 `SettingsLayout` 우측 그리드 컬럼에
+  `min-w-0` 을 넣어 OAuth URL chip 가 컬럼을 stretch 시키지 못하게 했지만 —
+  패널이 다른 곳에 임포트돼 들어갈 경우 (또는 사용자 배포가 옛 이미지로 돌
+  때) 방어가 한 겹 더 있는 편이 안전. defense in depth.
+- 로그인 안내 두 문장 ("AI 심층 분석과… 본인의 Claude 구독으로…") + 세션
+  만료 안내 ("자격증명은 백엔드의 영구 저장 공간(named volume)에 저장되어…")
+  을 핵심만 한 줄로 줄임.
+
+**Frontend — `components/settings/MitreBackfillPanel.tsx`**
+- 백필 안내 3줄을 "전체 ~340k CVE 를 한 번에 채웁니다." 한 줄로.
+
+**검증**
+- compare.png 스크린샷: `min-w-0` 무 / 유 두 케이스 나란히 렌더해 URL chip 가
+  컬럼을 가로로 stretch 시키는 회귀 사례가 fix 적용 시 truncate + "URL 복사"
+  버튼 가시화로 정상 동작함을 시각적으로 확인.
+- `npx tsc --noEmit` exit 0.
+- 풀 빌드 + 페이지 200.
+
+**알려진 잔여**
+- Claude 로그인 자체 60s timeout 문제는 PR 10-AM 의 진단 메시지 강화 이후
+  사용자 측 재시도 결과 대기. CLI 가 코드를 받고도 토큰 교환 단계에서
+  silent 한 hang 을 보이는 동작은 그대로 — claude.exe 가 Bun-compiled native
+  binary 라 우리 쪽에서 더 파보기 어려움.
+
+---
+
 ### PR 10-AN — GHSA since-window 갭 복구 ("전체 다시 받기") + GraphQL 오류 surface ✅
 
 > 사용자 보고: "GHSA 이거는 정상 수집 안되는듯 지금 3개밖에 없음." 대시보드 수집

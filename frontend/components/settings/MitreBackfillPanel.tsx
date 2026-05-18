@@ -49,9 +49,7 @@ export function MitreBackfillPanel() {
               MITRE cvelistV5 백필
             </h3>
             <p className="mt-1 text-xs text-neutral-500">
-              MITRE 가 canonical 로 보유한 ~340k 전체 CVE 를 받아옵니다. NVD
-              enrichment 가 빠진 historical CVE 까지 한 번에 채워집니다.
-              델타 모드는 6시간마다 자동으로도 돌고 있어 평소엔 불필요합니다.
+              전체 ~340k CVE 를 한 번에 채웁니다.
             </p>
           </div>
         </div>

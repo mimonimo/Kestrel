@@ -55,8 +55,7 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "assets",
         title: "내 자산",
-        description:
-          "운영 중인 벤더·제품을 등록하면 그에 영향을 주는 CVE 만 모아 대시보드 상단 '내 시스템 취약점' 카드에 표시됩니다.",
+        description: "운영 중인 벤더·제품을 등록하면 영향 받는 CVE 만 따로 보입니다.",
         render: () => <AssetsManager />,
       },
     ],
@@ -69,8 +68,7 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "external-keys",
         title: "외부 데이터 소스 API 키",
-        description:
-          "NVD · GitHub Advisory 데이터를 더 빠르게 받아오기 위한 키입니다. 비워 두어도 동작하지만, 등록하면 수집 속도와 안정성이 좋아집니다.",
+        description: "비워도 동작하지만, 등록하면 수집 속도가 빨라집니다.",
         render: () => (
           <div className="space-y-4">
             <ApiKeyField settingKey="nvdApiKey" />
@@ -81,8 +79,7 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "mitre-backfill",
         title: "MITRE 전체 백필",
-        description:
-          "MITRE 공식 cvelistV5 저장소에서 전체 CVE를 받아와 NVD enrichment 가 빠진 historical 항목까지 채웁니다. 6시간마다 델타 sync 는 자동으로 돌고 있으며, 첫 도입 시에만 전체 백필을 한 번 실행하면 됩니다.",
+        description: "최초 1회만 실행. 평소엔 자동 델타 동기화.",
         render: () => <MitreBackfillPanel />,
       },
     ],
@@ -95,8 +92,7 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "ai-analysis",
         title: "Claude 인증 + 모델 라벨",
-        description:
-          "CVE 상세 화면의 'AI 심층 분석' 과 실습 환경 합성에 사용되는 Claude 인증과 모델 설정입니다. 호스트 CLI 인증을 마운트할 필요 없이 대시보드에서 한 번 로그인하면 자격증명이 백엔드의 영구 저장 공간에 저장되어 컨테이너를 재시작해도 유지됩니다.",
+        description: "AI 심층 분석과 실습 환경 합성에 사용되는 Claude 인증입니다.",
         render: () => (
           <div className="space-y-6">
             <div>
@@ -110,8 +106,7 @@ const CATEGORIES: CategoryDef[] = [
                 2. 모델 라벨
               </h3>
               <p className="mb-3 text-[11px] text-neutral-500">
-                위에서 로그인한 Claude 구독을 어떤 모델로 호출할지 라벨 단위로
-                관리합니다. 여러 라벨을 두고 한 번에 하나만 활성화할 수 있습니다.
+                위 Claude 구독을 어떤 모델로 호출할지 선택합니다.
               </p>
               <AiSettingsForm />
             </div>
@@ -128,22 +123,19 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "sandbox-sessions",
         title: "실행 중인 샌드박스 세션",
-        description:
-          "현재 띄워진 실습 환경 컨테이너 목록입니다. 만료 전이라도 즉시 정지할 수 있고, vulhub 공식 환경을 새로 받아오는 동기화도 여기서 실행합니다.",
+        description: "실습 컨테이너 목록 + vulhub 동기화.",
         render: () => <SandboxSessionsPanel />,
       },
       {
         id: "synth-cache",
         title: "합성된 실습 환경 저장 공간",
-        description:
-          "AI 합성으로 만든 실습 환경 이미지의 사용량입니다. 합성이 호출될 때마다 자동으로 오래된 이미지가 정리되며, 필요할 때 즉시 정리도 가능합니다.",
+        description: "AI 합성 이미지의 디스크 사용량입니다.",
         render: () => <SynthesizerCachePanel />,
       },
       {
         id: "lab-stats",
         title: "실습 환경 출처별 분포",
-        description:
-          "vulhub 공식 재현 / 표준 환경 / AI 합성 비율과 취약점 유형별 점유율을 보여줍니다. 한쪽으로 쏠려 있다면 합성 품질을 점검할 신호일 수 있습니다.",
+        description: "vulhub · 표준 · 합성 비율과 유형별 점유율.",
         render: () => <LabKindStatsPanel />,
       },
     ],
@@ -156,8 +148,7 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "resources",
         title: "내부 자원 관리",
-        description:
-          "데이터베이스 / Redis / 검색 인덱스의 사용량을 확인하고 점검 동작을 실행하는 별도 화면입니다.",
+        description: "DB · Redis · 검색 인덱스 사용량 + 점검 동작.",
         render: () => (
           <Link
             href="/settings/resources"
@@ -183,8 +174,7 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "version",
         title: "버전 정보 / 업데이트",
-        description:
-          "현재 실행 중인 빌드와 DB 마이그레이션 상태입니다. 새 버전이 나오면 아래 명령 한 줄로 안전하게 업데이트할 수 있습니다.",
+        description: "현재 빌드와 DB 마이그레이션 상태.",
         render: () => <VersionPanel />,
       },
       {
@@ -286,10 +276,6 @@ export function SettingsLayout() {
     <div className="mx-auto max-w-6xl px-6 py-12">
       <header className="mb-8">
         <h1 className="text-2xl font-bold text-neutral-100">설정</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          테마와 외부 API 키, 자산 정보 등을 관리합니다. 화면 설정과 외부 API
-          키는 이 기기 안에만 저장되며 외부로 전송되지 않습니다.
-        </p>
       </header>
 
       <div className="grid gap-8 lg:grid-cols-[220px_1fr]">

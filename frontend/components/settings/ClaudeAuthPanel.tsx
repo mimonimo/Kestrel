@@ -157,7 +157,10 @@ export function ClaudeAuthPanel() {
   }
 
   return (
-    <div className="space-y-4">
+    // ``min-w-0`` on the panel root too: defense in depth so the OAuth URL
+    // chip can't stretch the column even if a future caller drops the panel
+    // into a flex/grid item that forgot to allow shrink.
+    <div className="min-w-0 space-y-4">
       {/* ── 현재 로그인 상태 ─────────────────────────────────────────── */}
       {data.loggedIn ? (
         <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-4">
@@ -208,9 +211,7 @@ export function ClaudeAuthPanel() {
                 Claude 에 아직 로그인되어 있지 않습니다
               </h3>
               <p className="mt-1 text-xs text-neutral-400">
-                AI 심층 분석과 실습 환경 합성 기능을 사용하려면 본인의 Claude
-                구독으로 한 번만 로그인하면 됩니다. 별도 API 키는 필요하지
-                않습니다.
+                구독 계정으로 한 번만 로그인하면 됩니다. API 키 불필요.
               </p>
             </div>
           </div>
@@ -340,9 +341,7 @@ export function ClaudeAuthPanel() {
           </ol>
 
           <p className="text-[11px] text-neutral-500">
-            세션은 10분 후 자동으로 만료됩니다. 자격증명은 백엔드의 영구
-            저장 공간(named volume)에 저장되어 컨테이너를 재시작해도
-            유지됩니다.
+            세션은 10분 후 자동 만료. 자격증명은 컨테이너 재시작에도 유지됩니다.
           </p>
 
           {submit.error && (
