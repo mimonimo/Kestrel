@@ -84,15 +84,33 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
     <div className="space-y-3 rounded-lg border border-neutral-800 bg-surface-1 p-5">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-neutral-100">{meta.label}</h3>
-        <a
-          href={meta.docsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex shrink-0 items-center gap-1 rounded border border-neutral-700 px-2 py-1 text-[11px] text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"
-        >
-          <ExternalLink className="h-3 w-3" />
-          발급
-        </a>
+        <div className="flex shrink-0 items-center gap-2">
+          {ready && value && (
+            <button
+              type="button"
+              onClick={() => void fullResync()}
+              disabled={status === "submitting"}
+              title="과거 수집 실패로 누락된 항목이 있을 때만 사용. 처음부터 다시 받아옵니다."
+              className="inline-flex items-center gap-1 rounded border border-amber-500/40 px-2 py-1 text-[11px] text-amber-700 hover:border-amber-500/70 hover:bg-amber-500/10 disabled:opacity-50 dark:text-amber-300"
+            >
+              {status === "submitting" ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <History className="h-3 w-3" />
+              )}
+              전체 다시 받기
+            </button>
+          )}
+          <a
+            href={meta.docsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded border border-neutral-700 px-2 py-1 text-[11px] text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"
+          >
+            <ExternalLink className="h-3 w-3" />
+            발급
+          </a>
+        </div>
       </div>
 
       {ready && value ? (
@@ -147,30 +165,6 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
           {status === "submitting" ? "저장 중" : "저장하고 즉시 재수집"}
         </Button>
       </form>
-
-      {ready && value && (
-        <div className="flex items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2.5">
-          <span className="text-xs leading-snug text-amber-900 dark:text-amber-100">
-            과거 수집 실패로 누락된 항목이 있을 때만 사용하세요. 처음부터
-            다시 받아옵니다.
-          </span>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            onClick={() => void fullResync()}
-            disabled={status === "submitting"}
-            className="shrink-0 text-amber-900 hover:bg-amber-500/20 dark:text-amber-100"
-          >
-            {status === "submitting" ? (
-              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <History className="mr-1 h-3.5 w-3.5" />
-            )}
-            전체 다시 받기
-          </Button>
-        </div>
-      )}
 
       {status === "saved" && (
         <p className="text-xs text-emerald-400">저장되었습니다. 새 키로 데이터 재수집을 백그라운드에서 시작했습니다.</p>

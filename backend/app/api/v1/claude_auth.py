@@ -1,52 +1,56 @@
-"""Dashboard-driven Claude OAuth login (PR 10-AD).
+"""Dashboard-driven Claude OAuth login.
 
-Drives `claude setup-token` (the device-code OAuth flow shipped with the
-Claude Code CLI) from inside the backend container, exposing only:
+PR 10-AD initially drove ``claude setup-token`` inside the container via a
+PTY. That CLI ended up hanging silently at the OAuth token-exchange step
+on some setups (Bun-compiled native binary, root cause not visible to us),
+so PR 10-AS replaces the PTY path with a direct backend-side OAuth 2.0 +
+PKCE exchange:
 
-    1. Start a session — backend spawns the CLI in a PTY, captures the
-       authorization URL from its stdout, returns it to the frontend.
-    2. Submit the OAuth code — frontend posts the code that the user
-       received from the Anthropic OAuth page; backend writes it into
-       the CLI's stdin and waits for the subprocess to exit cleanly.
-    3. Status / logout — read or remove ``~/.claude/.credentials.json``.
+    1. ``POST /start`` — backend generates ``code_verifier`` /
+       ``code_challenge`` (PKCE) and a random ``state``, constructs the
+       authorize URL with the Claude Code CLI's known public ``client_id``,
+       and stores the verifier in an in-memory session. Returns the URL.
+    2. User visits the URL, authenticates on Anthropic, lands on the
+       redirect_uri callback page, and copies the displayed code
+       (typically ``<code>#<state>``) back to our UI.
+    3. ``POST /{sid}/submit`` — backend splits ``<code>#<state>``,
+       verifies the state matches the session, then POSTs to Anthropic's
+       token endpoint with the code + our stored verifier. On 200 it
+       writes the credentials to the same ``.credentials.json`` shape the
+       CLI used to write, so all downstream code paths (status read, AI
+       analyzer, sandbox synthesizer) keep working unchanged.
 
-The user never touches a terminal. The CLI process is an implementation
-detail; from the user's perspective it's a one-button flow in settings.
+Why bypass the CLI?
+    The in-container ``claude setup-token`` flow consistently hit a
+    60-second backend timeout: CLI mask-echoed the pasted code (so input
+    plumbing was fine), then went silent while doing the token exchange
+    internally. Doing the same HTTP exchange ourselves removes the
+    opaque binary from the critical path and surfaces real Anthropic
+    error responses to the user.
 
-Why a PTY?
-    `claude setup-token` checks ``isTTY`` on stdin/stdout/stderr — when
-    those are pipes (not a TTY) it refuses to start the OAuth flow.
-    `pty.openpty()` gives us a kernel pseudo-terminal pair so the child
-    sees a real TTY but we still get programmatic read/write on the
-    master fd.
-
-Why a wide window size?
-    The CLI line-wraps the OAuth URL at the terminal width. We
-    `TIOCSWINSZ` the master fd to 1 row × 400 cols so the URL never
-    splits and we can extract it with a simple regex.
+A separate ``POST /credentials`` endpoint accepts a pre-existing
+``.credentials.json`` content (escape hatch for users who can run the
+CLI elsewhere and want to copy the result over).
 """
 from __future__ import annotations
 
 import asyncio
-import fcntl
+import base64
+import hashlib
 import json
 import os
-import pty
-import re
 import secrets
 import shutil
-import signal
-import struct
-import termios
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import httpx
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -55,6 +59,17 @@ from app.models import AiCredential, AppSettings
 
 router = APIRouter(prefix="/settings/claude-auth", tags=["claude-auth"])
 log = get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# OAuth constants (extracted from the Claude Code CLI's bundled config)
+# ---------------------------------------------------------------------------
+
+_OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+_OAUTH_AUTH_URL = "https://claude.com/cai/oauth/authorize"
+_OAUTH_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
+_OAUTH_REDIRECT_URI = "https://platform.claude.com/oauth/code/callback"
+_OAUTH_SCOPE = "user:inference"
 
 
 # ---------------------------------------------------------------------------
@@ -97,20 +112,15 @@ class ActionOut(_CamelOut):
 class CredentialsIn(_CamelOut):
     """Raw ``.credentials.json`` content the user pastes manually.
 
-    Escape hatch for environments where the in-container ``claude
-    setup-token`` flow hangs at the OAuth token-exchange step — the user
-    runs the CLI on their host (where it works), opens
-    ``~/.claude/.credentials.json``, and pastes the whole content here.
+    Escape hatch for users who already have a working credentials file
+    (e.g. ``claude setup-token`` succeeded on their dev machine).
     """
 
-    # Accept either a parsed object or a raw JSON string — both are
-    # ergonomic depending on where the user is copying from. The endpoint
-    # normalizes to a dict before writing.
     credentials: dict[str, Any] | str
 
 
 # ---------------------------------------------------------------------------
-# Login session registry
+# Login session registry (in-memory; single backend instance assumed)
 # ---------------------------------------------------------------------------
 
 _CLAUDE_HOME = Path("/home/app/.claude")
@@ -121,11 +131,10 @@ _SESSION_TTL_SECONDS = 600  # 10 min — caps a forgotten OAuth tab
 @dataclass
 class _LoginSession:
     sid: str
-    proc: asyncio.subprocess.Process | None
-    master_fd: int
+    code_verifier: str
+    state: str
     url: str
     started_at: float
-    output: bytes = field(default_factory=bytes)
 
 
 _sessions: dict[str, _LoginSession] = {}
@@ -139,155 +148,51 @@ def _gc_sessions() -> None:
         sid for sid, s in _sessions.items() if now - s.started_at > _SESSION_TTL_SECONDS
     ]
     for sid in stale:
-        s = _sessions.pop(sid, None)
-        if s is None:
-            continue
-        try:
-            if s.proc is not None and s.proc.returncode is None:
-                s.proc.kill()
-        except Exception:
-            pass
-        try:
-            os.close(s.master_fd)
-        except OSError:
-            pass
+        _sessions.pop(sid, None)
 
 
 # ---------------------------------------------------------------------------
-# Subprocess helpers
+# PKCE helpers (RFC 7636)
 # ---------------------------------------------------------------------------
 
-def _set_window_size(fd: int, rows: int = 40, cols: int = 200) -> None:
-    """Normal terminal viewport for the spawned CLI.
+def _b64url(b: bytes) -> str:
+    """URL-safe base64 without padding — what OAuth PKCE expects."""
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
 
-    A 1-row window (the previous default) made the URL fit on one line
-    for the extraction regex, but it also stripped every post-paste
-    Ink redraw (mask-echo, spinner, success/failure status) off the
-    viewport so timeout snippets always ended up "(없음)". 40×200 is
-    a normal-sized terminal — the URL still wraps at col 200, so
-    ``_URL_RE`` joins wrapped halves itself before matching.
+
+def _pkce_pair() -> tuple[str, str]:
+    """Generate (verifier, challenge) per RFC 7636 §4.
+
+    Verifier: 32 random bytes → ~43 base64url chars.
+    Challenge: base64url(SHA-256(verifier)).
     """
-    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+    verifier = _b64url(secrets.token_bytes(32))
+    challenge = _b64url(hashlib.sha256(verifier.encode()).digest())
+    return verifier, challenge
 
 
-_ANSI_ESC_RE = re.compile(rb"\x1b\[[0-9;?]*[a-zA-Z]")
-_OSC_RE = re.compile(rb"\x1b\][^\x07]*\x07")
-# Ink wraps the URL at the terminal column width — at 200 cols the
-# ~350-char URL splits exactly once. Allow at most ONE ``\r?\n``
-# interruption inside the URL char run, then collapse it in
-# ``_join_url``. Allowing arbitrary linebreaks let the match swallow
-# the "Paste code here if prompted" line that follows.
-_URL_CHARS = rb"[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+"
-# Ink emits ``\r\r\n`` (CR CR LF) at a wrap point — the raw-mode TTY
-# echoes the implicit CR plus the explicit LF the renderer inserts.
-_URL_RE = re.compile(
-    rb"https://claude\.com/cai/oauth/authorize\?"
-    + _URL_CHARS
-    + rb"(?:\r*\n" + _URL_CHARS + rb")?"
-)
+def _build_authorize_url(challenge: str, state: str) -> str:
+    """Construct the URL the user opens to authenticate with Anthropic.
 
-
-def _strip_ansi(buf: bytes) -> bytes:
-    """Remove escape sequences so the URL regex matches cleanly."""
-    return _OSC_RE.sub(b"", _ANSI_ESC_RE.sub(b"", buf))
-
-
-def _join_url(raw: bytes) -> str:
-    """Strip inline newlines a wrapped Ink renderer added to the URL."""
-    return raw.decode().replace("\r\n", "").replace("\n", "").replace("\r", "")
-
-
-async def _spawn_setup_token() -> tuple[asyncio.subprocess.Process, int, str]:
-    """Launch `claude setup-token` in a PTY and capture the OAuth URL.
-
-    Returns ``(proc, master_fd, url)``. The master fd is left open — caller
-    keeps it for the subsequent stdin write (the OAuth code).
+    Matches the Claude Code CLI's authorize request 1:1 (we discovered the
+    parameters by reading the CLI's emitted URL). ``code=true`` is the
+    Anthropic-specific flag that tells the OAuth page to display the
+    code instead of redirecting to a backend; it does not replace the
+    standard ``response_type=code``.
     """
-    if shutil.which("claude") is None:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "이 컨테이너에 Claude Code CLI 가 없어 로그인 흐름을 시작할 수 없습니다. "
-                "INSTALL_CLAUDE_CLI=1 (기본값) 로 백엔드 이미지를 다시 빌드해 주세요."
-            ),
-        )
+    from urllib.parse import urlencode
 
-    master_fd, slave_fd = pty.openpty()
-    _set_window_size(master_fd)
-    env = {**os.environ, "TERM": "xterm-256color", "HOME": str(_CLAUDE_HOME.parent)}
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "claude",
-            "setup-token",
-            stdin=slave_fd,
-            stdout=slave_fd,
-            stderr=slave_fd,
-            env=env,
-            start_new_session=True,
-        )
-    finally:
-        os.close(slave_fd)
-
-    # Read until the URL appears (or 25s elapse — the CLI's startup banner
-    # animation usually finishes within ~3s).
-    deadline = asyncio.get_event_loop().time() + 25.0
-    buf = b""
-    url: str | None = None
-    while asyncio.get_event_loop().time() < deadline:
-        await asyncio.sleep(0.15)
-        try:
-            chunk = await asyncio.to_thread(_read_nonblocking, master_fd)
-        except OSError:
-            chunk = b""
-        if chunk:
-            buf += chunk
-            stripped = _strip_ansi(buf)
-            m = _URL_RE.search(stripped)
-            if m:
-                url = _join_url(m.group(0))
-                break
-        if proc.returncode is not None:
-            # CLI exited before printing a URL — usually because it's
-            # missing entirely or the OAuth client_id was rejected.
-            break
-
-    if url is None:
-        if proc.returncode is None:
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                pass
-        os.close(master_fd)
-        snippet = _strip_ansi(buf)[-400:].decode("utf-8", errors="replace").strip()
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                "Claude OAuth URL을 25초 안에 받지 못했습니다. "
-                f"CLI 출력 발췌: {snippet or '(없음)'}"
-            ),
-        )
-
-    log.info("claude_auth.url_captured", proc_pid=proc.pid)
-    return proc, master_fd, url
-
-
-def _read_nonblocking(fd: int) -> bytes:
-    """Drain whatever is available on the master fd without blocking."""
-    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
-    fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-    chunks: list[bytes] = []
-    try:
-        while True:
-            try:
-                chunk = os.read(fd, 4096)
-            except BlockingIOError:
-                break
-            if not chunk:
-                break
-            chunks.append(chunk)
-    finally:
-        fcntl.fcntl(fd, fcntl.F_SETFL, flags)
-    return b"".join(chunks)
+    params = {
+        "code": "true",
+        "client_id": _OAUTH_CLIENT_ID,
+        "response_type": "code",
+        "redirect_uri": _OAUTH_REDIRECT_URI,
+        "scope": _OAUTH_SCOPE,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "state": state,
+    }
+    return f"{_OAUTH_AUTH_URL}?{urlencode(params)}"
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +208,17 @@ def _read_credentials() -> dict[str, Any] | None:
         return None
 
 
+def _write_credentials(payload: dict[str, Any]) -> None:
+    _CLAUDE_HOME.mkdir(parents=True, exist_ok=True)
+    _CRED_FILE.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+    os.chmod(_CRED_FILE, 0o600)
+
+
 def _claude_version() -> str | None:
+    """Optional — the CLI is no longer required for login, but if it's
+    installed the settings panel still surfaces its version so the user
+    knows whether the AI analyzer path that *does* exec the CLI will work.
+    """
     if shutil.which("claude") is None:
         return None
     try:
@@ -346,17 +261,20 @@ async def status_route() -> StatusOut:
 async def start_route() -> StartOut:
     async with _sessions_lock:
         _gc_sessions()
-    proc, master_fd, url = await _spawn_setup_token()
+    verifier, challenge = _pkce_pair()
+    state = _b64url(secrets.token_bytes(32))
     sid = secrets.token_urlsafe(16)
+    url = _build_authorize_url(challenge, state)
     sess = _LoginSession(
         sid=sid,
-        proc=proc,
-        master_fd=master_fd,
+        code_verifier=verifier,
+        state=state,
         url=url,
         started_at=time.time(),
     )
     async with _sessions_lock:
         _sessions[sid] = sess
+    log.info("claude_auth.session_started", sid=sid)
     return StartOut(session_id=sid, url=url)
 
 
@@ -368,13 +286,9 @@ _DEFAULT_MODEL = "claude-sonnet-4-6"
 async def _ensure_active_credential(db: AsyncSession) -> AiCredential:
     """Make sure there's exactly one ``claude_cli`` credential and it's active.
 
-    Called right after a successful dashboard login so the user doesn't
-    have to also visit the model-label form to activate something —
-    the analyzer can immediately route to the freshly-saved OAuth.
-
-    Picks the first existing claude_cli row if any (preserves the user's
-    chosen model), otherwise creates one with the default model. Always
-    sets it as the active credential in the singleton AppSettings.
+    Called right after a successful login so the user doesn't have to
+    also visit the model-label form to activate something — the analyzer
+    can immediately route to the freshly-saved OAuth.
     """
     cred = (
         await db.execute(
@@ -390,8 +304,7 @@ async def _ensure_active_credential(db: AsyncSession) -> AiCredential:
             provider=_DEFAULT_PROVIDER,
             model=_DEFAULT_MODEL,
             # claude_cli reads OAuth from disk; the api_key column is
-            # NOT NULL so a sentinel keeps the schema happy without
-            # storing real secrets.
+            # NOT NULL so a sentinel keeps the schema happy.
             api_key="oauth-from-disk",
         )
         db.add(cred)
@@ -409,6 +322,29 @@ async def _ensure_active_credential(db: AsyncSession) -> AiCredential:
     return cred
 
 
+def _parse_code_input(raw: str, expected_state: str) -> str:
+    """Validate and extract the OAuth ``code`` from the user's paste.
+
+    The Anthropic callback page displays the code as either ``<code>``
+    alone or ``<code>#<state>`` (we've seen both in the wild). If a
+    state suffix is present it MUST match the session's state — otherwise
+    we'd be exchanging a code that belongs to a different OAuth attempt.
+    """
+    cleaned = raw.strip().replace("\r", "").replace("\n", "").replace(" ", "")
+    if "#" in cleaned:
+        code, _, state = cleaned.partition("#")
+        if state and state != expected_state:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "코드의 state 부분이 현재 세션과 일치하지 않습니다. "
+                    "다시 로그인을 시작한 뒤 새 URL 에서 받은 코드를 사용하세요."
+                ),
+            )
+        return code
+    return cleaned
+
+
 @router.post(
     "/{session_id}/submit",
     response_model=ActionOut,
@@ -421,135 +357,130 @@ async def submit_route(
 ) -> ActionOut:
     async with _sessions_lock:
         sess = _sessions.get(session_id)
-    if sess is None or sess.proc is None:
+    if sess is None:
         raise HTTPException(
             status_code=404,
             detail="로그인 세션을 찾을 수 없습니다. 다시 시작해 주세요.",
         )
-    if sess.proc.returncode is not None:
-        # Subprocess already exited — clean up and report.
-        await _drop_session(session_id)
+    if time.time() - sess.started_at > _SESSION_TTL_SECONDS:
+        async with _sessions_lock:
+            _sessions.pop(session_id, None)
         raise HTTPException(
-            status_code=409,
-            detail=(
-                f"로그인 세션이 이미 종료되었습니다 (exit={sess.proc.returncode}). "
-                "다시 시작해 주세요."
-            ),
+            status_code=410,
+            detail="로그인 세션이 만료되었습니다 (10분). 다시 시작해 주세요.",
         )
 
-    code = body.code.strip()
+    code = _parse_code_input(body.code, sess.state)
+    if not code:
+        raise HTTPException(
+            status_code=400,
+            detail="코드가 비어 있습니다.",
+        )
+
+    token_payload = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "state": sess.state,
+        "client_id": _OAUTH_CLIENT_ID,
+        "redirect_uri": _OAUTH_REDIRECT_URI,
+        "code_verifier": sess.code_verifier,
+    }
     try:
-        # Strip newlines from the user's paste so trailing whitespace
-        # doesn't double-submit. Use ``\r`` (carriage return) — the PTY's
-        # cooked-mode line discipline maps it to LF on the slave side,
-        # but Ink puts stdin in raw mode where ``\r`` is the canonical
-        # Enter keypress.
-        cleaned = code.replace("\r", "").replace("\n", "")
-        os.write(sess.master_fd, cleaned.encode() + b"\r")
-    except OSError as e:
-        raise HTTPException(status_code=500, detail=f"코드 전송 실패: {e}")
-
-    # Drain master_fd while waiting for the subprocess to exit so we have
-    # full diagnostic output if it hangs (the CLI sometimes prompts again
-    # after the code, e.g. asking the user to confirm a workspace, which
-    # we want to surface in the timeout message). 60s cap covers slow
-    # OAuth token exchange on poor networks.
-    deadline = asyncio.get_event_loop().time() + 60.0
-    timed_out = False
-    while True:
-        try:
-            chunk = await asyncio.to_thread(_read_nonblocking, sess.master_fd)
-            if chunk:
-                sess.output += chunk
-        except OSError:
-            pass
-        if sess.proc.returncode is not None:
-            break
-        try:
-            await asyncio.wait_for(sess.proc.wait(), timeout=0.4)
-            break
-        except asyncio.TimeoutError:
-            if asyncio.get_event_loop().time() > deadline:
-                timed_out = True
-                break
-
-    if timed_out:
-        # Capture one final drain before killing.
-        try:
-            chunk = await asyncio.to_thread(_read_nonblocking, sess.master_fd)
-            if chunk:
-                sess.output += chunk
-        except OSError:
-            pass
-        try:
-            sess.proc.kill()
-        except ProcessLookupError:
-            pass
-        # Show both ANSI-stripped (human-readable) and raw-byte hex
-        # snippets — when the CLI hangs silently after receiving the
-        # code, the visible chars are empty but the redraw escape
-        # sequences in raw still tell us the keypress was consumed.
-        stripped = _strip_ansi(sess.output)[-300:].decode(
-            "utf-8", errors="replace"
-        ).strip()
-        raw_tail = sess.output[-200:].decode("utf-8", errors="replace")
-        await _drop_session(session_id)
-        log.warning(
-            "claude_auth.login_timeout",
-            captured_bytes=len(sess.output),
-            stripped_tail=stripped[:300],
-            raw_tail=repr(raw_tail)[:400],
-        )
-        detail = (
-            "Claude CLI 가 60초 안에 응답하지 않았습니다. "
-            f"수신 바이트: {len(sess.output)} byte. "
-            f"표시 출력: {stripped or '(없음)'}"
-        )
-        if len(sess.output) > 0 and not stripped:
-            # Got control codes but no visible text — CLI consumed the
-            # keypress but is hanging in token exchange. Most common
-            # cause: code/state mismatch (a stale code from a previous
-            # 로그인 시도, or a code that was edited during copy/paste).
-            # Guide the user to retry cleanly.
-            detail += (
-                " — CLI 가 코드 입력은 받았으나 토큰 교환 단계에서 멈췄습니다. "
-                "1) '취소' 후 '다시 로그인' 으로 새 세션을 시작하고, "
-                "2) Anthropic 페이지에서 갓 받은 코드를 그대로 한 번에 붙여넣어 보세요 "
-                "(이전에 받은 코드는 만료됩니다)."
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            res = await client.post(
+                _OAUTH_TOKEN_URL,
+                json=token_payload,
+                headers={"Content-Type": "application/json"},
             )
-        raise HTTPException(status_code=504, detail=detail)
+    except httpx.HTTPError as e:
+        log.exception("claude_auth.token_exchange_http_error")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Anthropic 토큰 엔드포인트 호출 실패: {e}",
+        ) from e
 
-    rc = sess.proc.returncode
-    await _drop_session(session_id)
-
-    creds = _read_credentials()
-    if rc == 0 and creds is not None:
-        # Auto-create + activate the AI credential row so the analyzer
-        # can immediately use the new OAuth without a second click.
+    if res.status_code >= 400:
         try:
-            cred = await _ensure_active_credential(db)
-            cred_msg = f"활성 모델: {cred.model}"
-        except Exception as e:
-            log.warning("claude_auth.activate_failed", error=str(e))
-            cred_msg = "단, AI 키 활성화에 실패했습니다 — 설정에서 수동으로 활성화해 주세요."
-        log.info("claude_auth.login_success")
-        return ActionOut(
-            ok=True,
+            err_body = res.json()
+        except Exception:
+            err_body = {"text": res.text[:400]}
+        msg = (
+            (err_body.get("error") or {}).get("message")
+            if isinstance(err_body.get("error"), dict)
+            else None
+        )
+        if not msg:
+            msg = err_body.get("error_description") or err_body.get("error") or res.text[:400]
+        log.warning(
+            "claude_auth.token_exchange_failed",
+            status=res.status_code,
+            body=str(err_body)[:400],
+        )
+        # The exchange itself is the typical failure point for "잘못된
+        # 코드 / 만료된 코드 / state 불일치" — surface Anthropic's own
+        # error verbatim so the user can see what's wrong.
+        raise HTTPException(
+            status_code=400,
             detail=(
-                "Claude 로그인 완료. 자격증명이 저장되고 AI 키가 자동으로 활성화되었습니다. "
-                f"({cred_msg})"
+                f"Anthropic 토큰 교환 실패 ({res.status_code}): {str(msg)[:400]}. "
+                "코드가 이미 사용됐거나 만료되었을 수 있습니다 — 다시 로그인 시작."
             ),
         )
 
-    snippet = _strip_ansi(sess.output)[-800:].decode(
-        "utf-8", errors="replace"
-    ).strip()
-    log.warning("claude_auth.login_failed", rc=rc, snippet=snippet[:400])
-    raise HTTPException(
-        status_code=400,
+    try:
+        body_json = res.json()
+        access_token = body_json["access_token"]
+        refresh_token = body_json.get("refresh_token")
+        # ``expires_in`` is seconds-until-expiry; we store an absolute epoch.
+        expires_in = int(body_json.get("expires_in") or 0)
+        # Scope echoes what the server actually granted; may differ from
+        # what we requested.
+        scope = body_json.get("scope") or _OAUTH_SCOPE
+        scopes = scope.split() if isinstance(scope, str) else list(scope)
+    except (KeyError, ValueError, TypeError) as e:
+        log.exception("claude_auth.token_response_parse_failed")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Anthropic 토큰 응답 파싱 실패: {e}",
+        ) from e
+
+    # Write the credentials file in the exact shape the CLI used to
+    # produce. ``expiresAt`` is in seconds (existing _read_credentials
+    # consumer reads it as ``int(expires_at)`` for a Date *1000 ms
+    # constructor on the frontend, so seconds is what the rest of the
+    # codebase already expects).
+    now = int(time.time())
+    payload = {
+        "claudeAiOauth": {
+            "accessToken": access_token,
+            "refreshToken": refresh_token,
+            "expiresAt": now + expires_in if expires_in else None,
+            "scopes": scopes,
+        }
+    }
+    try:
+        _write_credentials(payload)
+    except OSError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"자격증명 파일을 쓰지 못했습니다: {e}",
+        ) from e
+
+    async with _sessions_lock:
+        _sessions.pop(session_id, None)
+
+    try:
+        cred = await _ensure_active_credential(db)
+        cred_msg = f"활성 모델: {cred.model}"
+    except Exception as e:
+        log.warning("claude_auth.activate_failed", error=str(e))
+        cred_msg = "단, AI 키 활성화에 실패했습니다 — 설정에서 수동으로 활성화해 주세요."
+    log.info("claude_auth.login_success")
+    return ActionOut(
+        ok=True,
         detail=(
-            f"Claude 로그인이 완료되지 못했습니다 (exit={rc}). "
-            f"CLI 출력 발췌: {snippet or '(없음)'}"
+            "Claude 로그인 완료. 자격증명이 저장되고 AI 키가 자동으로 활성화되었습니다. "
+            f"({cred_msg})"
         ),
     )
 
@@ -560,10 +491,10 @@ async def submit_route(
     response_model_by_alias=True,
 )
 async def cancel_route(session_id: str) -> ActionOut:
-    sess = _sessions.get(session_id)
+    async with _sessions_lock:
+        sess = _sessions.pop(session_id, None)
     if sess is None:
         return ActionOut(ok=True, detail="이미 종료된 세션입니다.")
-    await _drop_session(session_id)
     return ActionOut(ok=True, detail="로그인 세션을 취소했습니다.")
 
 
@@ -578,15 +509,8 @@ async def credentials_route(
 ) -> ActionOut:
     """Write a user-supplied ``.credentials.json`` to the backend volume.
 
-    Bypasses ``claude setup-token`` — used when the in-container CLI
-    flow hangs at token exchange. The user runs the CLI on a working
-    host, then pastes the resulting credentials content here.
-
-    Validates the shape just enough to refuse obviously-wrong payloads
-    (must contain ``claudeAiOauth.accessToken``); we don't try to verify
-    the token against Anthropic because a stale-but-valid-looking token
-    is identical to a fresh one from a write standpoint, and the next
-    AI call will surface a 401 anyway.
+    Escape hatch for users who already have working credentials from
+    another machine — they paste the file content here verbatim.
     """
     raw = body.credentials
     if isinstance(raw, str):
@@ -616,10 +540,7 @@ async def credentials_route(
         )
 
     try:
-        _CLAUDE_HOME.mkdir(parents=True, exist_ok=True)
-        _CRED_FILE.write_text(json.dumps(parsed, indent=2, ensure_ascii=False))
-        # 0600 — match what the CLI itself writes.
-        os.chmod(_CRED_FILE, 0o600)
+        _write_credentials(parsed)
     except OSError as e:
         raise HTTPException(
             status_code=500,
@@ -651,23 +572,3 @@ async def logout_route() -> ActionOut:
         ok=True,
         detail="Claude 자격증명을 삭제했습니다. 다시 사용하려면 로그인하세요.",
     )
-
-
-async def _drop_session(sid: str) -> None:
-    async with _sessions_lock:
-        sess = _sessions.pop(sid, None)
-    if sess is None:
-        return
-    if sess.proc is not None and sess.proc.returncode is None:
-        try:
-            sess.proc.send_signal(signal.SIGTERM)
-            await asyncio.wait_for(sess.proc.wait(), timeout=2.0)
-        except (ProcessLookupError, asyncio.TimeoutError):
-            try:
-                sess.proc.kill()
-            except ProcessLookupError:
-                pass
-    try:
-        os.close(sess.master_fd)
-    except OSError:
-        pass

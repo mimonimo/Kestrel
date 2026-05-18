@@ -1109,6 +1109,61 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-AS — Claude 로그인 OAuth 직접 교환 (CLI 우회) + UI 정리 ✅
+
+> 최우선 사용자 보고:
+> 1. "로그인 완료에 실패했습니다 / Claude CLI 가 60초 안에 응답하지 않았습니다.
+>    수신 바이트: 108 byte. 표시 출력: ******* (92 asterisks)" — 진단 강화 덕에
+>    원인 좁힘: CLI 가 코드는 받았지만 토큰 교환 단계에서 silent hang.
+> 2. "로그인 하면 이정보만 오는데 내가 어떻게 적용하니" — `.credentials.json`
+>    수동 붙여넣기 우회 경로는 사용자에게 실용성 낮음 (대부분 `.credentials.json`
+>    이 다른 환경에 있지도 않음).
+> 3. "외부 데이터 소스 API 키도 이미 등록 되어있을때는 저 알림을 보내면 안되지
+>    … 발급 버튼 바로 왼쪽에 전체 다시받기버튼 만들어서 적용해"
+
+**Backend — `app/api/v1/claude_auth.py` (대대적 재작성)**
+- PTY 기반 `claude setup-token` 자동화 경로 폐기 → 백엔드가 직접 OAuth 2.0 +
+  PKCE 흐름 수행. CLI 의 Bun-compiled native binary 가 black box 인 채로
+  토큰 교환에서 멈추던 문제 원천 제거.
+- `/start`: ``code_verifier`` (32 random bytes → b64url, ~43 chars) +
+  ``code_challenge`` (SHA-256(verifier) → b64url) + ``state`` 자체 생성. CLI
+  binary 안 임베드된 public ``client_id`` (``9d1c250a-e61b-44d9-88ed-5944d1962f5e``)
+  + 알려진 redirect_uri (``platform.claude.com/oauth/code/callback``) 로
+  authorize URL 직접 구성. session registry 에는 verifier+state 만 보관.
+- `/{sid}/submit`: 사용자 페이스트에서 ``<code>#<state>`` 분리, state 일치 검증
+  후 ``https://platform.claude.com/v1/oauth/token`` 에 PKCE 토큰 교환 POST.
+  성공 시 ``access_token`` / ``refresh_token`` / ``expires_in`` / ``scope`` 를
+  기존 CLI 가 쓰던 ``{"claudeAiOauth":{...}}`` 형태로 ``.credentials.json``
+  기록 → 다운스트림 (status / ai_analyzer / sandbox synthesizer) 모두 무변경.
+- 실패 시 Anthropic 의 실제 에러 메시지 그대로 surface — 60s 동안 stdout 비운
+  채 멈추던 것 대신 즉시 명확한 사유.
+- `_call_anthropic_text` 같은 데드 코드 / PTY 보조 (TIOCSWINSZ, ANSI strip,
+  Bracketed paste, retry loops) 모두 제거 → 585줄 → 281줄 (50% 감소).
+
+**Frontend — `components/settings/ApiKeyField.tsx`**
+- "전체 다시 받기" 버튼을 발급 버튼 바로 왼쪽으로 이동 (사용자 요청: "발급
+  버튼 바로 왼쪽"). 11px 보더 버튼 (amber-500/40 테두리 + amber-700/300 텍스트
+  — 라이트/다크 모두 충분한 대비) + Loader/History 아이콘 + tooltip 한 줄
+  ("과거 수집 실패로 누락된 항목이 있을 때만 사용") 만 남김.
+- 카드 본문 하단의 amber 안내 박스 통째 제거. 키가 등록되어 있을 때만 버튼이
+  보이므로 별도 안내 텍스트 불필요.
+
+**검증 (라이브)**
+```
+# Start
+$ curl -X POST /api/v1/settings/claude-auth/start
+{"sessionId":"ZKg1jQFMNPcJYOvJmxU9KQ", "url":"https://claude.com/cai/oauth/authorize?..."}
+URL 길이: 346자 (CLI 가 생성하던 것과 동일 형태, PKCE 도 우리가 직접 만든 값)
+
+# Submit fake code
+$ curl -X POST /api/v1/settings/claude-auth/<sid>/submit -d '{"code":"fake_code_xxxxx"}'
+ELAPSED: 0s   ← 이전 60s timeout → 즉시 응답
+{"detail":"Anthropic 토큰 교환 실패 (400): Invalid 'code' in request.. 코드가
+  이미 사용됐거나 만료되었을 수 있습니다 — 다시 로그인 시작."}
+```
+
+---
+
 ### PR 10-AR — API 키 카드 help 문구 제거 + 발급 링크 작은 버튼화 ✅
 
 사용자 요청: "NVD 에서 발급받은 API 키를 입력하면… / GitHub Advisory 데이터를
