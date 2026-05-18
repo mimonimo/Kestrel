@@ -105,7 +105,7 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
             href={meta.docsUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 rounded border border-neutral-700 px-2 py-1 text-[11px] text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"
+            className="inline-flex items-center gap-1 rounded border border-neutral-300 px-2 py-1 text-[11px] text-neutral-700 hover:border-neutral-400 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-500 dark:hover:text-neutral-200"
           >
             <ExternalLink className="h-3 w-3" />
             발급
@@ -114,14 +114,14 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
       </div>
 
       {ready && value ? (
-        <div className="flex items-center justify-between gap-2 rounded-md border border-neutral-800 bg-surface-2 px-3 py-2">
-          <code className="flex-1 truncate font-mono text-sm text-neutral-300">
+        <div className="flex items-center justify-between gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-surface-2">
+          <code className="flex-1 truncate font-mono text-sm text-neutral-900 dark:text-neutral-300">
             {show ? value : maskSecret(value)}
           </code>
           <button
             type="button"
             onClick={() => setShow((s) => !s)}
-            className="rounded p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700 dark:hover:bg-surface-3 dark:hover:text-neutral-200"
+            className="rounded p-1 text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-500 dark:hover:bg-surface-3 dark:hover:text-neutral-200"
             aria-label={show ? "값 숨기기" : "값 보기"}
           >
             {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -129,14 +129,14 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
           <button
             type="button"
             onClick={handleDelete}
-            className="flex items-center gap-1 rounded p-1 text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300"
+            className="flex items-center gap-1 rounded p-1 text-xs text-red-700 hover:bg-red-500/10 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
           >
             <Trash2 className="h-4 w-4" />
             <span>삭제</span>
           </button>
         </div>
       ) : (
-        <p className="text-xs text-neutral-600">아직 등록된 키가 없습니다 — 비워 두어도 정상 동작합니다.</p>
+        <p className="text-xs text-neutral-600 dark:text-neutral-500">아직 등록된 키가 없습니다 — 비워 두어도 정상 동작합니다.</p>
       )}
 
       <form
@@ -167,10 +167,10 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
       </form>
 
       {status === "saved" && (
-        <p className="text-xs text-emerald-400">저장되었습니다. 새 키로 데이터 재수집을 백그라운드에서 시작했습니다.</p>
+        <p className="text-xs text-emerald-700 dark:text-emerald-400">저장되었습니다. 새 키로 데이터 재수집을 백그라운드에서 시작했습니다.</p>
       )}
       {status === "error" && errorMsg && (
-        <p className="text-xs text-rose-400">저장 또는 재수집 요청에 실패했습니다: {errorMsg}</p>
+        <p className="text-xs text-rose-700 dark:text-rose-400">저장 또는 재수집 요청에 실패했습니다: {errorMsg}</p>
       )}
     </div>
   );

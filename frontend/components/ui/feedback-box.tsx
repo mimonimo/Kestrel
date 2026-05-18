@@ -20,25 +20,30 @@ interface FeedbackBoxProps {
   className?: string;
 }
 
+// Each token sets a light-mode color first and a `dark:` variant — single
+// `text-rose-200` on a `bg-rose-500/10` background is nearly invisible in
+// light mode. See memory feedback_light_dark_parity.
 const TONE: Record<
   "error" | "notice",
   { wrap: string; icon: string; title: string; body: string; hint: string; actionBtn: string }
 > = {
   error: {
     wrap: "border-rose-500/40 bg-rose-500/10",
-    icon: "text-rose-300",
-    title: "text-rose-200",
-    body: "text-neutral-100",
-    hint: "text-neutral-300",
-    actionBtn: "border-rose-500/40 text-rose-100 hover:bg-rose-500/15",
+    icon: "text-rose-700 dark:text-rose-300",
+    title: "text-rose-900 dark:text-rose-200",
+    body: "text-neutral-900 dark:text-neutral-100",
+    hint: "text-neutral-700 dark:text-neutral-300",
+    actionBtn:
+      "border-rose-500/50 text-rose-800 hover:bg-rose-500/15 dark:text-rose-100",
   },
   notice: {
     wrap: "border-amber-500/40 bg-amber-500/10",
-    icon: "text-amber-300",
-    title: "text-amber-200",
-    body: "text-neutral-100",
-    hint: "text-neutral-300",
-    actionBtn: "border-amber-500/40 text-amber-100 hover:bg-amber-500/15",
+    icon: "text-amber-700 dark:text-amber-300",
+    title: "text-amber-900 dark:text-amber-200",
+    body: "text-neutral-900 dark:text-neutral-100",
+    hint: "text-neutral-700 dark:text-neutral-300",
+    actionBtn:
+      "border-amber-500/50 text-amber-800 hover:bg-amber-500/15 dark:text-amber-100",
   },
 };
 

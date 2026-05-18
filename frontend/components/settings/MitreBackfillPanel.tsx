@@ -38,17 +38,17 @@ export function MitreBackfillPanel() {
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-neutral-800 bg-surface-1 p-5">
+    <div className="space-y-3 rounded-lg border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-surface-1">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/15 text-violet-300 ring-1 ring-violet-500/30">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/20 text-violet-700 ring-1 ring-violet-500/30 dark:bg-violet-500/15 dark:text-violet-300">
             <Database className="h-4 w-4" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-neutral-100">
+            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
               MITRE cvelistV5 백필
             </h3>
-            <p className="mt-1 text-xs text-neutral-500">
+            <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-500">
               전체 ~340k CVE 를 한 번에 채웁니다.
             </p>
           </div>
@@ -76,8 +76,8 @@ export function MitreBackfillPanel() {
           onClick={onClickFull}
           className={cn(
             confirmFull
-              ? "border-amber-500/40 text-amber-200 hover:bg-amber-500/10"
-              : "border-violet-500/40 text-violet-200 hover:bg-violet-500/10",
+              ? "border-amber-500/40 text-amber-800 hover:bg-amber-500/10 dark:text-amber-200"
+              : "border-violet-500/40 text-violet-800 hover:bg-violet-500/10 dark:text-violet-200",
           )}
         >
           {backfill.isPending && backfill.variables === "full" ? (
@@ -94,7 +94,7 @@ export function MitreBackfillPanel() {
             size="md"
             variant="ghost"
             onClick={() => setConfirmFull(false)}
-            className="text-neutral-400"
+            className="text-neutral-600 dark:text-neutral-400"
           >
             취소
           </Button>
@@ -102,7 +102,7 @@ export function MitreBackfillPanel() {
       </div>
 
       {confirmFull && !backfill.isPending && (
-        <p className="rounded border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] text-amber-200">
+        <p className="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] text-amber-900 dark:text-amber-200">
           첫 실행 시 git clone ~5GB + 340k 행 처리로 30~60분이 소요됩니다.
           백그라운드에서 실행되므로 화면을 닫아도 진행되며, 진행 상황은 위
           새로고침 막대의 MITRE 행으로 확인할 수 있습니다.
@@ -126,19 +126,19 @@ export function MitreBackfillPanel() {
           className={cn(
             "rounded-md border p-3 text-xs",
             mitreRow.status === "running"
-              ? "border-sky-500/30 bg-sky-500/5 text-sky-200"
+              ? "border-sky-500/40 bg-sky-500/10 text-sky-900 dark:bg-sky-500/5 dark:text-sky-200"
               : mitreRow.status === "failed"
-                ? "border-rose-500/30 bg-rose-500/5 text-rose-200"
-                : "border-emerald-500/30 bg-emerald-500/5 text-emerald-200",
+                ? "border-rose-500/40 bg-rose-500/10 text-rose-900 dark:bg-rose-500/5 dark:text-rose-200"
+                : "border-emerald-500/40 bg-emerald-500/10 text-emerald-900 dark:bg-emerald-500/5 dark:text-emerald-200",
           )}
         >
           <div className="flex flex-wrap items-center gap-2">
             {mitreRow.status === "running" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-300" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-700 dark:text-sky-300" />
             ) : mitreRow.status === "failed" ? (
-              <AlertTriangle className="h-3.5 w-3.5 text-rose-300" />
+              <AlertTriangle className="h-3.5 w-3.5 text-rose-700 dark:text-rose-300" />
             ) : (
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-300" />
             )}
             <span className="font-medium">
               {mitreRow.status === "running"
@@ -148,18 +148,18 @@ export function MitreBackfillPanel() {
                   : "마지막 실행 완료"}
             </span>
             {mitreRow.itemsProcessed > 0 && (
-              <span className="text-neutral-400">
+              <span className="text-neutral-700 dark:text-neutral-400">
                 · 처리 {formatNumber(mitreRow.itemsProcessed)}건
               </span>
             )}
             {mitreRow.finishedAt && (
-              <span className="text-neutral-500">
+              <span className="text-neutral-600 dark:text-neutral-500">
                 · {timeAgo(mitreRow.finishedAt)}
               </span>
             )}
           </div>
           {mitreRow.errorMessage && (
-            <p className="mt-1 break-words text-[11px] text-rose-200">
+            <p className="mt-1 break-words text-[11px] text-rose-800 dark:text-rose-200">
               {mitreRow.errorMessage}
             </p>
           )}

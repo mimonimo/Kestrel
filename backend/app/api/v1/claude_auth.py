@@ -86,7 +86,7 @@ class StatusOut(_CamelOut):
     """Current login state — what the settings panel renders on mount."""
 
     logged_in: bool
-    expires_at: int | None = None  # epoch seconds
+    expires_at: int | None = None  # epoch milliseconds (matches CLI)
     scopes: list[str] = []
     cli_present: bool
     cli_version: str | None = None
@@ -445,17 +445,18 @@ async def submit_route(
         ) from e
 
     # Write the credentials file in the exact shape the CLI used to
-    # produce. ``expiresAt`` is in seconds (existing _read_credentials
-    # consumer reads it as ``int(expires_at)`` for a Date *1000 ms
-    # constructor on the frontend, so seconds is what the rest of the
-    # codebase already expects).
-    now = int(time.time())
+    # produce — ``expiresAt`` MILLISECONDS (CLI compares to ``Date.now()``
+    # internally so seconds-since-epoch would round to year-1970 and
+    # trigger spurious refresh paths), plus ``clientId`` (fixed public id)
+    # so the CLI doesn't have to re-discover it on first use.
+    now_ms = int(time.time() * 1000)
     payload = {
         "claudeAiOauth": {
             "accessToken": access_token,
             "refreshToken": refresh_token,
-            "expiresAt": now + expires_in if expires_in else None,
+            "expiresAt": now_ms + expires_in * 1000 if expires_in else None,
             "scopes": scopes,
+            "clientId": _OAUTH_CLIENT_ID,
         }
     }
     try:

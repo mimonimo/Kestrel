@@ -1109,6 +1109,50 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-AT — 라이트/다크 색 페어링 + .credentials.json 포맷 일치 + 설정 UI 다듬기 ✅
+
+> 사용자 보고 3건:
+> 1. "글자 색깔 부분도 너는 다크/라이트 둘다 고려하지 않는 경향이 있음.
+>    그렇게 하지마" — 단일 톤 텍스트 (`text-amber-200` 등) 가 라이트 모드에서
+>    배경 alpha 와 합쳐져 거의 안 보이는 패턴 반복.
+> 2. "claude design 기능 활용할 수 있으면 적극 활용해서 높은 품질의 UI/UX 를
+>    구현하기 바람" — Linear/Vercel/Sentry 류 monochrome + 절제된 액센트
+>    레퍼런스 적용.
+> 3. "claude 연동 후 AI 취약점 분석 기능, 샌드박스 기능이 정상 동작하지 않음"
+>    — OAuth 직접 교환은 성공했지만 그 뒤 ai_analyzer / sandbox 가 동작 안 함.
+
+**Backend — `app/api/v1/claude_auth.py`**
+- `.credentials.json` 의 `expiresAt` 단위 SECONDS → MILLISECONDS. Claude CLI
+  내부에서 ``expiresAt - Date.now()`` 로 만료 계산하는데 SECONDS 로 저장하면
+  ``Date.now()`` (ms) 와 1000× 차이라 year-1970 으로 인식 → 매번 refresh
+  시도 → AI 분석/샌드박스 호출 직전에 토큰 갱신 실패 / 비정상 동작.
+  CLI binary strings 안에 ``60000`` 같은 ms 상수 + ``Date.now()`` 사용
+  확인 후 fix.
+- `clientId` 필드 추가 (CLI 가 ``.credentials.json`` 에 보관하는 표준 필드,
+  값은 우리가 이미 쓰던 public OAuth client id 와 동일).
+- ``StatusOut.expires_at`` 주석도 "epoch milliseconds (matches CLI)" 로 명시.
+
+**Frontend — `components/settings/ClaudeAuthPanel.tsx`**
+- ``formatExpires(epochMs)`` 시그니처 정정. 이전엔 인자명 ``epochSeconds`` +
+  ``* 1000`` 처리였는데 backend 가 이제 ms 를 그대로 보내므로 곱셈 제거.
+
+**Frontend — 다크/라이트 페어링 (`feedback-box.tsx`, `ClaudeAuthPanel.tsx`,
+`ApiKeyField.tsx`, `MitreBackfillPanel.tsx`)**
+- 패턴 정착: `text-<color>-{700~900}` (라이트) + `dark:text-<color>-{200~300}`
+  (다크). 배경 alpha 도 라이트 ``/10~/15`` / 다크 ``/5~/10`` 로 페어링.
+- `feedback-box.tsx` ErrorBox/NoticeBox TONE 매트릭스 → 모든 호출자 자동
+  혜택. body/hint 도 `text-neutral-900 dark:text-neutral-100`.
+- 진행-중 OAuth 세션 카드 sky 톤, 로그인 완료/미완료 카드 emerald/amber 톤,
+  MITRE 진행 상태 카드 running/failed/success 모두 두 모드 명확 대비.
+- 수동 자격증명 붙여넣기 expander 의 textarea 도 white/dark surface 페어링.
+
+**Memory**: `feedback_light_dark_parity.md` 작성 → 차후 세션에서도 단일 톤
+색 사용을 자동으로 거르도록 함.
+
+**검증**: tsc 통과, backend rebuild + /health 200, frontend rebuild + /settings 200.
+
+---
+
 ### PR 10-AS — Claude 로그인 OAuth 직접 교환 (CLI 우회) + UI 정리 ✅
 
 > 최우선 사용자 보고:

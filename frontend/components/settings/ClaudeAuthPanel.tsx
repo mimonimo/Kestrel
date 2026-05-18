@@ -25,9 +25,11 @@ import { cn } from "@/lib/utils";
 
 const STATUS_KEY = ["claude-auth", "status"];
 
-function formatExpires(epochSeconds: number | null): string {
-  if (!epochSeconds) return "정보 없음";
-  const d = new Date(epochSeconds * 1000);
+function formatExpires(epochMs: number | null): string {
+  if (!epochMs) return "정보 없음";
+  // Backend now returns milliseconds (matches CLI's .credentials.json
+  // shape — seconds would have been off by 1000× and shown 1970).
+  const d = new Date(epochMs);
   const diffMs = d.getTime() - Date.now();
   const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -179,22 +181,22 @@ export function ClaudeAuthPanel() {
     <div className="min-w-0 space-y-4">
       {/* ── 현재 로그인 상태 ─────────────────────────────────────────── */}
       {data.loggedIn ? (
-        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-4">
+        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-4 dark:bg-emerald-500/5">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-700 ring-1 ring-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
                 <CheckCircle2 className="h-4 w-4" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-emerald-200">
+                <h3 className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">
                   Claude 에 로그인되어 있습니다
                 </h3>
-                <p className="mt-1 text-xs text-neutral-400">
+                <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-400">
                   자격증명 만료 시각:{" "}
-                  <span className="text-neutral-200">{formatExpires(data.expiresAt)}</span>
+                  <span className="text-neutral-900 dark:text-neutral-200">{formatExpires(data.expiresAt)}</span>
                 </p>
                 {data.scopes.length > 0 && (
-                  <p className="mt-1 text-[11px] text-neutral-500">
+                  <p className="mt-1 text-[11px] text-neutral-600 dark:text-neutral-500">
                     권한: {data.scopes.join(", ")}
                   </p>
                 )}
@@ -205,7 +207,7 @@ export function ClaudeAuthPanel() {
               variant="ghost"
               disabled={logout.isPending}
               onClick={() => logout.mutate()}
-              className="text-rose-300 hover:bg-rose-500/10"
+              className="text-rose-700 hover:bg-rose-500/10 dark:text-rose-300"
             >
               {logout.isPending ? (
                 <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
@@ -217,16 +219,16 @@ export function ClaudeAuthPanel() {
           </div>
         </div>
       ) : (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-4">
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 dark:bg-amber-500/5">
           <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-700 ring-1 ring-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300">
               <ShieldAlert className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-semibold text-amber-200">
+              <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
                 Claude 에 아직 로그인되어 있지 않습니다
               </h3>
-              <p className="mt-1 text-xs text-neutral-400">
+              <p className="mt-1 text-xs text-neutral-700 dark:text-neutral-400">
                 구독 계정으로 한 번만 로그인하면 됩니다. API 키 불필요.
               </p>
             </div>
@@ -250,7 +252,7 @@ export function ClaudeAuthPanel() {
             {data.loggedIn ? "다시 로그인" : "Claude 로그인"}
           </Button>
           {start.error && (
-            <span className="inline-flex items-center gap-1 text-xs text-rose-300">
+            <span className="inline-flex items-center gap-1 text-xs text-rose-700 dark:text-rose-300">
               <AlertCircle className="h-3.5 w-3.5" />
               {(start.error as Error).message}
             </span>
@@ -263,27 +265,27 @@ export function ClaudeAuthPanel() {
         // ``min-w-0`` chain — flex/grid descendants need every ancestor
         // to allow shrink, otherwise a 400-char OAuth URL stretches the
         // whole panel and breaks the settings page layout.
-        <div className="min-w-0 space-y-3 overflow-hidden rounded-md border border-sky-500/30 bg-sky-500/5 p-4">
-          <h3 className="text-sm font-semibold text-sky-200">
+        <div className="min-w-0 space-y-3 overflow-hidden rounded-md border border-sky-500/30 bg-sky-500/10 p-4 dark:bg-sky-500/5">
+          <h3 className="text-sm font-semibold text-sky-900 dark:text-sky-200">
             로그인 진행 중 — 두 단계로 끝납니다
           </h3>
 
-          <ol className="min-w-0 space-y-3 text-xs text-neutral-300">
+          <ol className="min-w-0 space-y-3 text-xs text-neutral-700 dark:text-neutral-300">
             <li className="min-w-0 space-y-2">
               <p>
-                <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500/20 text-[11px] font-semibold text-sky-200">
+                <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500/20 text-[11px] font-semibold text-sky-800 dark:text-sky-200">
                   1
                 </span>
                 새 탭에서 Claude 로그인 페이지가 열렸는지 확인하고, 안 열렸다면
                 아래 링크를 클릭하세요. Anthropic 인증 후 화면에 표시되는{" "}
-                <span className="font-mono text-amber-200">코드</span>를 복사하세요.
+                <span className="font-mono text-amber-800 dark:text-amber-200">코드</span>를 복사하세요.
               </p>
               <div className="flex min-w-0 items-center gap-2">
                 <a
                   href={session.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden rounded border border-sky-500/30 bg-surface-2 px-2.5 py-1.5 font-mono text-[11px] text-sky-200 hover:border-sky-400/60"
+                  className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden rounded border border-sky-500/30 bg-surface-2 px-2.5 py-1.5 font-mono text-[11px] text-sky-900 hover:border-sky-400/60 dark:text-sky-200"
                   title={session.url}
                 >
                   <ExternalLink className="h-3 w-3 shrink-0" />
@@ -292,10 +294,10 @@ export function ClaudeAuthPanel() {
                 <button
                   type="button"
                   onClick={onCopyUrl}
-                  className="inline-flex shrink-0 items-center gap-1 rounded border border-neutral-700 px-2 py-1.5 text-[11px] text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
+                  className="inline-flex shrink-0 items-center gap-1 rounded border border-neutral-300 px-2 py-1.5 text-[11px] text-neutral-700 hover:border-neutral-400 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-neutral-500 dark:hover:text-neutral-100"
                 >
                   {copied ? (
-                    <Check className="h-3 w-3 text-emerald-400" />
+                    <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
                   ) : (
                     <Copy className="h-3 w-3" />
                   )}
@@ -306,11 +308,11 @@ export function ClaudeAuthPanel() {
 
             <li className="space-y-2">
               <p>
-                <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500/20 text-[11px] font-semibold text-sky-200">
+                <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500/20 text-[11px] font-semibold text-sky-800 dark:text-sky-200">
                   2
                 </span>
                 Anthropic 페이지가 보여주는 코드를{" "}
-                <span className="font-mono text-amber-200">그대로 한 번에</span>{" "}
+                <span className="font-mono text-amber-800 dark:text-amber-200">그대로 한 번에</span>{" "}
                 복사해 붙여넣고 <em>로그인 완료</em>를 누르세요. 보통 짧은 문자열
                 <span className="font-mono">#</span>긴 문자열 형태입니다 —{" "}
                 <span className="font-mono">#</span> 앞뒤 어느 쪽도 빼지 말고
@@ -353,7 +355,7 @@ export function ClaudeAuthPanel() {
                   variant="ghost"
                   onClick={() => cancel.mutate()}
                   disabled={cancel.isPending}
-                  className="text-neutral-400"
+                  className="text-neutral-600 dark:text-neutral-400"
                 >
                   취소
                 </Button>
@@ -361,7 +363,7 @@ export function ClaudeAuthPanel() {
             </li>
           </ol>
 
-          <p className="text-[11px] text-neutral-500">
+          <p className="text-[11px] text-neutral-600 dark:text-neutral-500">
             세션은 10분 후 자동 만료. 자격증명은 컨테이너 재시작에도 유지됩니다.
           </p>
 
@@ -381,11 +383,11 @@ export function ClaudeAuthPanel() {
 
       {/* ── 수동 자격증명 붙여넣기 (CLI 토큰 교환이 멈출 때의 우회 경로) ─── */}
       {!data.loggedIn && (
-        <div className="rounded-md border border-neutral-800 bg-surface-2">
+        <div className="rounded-md border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-2">
           <button
             type="button"
             onClick={() => setManualOpen((v) => !v)}
-            className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-xs text-neutral-400 hover:text-neutral-200"
+            className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-xs text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-200"
             aria-expanded={manualOpen}
           >
             <span className="inline-flex items-center gap-1.5">
@@ -394,22 +396,22 @@ export function ClaudeAuthPanel() {
               ) : (
                 <ChevronRight className="h-3.5 w-3.5" />
               )}
-              위 흐름이 60초 후 멈춘다면 — 자격증명 직접 붙여넣기
+              위 흐름이 실패한다면 — 자격증명 직접 붙여넣기
             </span>
           </button>
           {manualOpen && (
-            <div className="space-y-3 border-t border-neutral-800 p-4">
-              <ol className="list-decimal space-y-1 pl-5 text-[11px] text-neutral-400">
+            <div className="space-y-3 border-t border-neutral-200 p-4 dark:border-neutral-800">
+              <ol className="list-decimal space-y-1 pl-5 text-[11px] text-neutral-700 dark:text-neutral-400">
                 <li>
                   잘 동작하는 다른 환경(개인 머신 등)에서 터미널을 열고{" "}
-                  <code className="rounded bg-surface-3 px-1 py-0.5 font-mono text-neutral-200">
+                  <code className="rounded bg-neutral-200 px-1 py-0.5 font-mono text-neutral-900 dark:bg-surface-3 dark:text-neutral-200">
                     claude setup-token
                   </code>{" "}
                   을 실행해 로그인까지 완료합니다.
                 </li>
                 <li>
                   완료 후 생성된{" "}
-                  <code className="rounded bg-surface-3 px-1 py-0.5 font-mono text-neutral-200">
+                  <code className="rounded bg-neutral-200 px-1 py-0.5 font-mono text-neutral-900 dark:bg-surface-3 dark:text-neutral-200">
                     ~/.claude/.credentials.json
                   </code>{" "}
                   을 열어 전체 내용을 복사합니다.
@@ -422,7 +424,7 @@ export function ClaudeAuthPanel() {
                 placeholder='{"claudeAiOauth":{"accessToken":"...","refreshToken":"...","expiresAt":...,"scopes":[...]}}'
                 rows={6}
                 disabled={manualSave.isPending}
-                className="w-full rounded-md border border-neutral-800 bg-surface-1 px-3 py-2 font-mono text-[11px] text-neutral-200 placeholder:text-neutral-600 focus-visible:border-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-600 disabled:cursor-not-allowed disabled:opacity-50"
+                className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-[11px] text-neutral-900 placeholder:text-neutral-400 focus-visible:border-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-800 dark:bg-surface-1 dark:text-neutral-200 dark:placeholder:text-neutral-600 dark:focus-visible:border-neutral-600 dark:focus-visible:ring-neutral-600"
               />
               <div className="flex items-center gap-2">
                 <Button
@@ -438,9 +440,8 @@ export function ClaudeAuthPanel() {
                   )}
                   저장
                 </Button>
-                <p className="text-[10px] text-neutral-500">
-                  내용은 백엔드 컨테이너의 영구 볼륨에 저장되며, 컨테이너
-                  재시작에도 유지됩니다.
+                <p className="text-[10px] text-neutral-600 dark:text-neutral-500">
+                  영구 볼륨에 저장되며 컨테이너 재시작에도 유지됩니다.
                 </p>
               </div>
               {manualSave.error && (
