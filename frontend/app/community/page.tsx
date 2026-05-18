@@ -56,7 +56,7 @@ export default function CommunityPage() {
       ) : data && data.items.length === 0 ? (
         <div className="overflow-hidden rounded-xl border border-sky-500/30 bg-gradient-to-br from-sky-500/10 via-blue-500/5 to-transparent px-6 py-12 text-center shadow-[0_0_0_1px_rgba(56,189,248,0.05)]">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-sky-500/15 ring-1 ring-sky-400/30">
-            <Sparkles className="h-6 w-6 text-sky-300" />
+            <Sparkles className="h-6 w-6 text-sky-700 dark:text-sky-300" />
           </div>
           <h3 className="text-base font-semibold text-neutral-100">첫 번째 글의 주인공이 되어보세요</h3>
           <p className="mt-1 text-sm text-neutral-300">

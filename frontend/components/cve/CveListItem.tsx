@@ -48,7 +48,7 @@ export function CveListItem({ vuln }: { vuln: Item }) {
               </Badge>
             ))}
             {(vuln.domains ?? []).map((d) => (
-              <Badge key={d} variant="outline" className="text-cyan-300 border-cyan-900/60">
+              <Badge key={d} variant="outline" className="text-cyan-700 dark:text-cyan-300 border-cyan-900/60">
                 {d}
               </Badge>
             ))}

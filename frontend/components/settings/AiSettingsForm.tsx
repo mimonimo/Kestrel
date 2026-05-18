@@ -145,7 +145,7 @@ function CredentialList({
                       {c.label}
                     </span>
                     {isActive && (
-                      <span className="inline-flex items-center gap-1 rounded border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-300">
+                      <span className="inline-flex items-center gap-1 rounded border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 dark:text-sky-300">
                         <Check className="h-3 w-3" />
                         사용 중
                       </span>
@@ -182,7 +182,7 @@ function CredentialList({
                 size="md"
                 onClick={() => remove.mutate(c.id)}
                 disabled={busy}
-                className="shrink-0 text-red-400 hover:text-red-300"
+                className="shrink-0 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                 aria-label={`${c.label} 삭제`}
               >
                 {remove.isPending && remove.variables === c.id ? (
@@ -196,19 +196,19 @@ function CredentialList({
         })}
       </ul>
       {activate.isError && (
-        <p className="text-xs text-rose-400">
+        <p className="text-xs text-rose-600 dark:text-rose-400">
           활성화에 실패했습니다:{" "}
           {activate.error instanceof ApiError ? activate.error.message : "알 수 없는 오류"}
         </p>
       )}
       {remove.isError && (
-        <p className="text-xs text-rose-400">
+        <p className="text-xs text-rose-600 dark:text-rose-400">
           삭제에 실패했습니다:{" "}
           {remove.error instanceof ApiError ? remove.error.message : "알 수 없는 오류"}
         </p>
       )}
       {updateModel.isError && (
-        <p className="text-xs text-rose-400">
+        <p className="text-xs text-rose-600 dark:text-rose-400">
           모델 변경에 실패했습니다:{" "}
           {updateModel.error instanceof ApiError
             ? updateModel.error.message
@@ -275,21 +275,21 @@ function ConnectionTest() {
         연결 테스트
       </Button>
       {result?.ok && (
-        <span className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-300">
+        <span className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
           <Check className="h-3 w-3" />
           OK · {result.latencyMs}ms
-          {result.cliVersion && <span className="text-emerald-300/70">· {result.cliVersion}</span>}
+          {result.cliVersion && <span className="text-emerald-700 dark:text-emerald-300/70">· {result.cliVersion}</span>}
         </span>
       )}
       {result && !result.ok && (
-        <span className="inline-flex items-center gap-1 rounded border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-[11px] text-rose-300">
+        <span className="inline-flex items-center gap-1 rounded border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-[11px] text-rose-700 dark:text-rose-300">
           <X className="h-3 w-3" />
           {labelForKind(result.kind)}
-          {result.cliVersion && <span className="text-rose-300/70">· {result.cliVersion}</span>}
+          {result.cliVersion && <span className="text-rose-700 dark:text-rose-300/70">· {result.cliVersion}</span>}
         </span>
       )}
       {hint && (
-        <p className="basis-full text-[11px] leading-relaxed text-rose-200/90">
+        <p className="basis-full text-[11px] leading-relaxed text-rose-800 dark:text-rose-200/90">
           <AlertCircle className="mr-1 inline h-3 w-3" />
           {hint}
         </p>
@@ -501,7 +501,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
       </div>
 
       {providerMeta.note && (
-        <div className="rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] text-sky-300">
+        <div className="rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] text-sky-700 dark:text-sky-300">
           {providerMeta.note}
         </div>
       )}
@@ -582,7 +582,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
 
       <div className="flex items-center justify-between">
         <div className="min-h-[18px] text-xs">
-          {errorMsg && <span className="text-rose-400">{errorMsg}</span>}
+          {errorMsg && <span className="text-rose-600 dark:text-rose-400">{errorMsg}</span>}
         </div>
         <Button type="submit" size="md" disabled={!canSubmit}>
           {create.isPending ? (

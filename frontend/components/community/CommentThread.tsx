@@ -78,7 +78,7 @@ export function CommentThread({ postId, vulnerabilityId }: Props) {
           onChange={(e) => setContent(e.target.value)}
           maxLength={4000}
         />
-        {error && <p className="text-xs text-rose-400">{error}</p>}
+        {error && <p className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
         <div className="flex justify-end">
           <Button type="submit" size="sm" disabled={create.isPending || !content.trim()}>
             {create.isPending ? "등록 중..." : "댓글 등록"}
@@ -111,7 +111,7 @@ export function CommentThread({ postId, vulnerabilityId }: Props) {
                     onClick={() => {
                       if (confirm("댓글을 삭제하시겠습니까?")) remove.mutate(c.id);
                     }}
-                    className="inline-flex items-center gap-1 text-neutral-500 hover:text-red-400"
+                    className="inline-flex items-center gap-1 text-neutral-500 hover:text-red-600 dark:hover:text-red-400"
                     aria-label="댓글 삭제"
                   >
                     <Trash2 className="h-3 w-3" />

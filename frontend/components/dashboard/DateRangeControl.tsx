@@ -138,7 +138,7 @@ export function DateRangeControl({ fromDate, toDate, onChange }: Props) {
         className={cn(
           "inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-[11px] transition-colors",
           active
-            ? "border-amber-500/40 bg-amber-500/10 text-amber-200 hover:border-amber-400/60"
+            ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200 hover:border-amber-400/60"
             : "border-neutral-800 bg-surface-2 text-neutral-400 hover:border-neutral-600 hover:text-neutral-200",
         )}
         title={
@@ -185,7 +185,7 @@ export function DateRangeControl({ fromDate, toDate, onChange }: Props) {
               빠른 선택
             </span>
             {matchedPreset && (
-              <span className="text-[10px] text-amber-300">현재: {DATE_PRESETS.find((p) => p.key === matchedPreset)?.label}</span>
+              <span className="text-[10px] text-amber-700 dark:text-amber-300">현재: {DATE_PRESETS.find((p) => p.key === matchedPreset)?.label}</span>
             )}
           </div>
           <div className="mb-3 flex flex-wrap gap-1.5">

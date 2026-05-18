@@ -146,7 +146,7 @@ export function NotificationBell() {
             ) : q.isLoading ? (
               <p className="px-3 py-4 text-xs text-neutral-500">조회 중…</p>
             ) : q.error ? (
-              <p className="px-3 py-4 text-xs text-rose-300">
+              <p className="px-3 py-4 text-xs text-rose-700 dark:text-rose-300">
                 조회 실패: {(q.error as Error).message}
               </p>
             ) : items.length === 0 ? (

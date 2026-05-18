@@ -155,7 +155,7 @@ const CATEGORIES: CategoryDef[] = [
             className="group flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-surface-1 p-4 transition-colors hover:border-sky-500/40 hover:bg-surface-2"
           >
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/30">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-500/15 text-sky-700 dark:text-sky-300 ring-1 ring-sky-500/30">
                 <Database className="h-4 w-4" />
               </div>
               <div>
@@ -310,8 +310,8 @@ export function SettingsLayout() {
                             className={cn(
                               "block rounded-md border-l-2 px-3 py-1.5 text-xs transition-colors",
                               isActive
-                                ? "border-sky-400 bg-sky-500/10 text-sky-200"
-                                : "border-transparent text-neutral-400 hover:border-sky-500/30 hover:bg-sky-500/5 hover:text-sky-200",
+                                ? "border-sky-400 bg-sky-500/10 text-sky-800 dark:text-sky-200"
+                                : "border-transparent text-neutral-400 hover:border-sky-500/30 hover:bg-sky-500/5 hover:text-sky-800 dark:hover:text-sky-200",
                             )}
                           >
                             {s.title}

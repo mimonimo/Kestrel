@@ -140,7 +140,7 @@ function Dashboard() {
                 className={cn(
                   "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
                   bookmarksOnly
-                    ? "border-amber-400/50 bg-amber-400/15 text-amber-200"
+                    ? "border-amber-400/50 bg-amber-400/15 text-amber-800 dark:text-amber-200"
                     : "border-neutral-700 text-neutral-400 hover:border-neutral-500 hover:text-neutral-100",
                 )}
                 aria-pressed={bookmarksOnly}

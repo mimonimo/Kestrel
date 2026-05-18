@@ -158,7 +158,7 @@ export function StatusBanner() {
 
   const Icon = warnCount > 0 ? AlertTriangle : hasIssues ? Info : ShieldCheck;
   const iconTint =
-    warnCount > 0 ? "text-amber-300" : hasIssues ? "text-sky-300" : "text-emerald-300";
+    warnCount > 0 ? "text-amber-700 dark:text-amber-300" : hasIssues ? "text-sky-700 dark:text-sky-300" : "text-emerald-700 dark:text-emerald-300";
   const label = warnCount > 0 ? `경고 ${warnCount}` : hasIssues ? `알림 ${infoCount}` : "정상";
 
   // 사용자가 명시적으로 꺼놓은 상태면 '다시 보기' 미니 토글만 노출.
@@ -207,16 +207,16 @@ export function StatusBanner() {
               lines.map((line, i) => (
                 <div key={i} className="flex items-start gap-2">
                   {line.level === "warn" ? (
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-300" />
                   ) : (
-                    <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-300" />
+                    <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-700 dark:text-sky-300" />
                   )}
                   <span className="leading-relaxed text-neutral-300">{line.message}</span>
                 </div>
               ))
             ) : (
               <p className="flex items-center gap-2 text-neutral-400">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-300" />
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-300" />
                 모든 서비스가 정상 동작 중입니다.
               </p>
             )}
@@ -245,10 +245,10 @@ export function StatusBanner() {
         className={cn(
           "pointer-events-auto flex items-center gap-2 rounded-full border px-3.5 py-2 text-xs font-medium shadow-lg shadow-black/30 backdrop-blur transition-colors",
           warnCount > 0
-            ? "border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+            ? "border-amber-500/40 bg-amber-500/15 text-amber-800 dark:text-amber-200 hover:bg-amber-500/25"
             : hasIssues
-              ? "border-sky-500/40 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
-              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20",
+              ? "border-sky-500/40 bg-sky-500/15 text-sky-800 dark:text-sky-200 hover:bg-sky-500/25"
+              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-500/20",
         )}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -274,8 +274,8 @@ export function StatusBanner() {
             className={cn(
               "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
               warnCount > 0
-                ? "bg-amber-500/25 text-amber-200"
-                : "bg-sky-500/25 text-sky-200",
+                ? "bg-amber-500/25 text-amber-800 dark:text-amber-200"
+                : "bg-sky-500/25 text-sky-800 dark:text-sky-200",
             )}
           >
             {label}

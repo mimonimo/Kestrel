@@ -39,7 +39,7 @@ function CopyButton({ text }: { text: string }) {
       className={cn(
         "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors",
         copied
-          ? "text-emerald-300"
+          ? "text-emerald-700 dark:text-emerald-300"
           : "text-neutral-400 hover:bg-surface-3 hover:text-neutral-100",
       )}
       aria-label="페이로드 복사"
@@ -91,7 +91,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-violet-400" />
+          <Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-400" />
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
             AI 심층 분석
           </h2>
@@ -129,7 +129,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
 
         {analyze.isPending && (
           <div className="flex items-center gap-2 py-4 text-sm text-neutral-400">
-            <Loader2 className="h-4 w-4 animate-spin text-violet-400" />
+            <Loader2 className="h-4 w-4 animate-spin text-violet-600 dark:text-violet-400" />
             AI가 취약점을 분석 중입니다…
           </div>
         )}
@@ -189,7 +189,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
                     key={i}
                     className="rounded-md border border-neutral-800 bg-surface-2 p-3 text-sm leading-relaxed text-neutral-200"
                   >
-                    <span className="mr-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-[11px] font-semibold text-violet-300">
+                    <span className="mr-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-[11px] font-semibold text-violet-700 dark:text-violet-300">
                       {i + 1}
                     </span>
                     <span className="whitespace-pre-line align-middle">{item}</span>

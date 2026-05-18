@@ -93,7 +93,7 @@ export function RefreshBar() {
       </div>
       <div className="flex items-center gap-3">
         {msg && (
-          <span className={msg.tone === "ok" ? "text-emerald-400" : "text-rose-400"}>
+          <span className={msg.tone === "ok" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
             {msg.text}
           </span>
         )}

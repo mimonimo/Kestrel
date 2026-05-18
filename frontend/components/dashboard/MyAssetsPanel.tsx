@@ -40,7 +40,7 @@ export function MyAssetsPanel() {
       <section className="mb-8 overflow-hidden rounded-xl border border-sky-500/30 bg-gradient-to-br from-sky-500/10 via-blue-500/5 to-transparent p-5 shadow-[0_0_0_1px_rgba(56,189,248,0.05)]">
         <div className="flex items-start gap-4">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-500/15 ring-1 ring-sky-400/30">
-            <Server className="h-5 w-5 text-sky-300" />
+            <Server className="h-5 w-5 text-sky-700 dark:text-sky-300" />
           </div>
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-semibold text-neutral-100">내 시스템 취약점</h2>
@@ -75,10 +75,10 @@ export function MyAssetsPanel() {
       <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/15 ring-1 ring-sky-400/30">
-            <Server className="h-4 w-4 text-sky-300" />
+            <Server className="h-4 w-4 text-sky-700 dark:text-sky-300" />
           </div>
           <h2 className="text-base font-semibold text-neutral-100">내 시스템 취약점</h2>
-          <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-200">
+          <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-800 dark:text-sky-200">
             자산 {list.length} · 매칭 {total}
           </span>
         </div>
@@ -96,7 +96,7 @@ export function MyAssetsPanel() {
       {isLoading ? (
         <p className="text-xs text-neutral-500">자산과 일치하는 CVE 를 찾는 중…</p>
       ) : isError ? (
-        <p className="text-xs text-rose-400">자산 매칭에 실패했습니다. 잠시 후 다시 시도해 주세요.</p>
+        <p className="text-xs text-rose-600 dark:text-rose-400">자산 매칭에 실패했습니다. 잠시 후 다시 시도해 주세요.</p>
       ) : sortedItems.length === 0 ? (
         <p className="text-xs text-neutral-500">
           현재 등록된 자산과 일치하는 CVE 가 아직 없습니다.

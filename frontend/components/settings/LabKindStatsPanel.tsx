@@ -14,23 +14,23 @@ const KEY = ["sandbox", "lab-kind-stats"];
 // like the same axis. Unknown kinds fall through to neutral grey so
 // adding a new catalog entry doesn't break the panel.
 const SOURCE_TINT: Record<string, string> = {
-  vulhub: "bg-emerald-500/20 text-emerald-200",
+  vulhub: "bg-emerald-500/20 text-emerald-800 dark:text-emerald-200",
   generic: "bg-neutral-700/40 text-neutral-300",
-  synthesized: "bg-amber-500/20 text-amber-200",
+  synthesized: "bg-amber-500/20 text-amber-800 dark:text-amber-200",
 };
 
 const KIND_TINT: Record<string, string> = {
-  xss: "bg-rose-500/20 text-rose-200",
-  rce: "bg-red-500/20 text-red-200",
-  sqli: "bg-orange-500/20 text-orange-200",
+  xss: "bg-rose-500/20 text-rose-800 dark:text-rose-200",
+  rce: "bg-red-500/20 text-red-800 dark:text-red-200",
+  sqli: "bg-orange-500/20 text-orange-800 dark:text-orange-200",
   ssti: "bg-purple-500/20 text-purple-200",
-  "path-traversal": "bg-cyan-500/20 text-cyan-200",
+  "path-traversal": "bg-cyan-500/20 text-cyan-800 dark:text-cyan-200",
   ssrf: "bg-blue-500/20 text-blue-200",
   "auth-bypass": "bg-yellow-500/20 text-yellow-200",
   xxe: "bg-teal-500/20 text-teal-200",
   "open-redirect": "bg-indigo-500/20 text-indigo-200",
-  deserialization: "bg-fuchsia-500/20 text-fuchsia-200",
-  "synthesized/*": "bg-amber-500/20 text-amber-200",
+  deserialization: "bg-fuchsia-500/20 text-fuchsia-800 dark:text-fuchsia-200",
+  "synthesized/*": "bg-amber-500/20 text-amber-800 dark:text-amber-200",
 };
 
 function pct(num: number, den: number): number {
@@ -95,7 +95,7 @@ function Bar({
                 {b.count} <span className="text-neutral-500">({pct(b.count, total)}%)</span>
               </span>
               {b.verifiedCount > 0 && (
-                <span className="text-emerald-300/80">· verified {b.verifiedCount}</span>
+                <span className="text-emerald-700 dark:text-emerald-300/80">· verified {b.verifiedCount}</span>
               )}
             </li>
           );
@@ -122,7 +122,7 @@ export function LabKindStatsPanel() {
   }
   if (stats.error) {
     return (
-      <p className="text-sm text-amber-300">
+      <p className="text-sm text-amber-700 dark:text-amber-300">
         분포를 불러오지 못했습니다: {(stats.error as Error).message}
       </p>
     );

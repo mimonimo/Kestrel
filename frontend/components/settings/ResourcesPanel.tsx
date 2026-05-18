@@ -123,8 +123,8 @@ function CardShell({
             className={cn(
               "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1",
               healthy
-                ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30"
-                : "bg-rose-500/10 text-rose-300 ring-rose-500/40",
+                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 ring-emerald-500/30"
+                : "bg-rose-500/10 text-rose-700 dark:text-rose-300 ring-rose-500/40",
             )}
           >
             <Icon className="h-4 w-4" />
@@ -138,8 +138,8 @@ function CardShell({
           className={cn(
             "inline-flex shrink-0 items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
             healthy
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-              : "border-rose-500/40 bg-rose-500/10 text-rose-200",
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+              : "border-rose-500/40 bg-rose-500/10 text-rose-800 dark:text-rose-200",
           )}
         >
           <span
@@ -336,7 +336,7 @@ function ActionRow({
             <Icon
               className={cn(
                 "h-4 w-4",
-                destructive ? "text-rose-300" : "text-sky-300",
+                destructive ? "text-rose-700 dark:text-rose-300" : "text-sky-700 dark:text-sky-300",
               )}
             />
             {label}
@@ -357,8 +357,8 @@ function ActionRow({
               variant="outline"
               className={cn(
                 destructive
-                  ? "border-rose-500/40 text-rose-200 hover:bg-rose-500/10"
-                  : "border-amber-500/40 text-amber-200 hover:bg-amber-500/10",
+                  ? "border-rose-500/40 text-rose-800 dark:text-rose-200 hover:bg-rose-500/10"
+                  : "border-amber-500/40 text-amber-800 dark:text-amber-200 hover:bg-amber-500/10",
               )}
               onClick={onClick}
             >
@@ -372,7 +372,7 @@ function ActionRow({
             disabled={mutation.isPending}
             onClick={onClick}
             className={cn(
-              destructive && "border-rose-500/40 text-rose-200 hover:bg-rose-500/10",
+              destructive && "border-rose-500/40 text-rose-800 dark:text-rose-200 hover:bg-rose-500/10",
             )}
           >
             {mutation.isPending ? (
@@ -385,7 +385,7 @@ function ActionRow({
         )}
       </div>
       {confirmOpen && confirmText && (
-        <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] text-amber-200">
+        <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] text-amber-800 dark:text-amber-200">
           {confirmText}
         </p>
       )}

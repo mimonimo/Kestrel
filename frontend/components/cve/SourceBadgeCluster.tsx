@@ -9,22 +9,22 @@ import { cn } from "@/lib/utils";
 const SOURCE_META: Record<Source, { label: string; cls: string; tip: string }> = {
   mitre: {
     label: "MITRE",
-    cls: "border-violet-500/40 bg-violet-500/10 text-violet-200",
+    cls: "border-violet-500/40 bg-violet-500/10 text-violet-800 dark:text-violet-200",
     tip: "MITRE CVE Program 의 canonical 레코드 — CVE 가 처음 publish 되는 위치",
   },
   nvd: {
     label: "NVD",
-    cls: "border-sky-500/40 bg-sky-500/10 text-sky-200",
+    cls: "border-sky-500/40 bg-sky-500/10 text-sky-800 dark:text-sky-200",
     tip: "NIST NVD enrichment (CPE 매칭, CVSS 보정, CWE 매핑)",
   },
   exploit_db: {
     label: "Exploit-DB",
-    cls: "border-amber-500/40 bg-amber-500/10 text-amber-200",
+    cls: "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200",
     tip: "Exploit-DB 가 보유한 공개 PoC / 익스플로잇",
   },
   github_advisory: {
     label: "GHSA",
-    cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
+    cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200",
     tip: "GitHub Advisory — 패키지 매니저 친화적인 영향 범위 정보",
   },
 };

@@ -92,7 +92,7 @@ function SourceBadge({
   > = {
     vulhub: {
       label: "vulhub 공식 재현",
-      cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
+      cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200",
       Icon: ShieldCheck,
       tip: "vulhub 프로젝트가 공식적으로 재현해 둔 환경 — 가장 신뢰도가 높습니다.",
     },
@@ -104,7 +104,7 @@ function SourceBadge({
     },
     synthesized: {
       label: "AI 합성 환경",
-      cls: "border-amber-500/40 bg-amber-500/10 text-amber-200",
+      cls: "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200",
       Icon: Sparkles,
       tip: "이 CVE 전용으로 AI가 만든 환경 — 결과가 정확하면 👍 로 알려주세요.",
     },
@@ -124,7 +124,7 @@ function SourceBadge({
     >
       <m.Icon className="h-3 w-3" />
       {m.label}
-      {verified && <span className="ml-0.5 text-emerald-300">· 검증됨</span>}
+      {verified && <span className="ml-0.5 text-emerald-700 dark:text-emerald-300">· 검증됨</span>}
     </span>
   );
 }
@@ -139,15 +139,15 @@ const LAB_KIND_META: Record<
 > = {
   xss: {
     label: "XSS · 입력 reflect",
-    cls: "border-rose-500/40 bg-rose-500/10 text-rose-200",
+    cls: "border-rose-500/40 bg-rose-500/10 text-rose-800 dark:text-rose-200",
   },
   rce: {
     label: "RCE · 셸 명령 실행",
-    cls: "border-red-500/40 bg-red-500/10 text-red-200",
+    cls: "border-red-500/40 bg-red-500/10 text-red-800 dark:text-red-200",
   },
   sqli: {
     label: "SQLi · 쿼리 합성",
-    cls: "border-orange-500/40 bg-orange-500/10 text-orange-200",
+    cls: "border-orange-500/40 bg-orange-500/10 text-orange-800 dark:text-orange-200",
   },
   ssti: {
     label: "SSTI · 템플릿 평가",
@@ -155,7 +155,7 @@ const LAB_KIND_META: Record<
   },
   "path-traversal": {
     label: "Path Traversal · 임의 파일 읽기",
-    cls: "border-cyan-500/40 bg-cyan-500/10 text-cyan-200",
+    cls: "border-cyan-500/40 bg-cyan-500/10 text-cyan-800 dark:text-cyan-200",
   },
   ssrf: {
     label: "SSRF · 외부 URL fetch",
@@ -175,7 +175,7 @@ const LAB_KIND_META: Record<
   },
   deserialization: {
     label: "Deserialization · pickle/object 주입",
-    cls: "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-200",
+    cls: "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-800 dark:text-fuchsia-200",
   },
 };
 
@@ -202,7 +202,7 @@ function ContainerAccessHelper({ containerName }: { containerName: string }) {
         <span className="text-neutral-500">— 호스트 터미널에서 실행</span>
       </div>
       <div className="flex items-center gap-2">
-        <code className="flex-1 select-all overflow-x-auto rounded border border-neutral-800 bg-neutral-900 px-2 py-1.5 font-mono text-[11px] text-emerald-300">
+        <code className="flex-1 select-all overflow-x-auto rounded border border-neutral-800 bg-neutral-900 px-2 py-1.5 font-mono text-[11px] text-emerald-700 dark:text-emerald-300">
           {cmd}
         </code>
         <button
@@ -210,7 +210,7 @@ function ContainerAccessHelper({ containerName }: { containerName: string }) {
           onClick={onCopy}
           className="inline-flex items-center gap-1 rounded border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
         >
-          {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+          {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
           {copied ? "복사됨" : "복사"}
         </button>
       </div>
@@ -286,7 +286,7 @@ function CandidatePivotList({
             <p className="text-xs text-neutral-500">불러오는 중…</p>
           )}
           {list.error && (
-            <p className="text-xs text-amber-300">
+            <p className="text-xs text-amber-700 dark:text-amber-300">
               불러오기 실패: {(list.error as Error).message}
             </p>
           )}
@@ -322,12 +322,12 @@ function CandidatePivotList({
                           </span>
                         )}
                         {!c.isPlaceholder && c.verified && (
-                          <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[9px] text-emerald-200">
+                          <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[9px] text-emerald-800 dark:text-emerald-200">
                             검증됨
                           </span>
                         )}
                         {c.degraded && (
-                          <span className="rounded border border-rose-500/40 bg-rose-500/10 px-1.5 text-[9px] text-rose-200">
+                          <span className="rounded border border-rose-500/40 bg-rose-500/10 px-1.5 text-[9px] text-rose-800 dark:text-rose-200">
                             정확도 낮음
                           </span>
                         )}
@@ -342,7 +342,7 @@ function CandidatePivotList({
                       )}
                     </div>
                     {isCurrent ? (
-                      <span className="text-[10px] uppercase text-amber-200">사용중</span>
+                      <span className="text-[10px] uppercase text-amber-800 dark:text-amber-200">사용중</span>
                     ) : c.isPlaceholder || !c.verified ? (
                       <span className="text-[10px] text-neutral-600">실행 불가</span>
                     ) : (
@@ -378,8 +378,8 @@ function VerdictBadge({ ok, confidence }: { ok: boolean; confidence: string }) {
       className={cn(
         "inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide",
         ok
-          ? "border border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-          : "border border-amber-500/40 bg-amber-500/10 text-amber-200",
+          ? "border border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+          : "border border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200",
       )}
     >
       {ok ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
@@ -396,7 +396,7 @@ function RunResult({ result }: { result: SandboxExecResponse }) {
         <VerdictBadge ok={verdict.success} confidence={verdict.confidence} />
         {adapted.fromCache && (
           <span
-            className="inline-flex items-center gap-1 rounded border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-200"
+            className="inline-flex items-center gap-1 rounded border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-800 dark:text-sky-200"
             title="이전에 검증된 페이로드를 그대로 재실행했습니다 — AI 호출 없이 즉시 결과 표시."
           >
             <RefreshCw className="h-3 w-3" />
@@ -639,7 +639,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <FlaskConical className="h-4 w-4 text-emerald-400" />
+          <FlaskConical className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
             취약점 샌드박스
           </h2>
@@ -682,7 +682,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
 
         {start.isPending && (
           <div className="flex items-center gap-2 py-2 text-sm text-neutral-400">
-            <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+            <Loader2 className="h-4 w-4 animate-spin text-emerald-600 dark:text-emerald-400" />
             실습 환경 준비 중…
           </div>
         )}
@@ -695,7 +695,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
           !synthRunning &&
           synthLog.length === 0 && (
             <div className="space-y-2 rounded border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
-              <div className="flex items-center gap-1.5 text-amber-200">
+              <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-200">
                 <Sparkles className="h-3.5 w-3.5" />
                 <span className="font-medium">아직 준비된 실습 환경이 없습니다</span>
               </div>
@@ -721,7 +721,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                   onClick={() => start.reset()}
                   size="md"
                   variant="ghost"
-                  className="text-amber-200/70"
+                  className="text-amber-800 dark:text-amber-200/70"
                 >
                   취소
                 </Button>
@@ -736,7 +736,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
           !synthRunning &&
           synthLog.length === 0 && (
             <div className="space-y-2 rounded border border-rose-500/30 bg-rose-500/10 p-3 text-xs">
-              <div className="flex items-center gap-1.5 text-rose-200">
+              <div className="flex items-center gap-1.5 text-rose-800 dark:text-rose-200">
                 <ShieldAlert className="h-3.5 w-3.5" />
                 <span className="font-medium">
                   다른 사용자들이 부정확하다고 평가한 환경입니다
@@ -766,7 +766,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                   onClick={() => start.reset()}
                   size="md"
                   variant="ghost"
-                  className="text-rose-200/70"
+                  className="text-rose-800 dark:text-rose-200/70"
                 >
                   취소
                 </Button>
@@ -817,9 +817,9 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                   className={cn(
                     "inline-flex items-center rounded px-2 py-0.5 font-medium uppercase tracking-wide",
                     session.status === "running"
-                      ? "bg-emerald-500/15 text-emerald-300"
+                      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
                       : session.status === "failed"
-                      ? "bg-rose-500/15 text-rose-300"
+                      ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
                       : "bg-neutral-700/40 text-neutral-300",
                   )}
                 >
@@ -832,7 +832,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                 <LabKindBadge labKind={session.labKind} />
                 {session.lab && session.lab.candidateCount > 1 && (
                   <span
-                    className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-amber-200"
+                    className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-amber-800 dark:text-amber-200"
                     title="이 CVE 에 대해 AI가 만든 환경이 여러 개 있습니다. 현재 가장 정확하다고 평가된 환경을 사용 중이며, 👎 평가가 쌓이면 다음 후보로 자동 전환됩니다."
                   >
                     후보 {session.lab.candidateCount}개 중 {session.lab.candidateRank}번째
@@ -846,13 +846,13 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                 )}
               </div>
               {session.lab?.digest && (
-                <p className="mt-2 flex items-start gap-1.5 text-amber-200/90">
-                  <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-amber-300" />
+                <p className="mt-2 flex items-start gap-1.5 text-amber-800 dark:text-amber-200/90">
+                  <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-amber-700 dark:text-amber-300" />
                   <span>{session.lab.digest}</span>
                 </p>
               )}
               {session.lab?.degraded && (
-                <p className="mt-2 flex items-start gap-1.5 text-rose-300">
+                <p className="mt-2 flex items-start gap-1.5 text-rose-700 dark:text-rose-300">
                   <ShieldAlert className="mt-0.5 h-3 w-3 shrink-0" />
                   <span>
                     이 환경은 다른 사용자 평가로 정확도가 낮다고 표시되어
@@ -900,7 +900,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                 <ContainerAccessHelper containerName={session.containerName} />
               )}
               {session.error && (
-                <p className="mt-2 text-rose-300">오류: {session.error}</p>
+                <p className="mt-2 text-rose-700 dark:text-rose-300">오류: {session.error}</p>
               )}
             </div>
 
@@ -999,7 +999,7 @@ function SynthesisTimeline({
   return (
     <div className="space-y-3 rounded border border-neutral-800 bg-surface-2 p-3 text-xs">
       <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
-        <div className="flex items-center gap-1.5 text-amber-200">
+        <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-200">
           <Sparkles className="h-3.5 w-3.5" />
           <span className="font-medium">AI 환경 합성 진행 상황</span>
         </div>
@@ -1020,7 +1020,7 @@ function SynthesisTimeline({
             onClick={onRetry}
             size="sm"
             variant="ghost"
-            className="h-7 px-2 text-amber-200 hover:text-amber-100"
+            className="h-7 px-2 text-amber-800 dark:text-amber-200 hover:text-amber-100"
           >
             <RefreshCw className="mr-1 h-3 w-3" />
             재시도
@@ -1039,12 +1039,12 @@ function SynthesisTimeline({
               <span className="mt-0.5">
                 {done ? (
                   isFailedHere ? (
-                    <XCircle className="h-3.5 w-3.5 text-rose-400" />
+                    <XCircle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
                   ) : (
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                   )
                 ) : isCurrent ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-300" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-700 dark:text-amber-300" />
                 ) : (
                   <Circle className="h-3.5 w-3.5 text-neutral-600" />
                 )}
@@ -1055,10 +1055,10 @@ function SynthesisTimeline({
                     "font-medium",
                     done
                       ? isFailedHere
-                        ? "text-rose-200"
-                        : "text-emerald-200"
+                        ? "text-rose-800 dark:text-rose-200"
+                        : "text-emerald-800 dark:text-emerald-200"
                       : isCurrent
-                        ? "text-amber-200"
+                        ? "text-amber-800 dark:text-amber-200"
                         : "text-neutral-300",
                   )}
                 >
@@ -1069,7 +1069,7 @@ function SynthesisTimeline({
                     className={cn(
                       "mt-0.5 break-words",
                       isFailedHere
-                        ? "text-rose-200"
+                        ? "text-rose-800 dark:text-rose-200"
                         : isCurrent
                           ? "text-amber-100"
                           : "text-neutral-400",
@@ -1132,7 +1132,7 @@ function SynthesisTimeline({
       ))}
 
       {running && (
-        <p className="text-[11px] text-amber-200/60">
+        <p className="text-[11px] text-amber-800 dark:text-amber-200/60">
           이 화면을 닫아도 백그라운드 합성은 계속 진행돼 결과가 자동으로 저장됩니다.
         </p>
       )}
@@ -1165,8 +1165,8 @@ function LabFeedbackButtons({
         className={cn(
           "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 transition",
           myVote === "up"
-            ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-200"
-            : "border-neutral-700 hover:border-emerald-500/40 hover:text-emerald-200",
+            ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-800 dark:text-emerald-200"
+            : "border-neutral-700 hover:border-emerald-500/40 hover:text-emerald-800 dark:hover:text-emerald-200",
           pending && "opacity-50",
         )}
         title="페이로드와 입력 지점이 이 CVE 와 정확히 일치합니다"
@@ -1181,8 +1181,8 @@ function LabFeedbackButtons({
         className={cn(
           "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 transition",
           myVote === "down"
-            ? "border-rose-500/60 bg-rose-500/15 text-rose-200"
-            : "border-neutral-700 hover:border-rose-500/40 hover:text-rose-200",
+            ? "border-rose-500/60 bg-rose-500/15 text-rose-800 dark:text-rose-200"
+            : "border-neutral-700 hover:border-rose-500/40 hover:text-rose-800 dark:hover:text-rose-200",
           pending && "opacity-50",
         )}
         title="잘못된 환경 — 다른 CVE 를 모사했거나 실제로 작동하지 않습니다"

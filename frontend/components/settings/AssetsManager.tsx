@@ -107,7 +107,7 @@ export function AssetsManager() {
                             {OS_LABEL[item.osFamily] ?? item.osFamily} · CVE {item.cveCount}건
                           </div>
                         </div>
-                        <span className="shrink-0 rounded bg-sky-500/10 px-1.5 py-0.5 text-[11px] text-sky-300">
+                        <span className="shrink-0 rounded bg-sky-500/10 px-1.5 py-0.5 text-[11px] text-sky-700 dark:text-sky-300">
                           선택
                         </span>
                       </button>
@@ -154,7 +154,7 @@ export function AssetsManager() {
       </div>
 
       {selected && (
-        <p className="text-xs text-sky-300">
+        <p className="text-xs text-sky-700 dark:text-sky-300">
           선택됨: <span className="font-mono">{selected.vendor}:{selected.product}</span>{" "}
           <span className="text-neutral-500">
             ({OS_LABEL[selected.osFamily] ?? selected.osFamily}) · CVE {selected.cveCount}건
@@ -183,7 +183,7 @@ export function AssetsManager() {
                 type="button"
                 onClick={() => remove(a.id)}
                 aria-label="자산 삭제"
-                className="rounded p-1 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                className="rounded p-1 text-red-600 dark:text-red-400 hover:bg-red-500/10 hover:text-red-700 dark:hover:text-red-300"
               >
                 <Trash2 className="h-4 w-4" />
               </button>

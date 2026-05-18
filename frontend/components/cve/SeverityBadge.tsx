@@ -9,8 +9,8 @@ const LABELS: Record<Severity, string> = {
 };
 
 const STYLES: Record<Severity, string> = {
-  critical: "bg-red-600/20 text-red-400 border border-red-600/40",
-  high: "bg-orange-600/20 text-orange-400 border border-orange-600/40",
+  critical: "bg-red-600/20 text-red-600 dark:text-red-400 border border-red-600/40",
+  high: "bg-orange-600/20 text-orange-600 dark:text-orange-400 border border-orange-600/40",
   medium: "bg-yellow-600/20 text-yellow-400 border border-yellow-600/40",
   low: "bg-green-600/20 text-green-400 border border-green-600/40",
 };

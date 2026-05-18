@@ -1109,6 +1109,27 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-AU — 라이트/다크 페어링 전체 일괄 (28 파일, 169 클래스) ✅
+
+> 사용자 지시: "너가 진행해" — 남은 라이트/다크 미페어링 컴포넌트 일괄 처리.
+
+**Frontend — 28개 파일 / 169개 색상 클래스 자동 변환**
+
+스크립트로 처리한 단일톤 → 페어링 변환 (`text-<color>-{200,300,400}` → `text-<color>-{800,700,600} dark:text-<color>-{200,300,400}`). 처리 대상은 설정/CVE 상세/대시보드/커뮤니티/시스템 컴포넌트 전반:
+
+- 설정 페이지: SandboxSessionsPanel, LabKindStatsPanel, SynthesizerCachePanel, VersionPanel, ResourcesPanel, AiSettingsForm, AssetsManager.
+- CVE 상세: SandboxPanel (44 클래스), SourceBadgeCluster, AiAnalysisPanel, TicketControl, SeverityBadge, BookmarkButton, CveListItem.
+- 대시보드: VulnDistributionPanel, MyAssetsPanel, RefreshBar, DateRangeControl.
+- 시스템: StatusBanner, NotificationBell.
+- 커뮤니티: CommentThread, NewPostModal.
+- 페이지 라우트: app/page.tsx, app/community/page.tsx, app/community/[id]/page.tsx.
+
+**보정**: 1차 자동 스크립트가 `hover:text-X-300` 같은 prefix-variant 클래스도 잘못 처리해 (`hover:text-X-700 dark:text-X-300` 형태 — dark 모드에서 hover 상관없이 항상 적용됨) 9곳 회귀 발생. 2차 보정 스크립트가 이를 `hover:text-X-700 dark:hover:text-X-300` 으로 fix.
+
+**검증**: tsc --noEmit exit 0. frontend rebuild + /settings 200 OK.
+
+---
+
 ### PR 10-AT — 라이트/다크 색 페어링 + .credentials.json 포맷 일치 + 설정 UI 다듬기 ✅
 
 > 사용자 보고 3건:

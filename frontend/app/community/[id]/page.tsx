@@ -91,7 +91,7 @@ export default function PostDetailPage() {
                   if (confirm("이 글을 삭제하시겠습니까?")) remove.mutate();
                 }}
                 disabled={remove.isPending}
-                className="gap-1 border-red-900/50 text-red-300 hover:bg-red-950/40"
+                className="gap-1 border-red-900/50 text-red-700 dark:text-red-300 hover:bg-red-950/40"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 삭제

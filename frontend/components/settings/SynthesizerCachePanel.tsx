@@ -100,7 +100,7 @@ export function SynthesizerCachePanel() {
           현재 사용 중 <span className="text-neutral-200">{data.inUseCount}개</span>
         </span>
         {data.missingImageCount > 0 && (
-          <span className="text-amber-300">
+          <span className="text-amber-700 dark:text-amber-300">
             이미지가 삭제된 항목 {data.missingImageCount}개 — 정리 시 자동 제거됨
           </span>
         )}
@@ -123,7 +123,7 @@ export function SynthesizerCachePanel() {
         <Button
           size="sm"
           variant="outline"
-          className="border-rose-500/40 text-rose-300 hover:bg-rose-500/10"
+          className="border-rose-500/40 text-rose-700 dark:text-rose-300 hover:bg-rose-500/10"
           disabled={gc.isPending || data.count === 0}
           onClick={() => gc.mutate()}
         >
@@ -239,8 +239,8 @@ function Badge({
   children: React.ReactNode;
 }) {
   const cls = {
-    amber: "border-amber-500/30 bg-amber-500/10 text-amber-300",
-    sky: "border-sky-500/30 bg-sky-500/10 text-sky-300",
+    amber: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+    sky: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
     neutral: "border-neutral-700 bg-surface-2 text-neutral-400",
   }[tone];
   return (
@@ -253,23 +253,23 @@ function Badge({
 function GcResultBanner({ evicted }: { evicted: EvictedImage[] }) {
   if (evicted.length === 0) {
     return (
-      <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+      <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
         정리 완료 — 정리할 항목이 없었습니다 (모든 항목이 보관 한도 이내).
       </div>
     );
   }
   const totalMb = evicted.reduce((s, e) => s + e.sizeMb, 0);
   return (
-    <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+    <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
       정리 완료 — {evicted.length}개 환경 ({totalMb} MB) 회수했습니다.
-      <ul className="mt-1 space-y-0.5 text-[11px] text-emerald-200/80">
+      <ul className="mt-1 space-y-0.5 text-[11px] text-emerald-800 dark:text-emerald-200/80">
         {evicted.slice(0, 5).map((e) => (
           <li key={`${e.cveId}-${e.imageTag}`}>
             <span className="font-mono">{e.cveId}</span>{" "}
             <span className="text-neutral-400">·</span>{" "}
             <span>{e.sizeMb} MB</span>{" "}
             <span className="text-neutral-400">·</span>{" "}
-            <span className="text-emerald-300/70">사유: {reasonLabel(e.reason)}</span>
+            <span className="text-emerald-700 dark:text-emerald-300/70">사유: {reasonLabel(e.reason)}</span>
           </li>
         ))}
         {evicted.length > 5 && (

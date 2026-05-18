@@ -51,10 +51,10 @@ const STATUS_LABEL: Record<SandboxStatus, string> = {
 
 const STATUS_TONE: Record<SandboxStatus, string> = {
   pending: "border-neutral-700 bg-neutral-700/30 text-neutral-300",
-  running: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
+  running: "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200",
   stopped: "border-neutral-700 bg-surface-2 text-neutral-400",
-  expired: "border-amber-500/40 bg-amber-500/10 text-amber-200",
-  failed: "border-rose-500/40 bg-rose-500/10 text-rose-200",
+  expired: "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200",
+  failed: "border-rose-500/40 bg-rose-500/10 text-rose-800 dark:text-rose-200",
 };
 
 const SOURCE_LABEL: Record<LabSourceKind, string> = {
@@ -121,7 +121,7 @@ export function SandboxSessionsPanel() {
         <div className="flex flex-wrap items-center gap-3 text-neutral-400">
           <span>
             현재 실행 중{" "}
-            <span className="font-semibold text-emerald-300">{data.runningCount}</span>개
+            <span className="font-semibold text-emerald-700 dark:text-emerald-300">{data.runningCount}</span>개
           </span>
           <span>
             목록 표시 <span className="text-neutral-200">{data.total}</span>개
@@ -216,17 +216,17 @@ export function SandboxSessionsPanel() {
           </Button>
         </div>
         {sync.data && (
-          <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+          <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200">
             <CheckCircle2 className="mr-1 inline h-3 w-3" />
             동기화 완료 — 폴더 {sync.data.foldersScanned}개 검사,{" "}
             {sync.data.upserted}개 환경 갱신, 후보 {sync.data.candidates}개,{" "}
             건너뜀 {sync.data.skipped}개.
             {sync.data.errors.length > 0 && (
               <details className="mt-1">
-                <summary className="cursor-pointer text-amber-300">
+                <summary className="cursor-pointer text-amber-700 dark:text-amber-300">
                   오류 {sync.data.errors.length}건
                 </summary>
-                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-amber-200/80">
+                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-amber-800 dark:text-amber-200/80">
                   {sync.data.errors.slice(0, 5).map((e, i) => (
                     <li key={i}>{e}</li>
                   ))}
@@ -280,7 +280,7 @@ function SessionRow({
           {item.cveId ? (
             <Link
               href={`/cve/${item.cveId}`}
-              className="inline-flex items-center gap-1 font-mono text-sm text-neutral-100 hover:text-sky-300 hover:underline"
+              className="inline-flex items-center gap-1 font-mono text-sm text-neutral-100 hover:text-sky-700 dark:hover:text-sky-300 hover:underline"
               title="이 세션이 연결된 CVE 상세 페이지로 이동"
             >
               {item.cveId}
@@ -304,7 +304,7 @@ function SessionRow({
           )}
         </div>
         {item.error && (
-          <p className="mt-1 break-words text-[11px] text-rose-300">{item.error}</p>
+          <p className="mt-1 break-words text-[11px] text-rose-700 dark:text-rose-300">{item.error}</p>
         )}
       </div>
       {stoppable && (
@@ -313,7 +313,7 @@ function SessionRow({
           variant="ghost"
           onClick={onStop}
           disabled={stopping}
-          className="text-rose-300 hover:bg-rose-500/10"
+          className="text-rose-700 dark:text-rose-300 hover:bg-rose-500/10"
         >
           {stopping ? (
             <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />

@@ -11,11 +11,11 @@ export const STATUS_META: Record<TicketStatus, { label: string; cls: string }> =
   open: { label: "미확인", cls: "border-neutral-700 bg-neutral-800/60 text-neutral-200" },
   in_progress: {
     label: "조치 중",
-    cls: "border-amber-400/40 bg-amber-400/10 text-amber-200",
+    cls: "border-amber-400/40 bg-amber-400/10 text-amber-800 dark:text-amber-200",
   },
   resolved: {
     label: "조치 완료",
-    cls: "border-emerald-400/40 bg-emerald-400/10 text-emerald-200",
+    cls: "border-emerald-400/40 bg-emerald-400/10 text-emerald-800 dark:text-emerald-200",
   },
   ignored: {
     label: "무시",
@@ -90,7 +90,7 @@ export function TicketControl({ cveId }: Props) {
             onClick={() => {
               if (confirm("이 CVE의 티켓을 삭제하시겠습니까?")) remove.mutate();
             }}
-            className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-red-400"
+            className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-red-600 dark:hover:text-red-400"
             aria-label="티켓 삭제"
           >
             <Trash2 className="h-3 w-3" />
@@ -135,7 +135,7 @@ export function TicketControl({ cveId }: Props) {
             onChange={(e) => setNote(e.target.value)}
             maxLength={4000}
           />
-          {error && <p className="mt-1 text-xs text-rose-400">{error}</p>}
+          {error && <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">{error}</p>}
           <div className="mt-2 flex items-center justify-between text-[11px] text-neutral-500">
             <span>{ticket ? `최근 갱신 ${new Date(ticket.updatedAt).toLocaleString("ko-KR")}` : "아직 등록되지 않음"}</span>
             <Button

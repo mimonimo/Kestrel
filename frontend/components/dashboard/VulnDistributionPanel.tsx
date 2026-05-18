@@ -36,10 +36,10 @@ const SEV_BAR_TINT: Record<string, string> = {
   low: "bg-emerald-400/70",
 };
 const SEV_TEXT: Record<string, string> = {
-  critical: "text-rose-300",
-  high: "text-orange-300",
-  medium: "text-amber-300",
-  low: "text-emerald-300",
+  critical: "text-rose-700 dark:text-rose-300",
+  high: "text-orange-700 dark:text-orange-300",
+  medium: "text-amber-700 dark:text-amber-300",
+  low: "text-emerald-700 dark:text-emerald-300",
 };
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -216,12 +216,12 @@ export function VulnDistributionPanel() {
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/15 ring-1 ring-sky-400/30">
-            <BarChart3 className="h-4 w-4 text-sky-300" />
+            <BarChart3 className="h-4 w-4 text-sky-700 dark:text-sky-300" />
           </div>
           <h2 className="text-base font-semibold text-neutral-100">
             수집된 취약점 분포
           </h2>
-          <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-200">
+          <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-800 dark:text-sky-200">
             총 {formatNumber(total)}건
           </span>
           {dayLo && dayHi && (
@@ -243,7 +243,7 @@ export function VulnDistributionPanel() {
               className={cn(
                 "inline-flex items-center gap-1 px-2 py-1 text-[11px] transition-colors",
                 view === "bar"
-                  ? "bg-sky-500/15 text-sky-200"
+                  ? "bg-sky-500/15 text-sky-800 dark:text-sky-200"
                   : "text-neutral-400 hover:text-neutral-100",
               )}
               aria-pressed={view === "bar"}
@@ -257,7 +257,7 @@ export function VulnDistributionPanel() {
               className={cn(
                 "inline-flex items-center gap-1 border-l border-neutral-800 px-2 py-1 text-[11px] transition-colors",
                 view === "pie"
-                  ? "bg-sky-500/15 text-sky-200"
+                  ? "bg-sky-500/15 text-sky-800 dark:text-sky-200"
                   : "text-neutral-400 hover:text-neutral-100",
               )}
               aria-pressed={view === "pie"}
