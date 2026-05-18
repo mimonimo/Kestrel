@@ -1109,6 +1109,66 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-AR — API 키 카드 help 문구 제거 + 발급 링크 작은 버튼화 ✅
+
+사용자 요청: "NVD 에서 발급받은 API 키를 입력하면… / GitHub Advisory 데이터를
+안정적으로 가져오는데… repo 권한 없이 발급해도 됩니다 — 이거 안내문 없애고,
+발급받기 부분도 작은 버튼으로 구현"
+
+변경:
+- `lib/user-settings.ts`: SETTING_META 타입에서 `help` 필드 제거.
+- `components/settings/ApiKeyField.tsx`: help 단락 삭제 + "발급받기 ↗" 텍스트
+  링크 → ExternalLink 아이콘 + "발급" 라벨이 있는 11px 보더 버튼 (다른 카드
+  속 "URL 복사" 등과 통일된 톤).
+
+---
+
+### PR 10-AQ — Claude 자격증명 수동 붙여넣기 + "전체 다시 받기" 안내 대비 개선 ✅
+
+> 사용자 보고: "로그인 완료에 실패했습니다 / Claude CLI 가 60초 안에
+> 응답하지 않았습니다. 수신 바이트: 108 byte. 표시 출력: ********...
+> (92개 아스타리스크)" — PR 10-AM 진단 강화 덕분에 결정적인 단서 확보.
+>
+> 92 자 코드 (48자 + `#` + 43자, 사용자가 공유한 실제 OAuth 코드 형태) 가
+> CLI 에 정상 입력 → mask-echo 까지 도달 → 그 다음 토큰 교환 단계에서
+> CLI 가 stdout 을 비운 채 멈춤. 우리 PTY 입출력 코드가 아니라 컨테이너
+> 안 ``claude.exe`` (Bun-compiled native binary) 의 내부 동작이 원인.
+> Anthropic OAuth 엔드포인트 자체는 컨테이너에서 0.27s 응답 — 네트워크 이슈
+> 아님.
+>
+> 그리고 "데이터 수집 / 전체 다시 받기" 카드 안내 문구가 안 보임 보고 — 색
+> 대비 부족 (amber-200/80 on amber-500/5) + 사용자에게 의미 없는 jargon
+> ("since-window", "last_success") 두 문제.
+
+**Backend — `app/api/v1/claude_auth.py`**
+- `POST /settings/claude-auth/credentials` 신규: 잘 동작하는 호스트에서 받은
+  ``~/.claude/.credentials.json`` 내용을 그대로 받아 백엔드 named volume 의
+  ``.credentials.json`` 으로 write + AI credential 자동 활성화. PTY 우회 경로.
+- shape 검증: 객체이거나 JSON 문자열이어야 하고, ``claudeAiOauth.accessToken``
+  필드가 있어야 함. 의도 다른 페이스트는 422 가 아니라 400 으로 메시지와 함께
+  거절.
+
+**Frontend — `components/settings/ClaudeAuthPanel.tsx` + `lib/api.ts`**
+- 로그인 안 된 상태에서만 노출되는 expander 추가: "위 흐름이 60초 후 멈춘다면
+  — 자격증명 직접 붙여넣기". 클릭 시 3-step 안내 + textarea + 저장 버튼.
+- API 클라이언트에 ``saveClaudeCredentials(credentials)`` 메소드.
+
+**Frontend — `components/settings/ApiKeyField.tsx`**
+- "전체 다시 받기" 카드: 텍스트 색 ``amber-200/80`` → ``amber-900 dark:amber-100``
+  로 변경 (실모드 / 다크모드 모두 충분한 대비). 배경/테두리 alpha 도
+  ``amber-500/5,/20`` → ``amber-500/10,/40`` 로 한 단계 올려 카드 가시성 확보.
+- 안내 문구: "과거 토큰 미설정/실패로 since-window 가 앞당겨져 누락분이 있을
+  때 사용하세요. last_success 무시하고 처음부터 다시 가져옵니다." → "과거 수집
+  실패로 누락된 항목이 있을 때만 사용하세요. 처음부터 다시 받아옵니다." — 30자
+  대 60자.
+
+**검증**
+- tsc --noEmit exit 0.
+- 로컬 docker build 안 함 (OrbStack NFS 보호 — 사용자 환경에서 `bash
+  scripts/update.sh` 로 적용).
+
+---
+
 ### PR 10-AO — 설정 페이지 안내 문구 간결화 + ClaudeAuthPanel 방어 추가 ✅
 
 > 사용자 보고: "MITRE cvelistV5 백필 / MITRE 가 canonical 로 보유한 ~340k 전체

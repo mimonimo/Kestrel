@@ -194,6 +194,11 @@ export const api = {
     request<ClaudeAuthAction>(`/settings/claude-auth/logout`, {
       method: "POST",
     }),
+  saveClaudeCredentials: (credentials: unknown) =>
+    request<ClaudeAuthAction>(`/settings/claude-auth/credentials`, {
+      method: "POST",
+      body: JSON.stringify({ credentials }),
+    }),
   mitreBackfill: (body: { mode: "full" | "delta"; sinceDays?: number; maxRecords?: number }) =>
     request<MitreBackfillResponse>(`/admin/mitre-backfill`, {
       method: "POST",

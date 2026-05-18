@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff, History, Loader2, Save, Trash2 } from "lucide-react";
+import { ExternalLink, Eye, EyeOff, History, Loader2, Save, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -82,18 +82,16 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
 
   return (
     <div className="space-y-3 rounded-lg border border-neutral-800 bg-surface-1 p-5">
-      <div className="flex items-baseline justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-neutral-100">{meta.label}</h3>
-          <p className="mt-1 text-xs text-neutral-500">{meta.help}</p>
-        </div>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-neutral-100">{meta.label}</h3>
         <a
           href={meta.docsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="shrink-0 text-xs text-neutral-500 underline hover:text-neutral-300"
+          className="inline-flex shrink-0 items-center gap-1 rounded border border-neutral-700 px-2 py-1 text-[11px] text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"
         >
-          발급받기 ↗
+          <ExternalLink className="h-3 w-3" />
+          발급
         </a>
       </div>
 
@@ -151,10 +149,10 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
       </form>
 
       {ready && value && (
-        <div className="flex items-center justify-between gap-3 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">
-          <span className="text-[11px] leading-snug text-amber-200/80">
-            과거 토큰 미설정/실패로 since-window 가 앞당겨져 누락분이 있을 때
-            사용하세요. last_success 무시하고 처음부터 다시 가져옵니다.
+        <div className="flex items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2.5">
+          <span className="text-xs leading-snug text-amber-900 dark:text-amber-100">
+            과거 수집 실패로 누락된 항목이 있을 때만 사용하세요. 처음부터
+            다시 받아옵니다.
           </span>
           <Button
             type="button"
@@ -162,7 +160,7 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
             variant="ghost"
             onClick={() => void fullResync()}
             disabled={status === "submitting"}
-            className="shrink-0 text-amber-200 hover:bg-amber-500/10"
+            className="shrink-0 text-amber-900 hover:bg-amber-500/20 dark:text-amber-100"
           >
             {status === "submitting" ? (
               <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />

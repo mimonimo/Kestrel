@@ -4,12 +4,15 @@ import {
   AlertCircle,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Copy,
   ExternalLink,
   Loader2,
   LogOut,
   ShieldAlert,
   Sparkles,
+  Upload,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -48,6 +51,8 @@ export function ClaudeAuthPanel() {
   const [session, setSession] = useState<ClaudeAuthStart | null>(null);
   const [code, setCode] = useState("");
   const [copied, setCopied] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualCreds, setManualCreds] = useState("");
   const codeInputRef = useRef<HTMLInputElement | null>(null);
 
   const start = useMutation({
@@ -96,6 +101,17 @@ export function ClaudeAuthPanel() {
   const logout = useMutation({
     mutationFn: () => api.logoutClaudeAuth(),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: STATUS_KEY });
+      qc.invalidateQueries({ queryKey: ["ai-credentials"] });
+      qc.invalidateQueries({ queryKey: ["app-settings"] });
+    },
+  });
+
+  const manualSave = useMutation({
+    mutationFn: () => api.saveClaudeCredentials(manualCreds.trim()),
+    onSuccess: () => {
+      setManualCreds("");
+      setManualOpen(false);
       qc.invalidateQueries({ queryKey: STATUS_KEY });
       qc.invalidateQueries({ queryKey: ["ai-credentials"] });
       qc.invalidateQueries({ queryKey: ["app-settings"] });
@@ -359,6 +375,93 @@ export function ClaudeAuthPanel() {
               }
               size="sm"
             />
+          )}
+        </div>
+      )}
+
+      {/* ── 수동 자격증명 붙여넣기 (CLI 토큰 교환이 멈출 때의 우회 경로) ─── */}
+      {!data.loggedIn && (
+        <div className="rounded-md border border-neutral-800 bg-surface-2">
+          <button
+            type="button"
+            onClick={() => setManualOpen((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-xs text-neutral-400 hover:text-neutral-200"
+            aria-expanded={manualOpen}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              {manualOpen ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5" />
+              )}
+              위 흐름이 60초 후 멈춘다면 — 자격증명 직접 붙여넣기
+            </span>
+          </button>
+          {manualOpen && (
+            <div className="space-y-3 border-t border-neutral-800 p-4">
+              <ol className="list-decimal space-y-1 pl-5 text-[11px] text-neutral-400">
+                <li>
+                  잘 동작하는 다른 환경(개인 머신 등)에서 터미널을 열고{" "}
+                  <code className="rounded bg-surface-3 px-1 py-0.5 font-mono text-neutral-200">
+                    claude setup-token
+                  </code>{" "}
+                  을 실행해 로그인까지 완료합니다.
+                </li>
+                <li>
+                  완료 후 생성된{" "}
+                  <code className="rounded bg-surface-3 px-1 py-0.5 font-mono text-neutral-200">
+                    ~/.claude/.credentials.json
+                  </code>{" "}
+                  을 열어 전체 내용을 복사합니다.
+                </li>
+                <li>아래에 그대로 붙여넣고 "저장" 을 누르세요.</li>
+              </ol>
+              <textarea
+                value={manualCreds}
+                onChange={(e) => setManualCreds(e.target.value)}
+                placeholder='{"claudeAiOauth":{"accessToken":"...","refreshToken":"...","expiresAt":...,"scopes":[...]}}'
+                rows={6}
+                disabled={manualSave.isPending}
+                className="w-full rounded-md border border-neutral-800 bg-surface-1 px-3 py-2 font-mono text-[11px] text-neutral-200 placeholder:text-neutral-600 focus-visible:border-neutral-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-600 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => manualSave.mutate()}
+                  disabled={!manualCreds.trim() || manualSave.isPending}
+                >
+                  {manualSave.isPending ? (
+                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="mr-1 h-3.5 w-3.5" />
+                  )}
+                  저장
+                </Button>
+                <p className="text-[10px] text-neutral-500">
+                  내용은 백엔드 컨테이너의 영구 볼륨에 저장되며, 컨테이너
+                  재시작에도 유지됩니다.
+                </p>
+              </div>
+              {manualSave.error && (
+                <ErrorBox
+                  title="자격증명 저장 실패"
+                  message={
+                    manualSave.error instanceof ApiError
+                      ? manualSave.error.message
+                      : (manualSave.error as Error).message
+                  }
+                  size="sm"
+                />
+              )}
+              {manualSave.data && !manualSave.error && (
+                <NoticeBox
+                  title="저장 완료"
+                  message={manualSave.data.detail}
+                  size="sm"
+                />
+              )}
+            </div>
           )}
         </div>
       )}

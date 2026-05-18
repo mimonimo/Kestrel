@@ -94,6 +94,21 @@ class ActionOut(_CamelOut):
     detail: str
 
 
+class CredentialsIn(_CamelOut):
+    """Raw ``.credentials.json`` content the user pastes manually.
+
+    Escape hatch for environments where the in-container ``claude
+    setup-token`` flow hangs at the OAuth token-exchange step — the user
+    runs the CLI on their host (where it works), opens
+    ``~/.claude/.credentials.json``, and pastes the whole content here.
+    """
+
+    # Accept either a parsed object or a raw JSON string — both are
+    # ergonomic depending on where the user is copying from. The endpoint
+    # normalizes to a dict before writing.
+    credentials: dict[str, Any] | str
+
+
 # ---------------------------------------------------------------------------
 # Login session registry
 # ---------------------------------------------------------------------------
@@ -550,6 +565,78 @@ async def cancel_route(session_id: str) -> ActionOut:
         return ActionOut(ok=True, detail="이미 종료된 세션입니다.")
     await _drop_session(session_id)
     return ActionOut(ok=True, detail="로그인 세션을 취소했습니다.")
+
+
+@router.post(
+    "/credentials",
+    response_model=ActionOut,
+    response_model_by_alias=True,
+)
+async def credentials_route(
+    body: CredentialsIn,
+    db: AsyncSession = Depends(get_db),
+) -> ActionOut:
+    """Write a user-supplied ``.credentials.json`` to the backend volume.
+
+    Bypasses ``claude setup-token`` — used when the in-container CLI
+    flow hangs at token exchange. The user runs the CLI on a working
+    host, then pastes the resulting credentials content here.
+
+    Validates the shape just enough to refuse obviously-wrong payloads
+    (must contain ``claudeAiOauth.accessToken``); we don't try to verify
+    the token against Anthropic because a stale-but-valid-looking token
+    is identical to a fresh one from a write standpoint, and the next
+    AI call will surface a 401 anyway.
+    """
+    raw = body.credentials
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"붙여넣은 내용을 JSON 으로 파싱하지 못했습니다: {e}",
+            )
+    else:
+        parsed = raw
+    if not isinstance(parsed, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="자격증명은 객체(JSON object) 여야 합니다.",
+        )
+
+    oauth = parsed.get("claudeAiOauth")
+    if not isinstance(oauth, dict) or not oauth.get("accessToken"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "claudeAiOauth.accessToken 가 없습니다. "
+                "host 의 ~/.claude/.credentials.json 전체 내용을 그대로 붙여넣어 주세요."
+            ),
+        )
+
+    try:
+        _CLAUDE_HOME.mkdir(parents=True, exist_ok=True)
+        _CRED_FILE.write_text(json.dumps(parsed, indent=2, ensure_ascii=False))
+        # 0600 — match what the CLI itself writes.
+        os.chmod(_CRED_FILE, 0o600)
+    except OSError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"자격증명 파일을 쓰지 못했습니다: {e}",
+        )
+
+    try:
+        cred = await _ensure_active_credential(db)
+        cred_msg = f"활성 모델: {cred.model}"
+    except Exception as e:
+        log.warning("claude_auth.activate_failed", error=str(e))
+        cred_msg = "단, AI 키 활성화에 실패했습니다 — 설정에서 수동으로 활성화해 주세요."
+    log.info("claude_auth.manual_credentials_saved")
+    return ActionOut(
+        ok=True,
+        detail=f"자격증명을 저장하고 AI 키를 활성화했습니다. ({cred_msg})",
+    )
 
 
 @router.post("/logout", response_model=ActionOut, response_model_by_alias=True)
