@@ -293,7 +293,12 @@ export function ClaudeAuthPanel() {
                 <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500/20 text-[11px] font-semibold text-sky-200">
                   2
                 </span>
-                받은 코드를 아래에 붙여넣고 <em>로그인 완료</em>를 누르세요.
+                Anthropic 페이지가 보여주는 코드를{" "}
+                <span className="font-mono text-amber-200">그대로 한 번에</span>{" "}
+                복사해 붙여넣고 <em>로그인 완료</em>를 누르세요. 보통 짧은 문자열
+                <span className="font-mono">#</span>긴 문자열 형태입니다 —{" "}
+                <span className="font-mono">#</span> 앞뒤 어느 쪽도 빼지 말고
+                전부 포함.
               </p>
               <form
                 className="flex items-center gap-2"
@@ -308,7 +313,7 @@ export function ClaudeAuthPanel() {
                   type="text"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  placeholder="예: ory_at_..."
+                  placeholder="Anthropic 인증 페이지에서 받은 코드 전체"
                   autoComplete="off"
                   spellCheck={false}
                   className="font-mono"
