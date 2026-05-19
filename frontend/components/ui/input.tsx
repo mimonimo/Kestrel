@@ -6,9 +6,13 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     <input
       ref={ref}
       className={cn(
-        "flex h-10 w-full rounded-md border border-neutral-800 bg-surface-1 px-3 py-2 text-sm text-neutral-100",
-        "placeholder:text-neutral-500",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-600 focus-visible:border-neutral-600",
+        "flex h-10 w-full rounded-md border px-3 py-2 text-sm",
+        // Light: white bg, neutral border, dark text.
+        // Dark: surface-1 bg, neutral-800 border, neutral-100 text.
+        "border-neutral-300 bg-white text-neutral-900 placeholder:text-neutral-500",
+        "dark:border-neutral-800 dark:bg-surface-1 dark:text-neutral-100 dark:placeholder:text-neutral-500",
+        "focus-visible:border-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400",
+        "dark:focus-visible:border-neutral-600 dark:focus-visible:ring-neutral-600",
         "disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}

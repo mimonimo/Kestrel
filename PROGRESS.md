@@ -1109,6 +1109,51 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-AW — 전역 컴포넌트 라이트/다크 페어링 + Header active-state + 카드/배지/버튼/입력 토큰 정비 ✅
+
+> 사용자 지시: "전체적으로 진행해 / claude design 사용해서 최적화된 UI/UX 구성. 상용 서비스 급으로"
+
+모든 페이지에서 공통으로 보이는 lowest-level UI primitive + 네비게이션을 한 번에 다듬어 dashboard 전체 톤을 정렬했습니다.
+
+**`components/layout/Header.tsx`**
+- 활성 라우트 highlight 추가 (`usePathname`). Linear/Vercel 식 hover/active 상태.
+- 라이트/다크 페어링: `bg-white/85` (라이트) ↔ `bg-surface-0/80` (다크), 텍스트 모두 페어링.
+- nav-item hover/active 배경 (`bg-neutral-100 dark:bg-surface-2`), 외부 NVD 링크는 ↗ 표기.
+- `Route` 타입 import 로 typedRoutes 모드와 호환.
+
+**`components/layout/Footer.tsx`**
+- 라이트/다크 페어링. 출처 라벨에 MITRE 추가, 안내 문장 한 줄로 축소.
+
+**`components/ui/card.tsx`**
+- 기본 카드 → `bg-white border-neutral-200 hover:border-neutral-300` (라이트) ↔ `dark:bg-surface-1 dark:border-neutral-800 dark:hover:border-neutral-700` (다크).
+- CardFooter border-top 도 양쪽 페어링.
+
+**`components/ui/badge.tsx`**
+- default: `bg-neutral-900 text-neutral-50` ↔ `dark:bg-neutral-100 dark:text-neutral-900` (high-contrast 반전).
+- outline / secondary 모두 라이트/다크 두 톤. 호출자에서 dark: override 안 줘도 자연스러움.
+
+**`components/ui/button.tsx`**
+- default: 라이트 `bg-neutral-900 text-neutral-50`, 다크 `bg-neutral-100 text-neutral-900` — 페이지 surface 와 반대 톤으로 primary action 강조 (Linear/Vercel 패턴).
+- outline/ghost 도 페어링. 호출자가 일관된 톤 받음.
+
+**`components/ui/input.tsx`**
+- 라이트 `bg-white border-neutral-300`, 다크 `bg-surface-1 border-neutral-800`. focus ring 도 두 톤.
+
+**`components/search/SearchBar.tsx`**
+- hero 모드 (대시보드 상단 검색바) 형태 정리: 거대한 `h-14 rounded-full bg-surface-2` 에서 `h-11 rounded-lg bg-white dark:bg-surface-1` 로. 검색 버튼도 안쪽 작게.
+
+**`components/search/FilterPanel.tsx`**
+- 카드 배경 페어링. 그룹 제목 `text-[10px] tracking-wider` 로 더 작고 단정.
+- Chip 활성 상태: 라이트 `bg-neutral-900 text-neutral-50`, 다크 `bg-neutral-100 text-neutral-900` — Badge 와 동일 한 hi-contrast.
+- 비활성 Chip 도 라이트 `border-neutral-300 bg-white text-neutral-700`.
+
+**`components/cve/CveListItem.tsx`**
+- 모든 텍스트 노드 페어링. 도메인 outline 칩 색까지.
+
+**검증**: tsc --noEmit exit 0. frontend rebuild + `/` `/settings` `/community` `/cve/<id>` 모두 200.
+
+---
+
 ### PR 10-AV — 공유 PieGroup 컴포넌트 + 대시보드 hero 슬림화 + LabKind 원형 차트 ✅
 
 > 사용자 요청 3건:

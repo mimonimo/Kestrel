@@ -19,28 +19,29 @@ export function SearchBar({ initialQuery = "", onSearch, size = "hero" }: Props)
     onSearch?.(value.trim());
   };
 
+  const hero = size === "hero";
   return (
     <form onSubmit={submit} className="w-full">
       <div className="relative flex items-center">
         <Search
-          className={`absolute left-4 h-5 w-5 text-neutral-500 pointer-events-none ${
-            size === "hero" ? "" : "h-4 w-4 left-3"
+          className={`pointer-events-none absolute text-neutral-500 dark:text-neutral-500 ${
+            hero ? "left-3.5 h-4 w-4" : "left-3 h-4 w-4"
           }`}
         />
         <Input
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="CVE-ID, 제품명, 설명, 취약점 유형으로 검색..."
+          placeholder="CVE-ID · 제품명 · 설명 · 취약점 유형 검색"
           className={
-            size === "hero"
-              ? "h-14 pl-12 pr-28 text-base rounded-full bg-surface-2 border-neutral-800"
+            hero
+              ? "h-11 rounded-lg border-neutral-300 bg-white pl-10 pr-24 text-sm dark:border-neutral-800 dark:bg-surface-1"
               : "h-10 pl-9 pr-24"
           }
         />
         <Button
           type="submit"
-          className={`absolute right-2 ${size === "hero" ? "rounded-full px-5 h-10" : "h-8"}`}
-          size={size === "hero" ? "md" : "sm"}
+          className={`absolute right-1.5 ${hero ? "h-8" : "h-8"}`}
+          size="sm"
         >
           검색
         </Button>

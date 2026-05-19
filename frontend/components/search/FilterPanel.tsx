@@ -146,7 +146,7 @@ export function FilterPanel({ value, onChange }: Props) {
     // 만큼 ``top-20`` 으로 띄우고, 패널 자체가 뷰포트보다 길어지면 칩 영역
     // 만 내부에서 스크롤되도록 ``overflow-y-auto + max-h``. ``self-start``
     // 가 없으면 부모 grid 가 row 높이로 stretch 시켜 sticky 가 무력화됨.
-    <aside className="space-y-6 rounded-lg border border-neutral-800 bg-surface-1 p-5 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
+    <aside className="space-y-6 rounded-lg border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-surface-1 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
       <FilterGroup title="심각도">
         {SEVERITIES.map((s) => (
           <Chip
@@ -176,7 +176,7 @@ export function FilterPanel({ value, onChange }: Props) {
 
       <FilterGroup title="취약점 유형">
         {typesToRender.length === 0 && facets.isLoading && (
-          <span className="text-xs text-neutral-500">로딩중…</span>
+          <span className="text-xs text-neutral-600 dark:text-neutral-500">로딩중…</span>
         )}
         {typesToRender.map((t) => (
           <Chip
@@ -209,7 +209,7 @@ export function FilterPanel({ value, onChange }: Props) {
         type="button"
         onClick={() => onChange(EMPTY_FILTERS)}
         disabled={!hasFilters}
-        className="text-xs text-neutral-500 hover:text-neutral-200 hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:no-underline"
+        className="text-xs text-neutral-600 hover:text-neutral-900 hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:no-underline dark:text-neutral-500 dark:hover:text-neutral-200"
       >
         전체 초기화
       </button>
@@ -220,7 +220,7 @@ export function FilterPanel({ value, onChange }: Props) {
 function FilterGroup({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-500">
         {title}
       </h3>
       <div className="flex flex-wrap gap-1.5">{children}</div>
@@ -258,8 +258,8 @@ function Chip({
         variant === "upper" && "uppercase",
         count === 0 && "opacity-50",
         active
-          ? "bg-neutral-100 text-neutral-900 border-neutral-100"
-          : "bg-transparent text-neutral-300 border-neutral-700 hover:border-neutral-500 hover:text-neutral-100",
+          ? "border-neutral-900 bg-neutral-900 text-neutral-50 dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900"
+          : "border-neutral-300 bg-white text-neutral-700 hover:border-neutral-500 hover:text-neutral-900 dark:border-neutral-700 dark:bg-transparent dark:text-neutral-300 dark:hover:border-neutral-500 dark:hover:text-neutral-100",
       )}
     >
       {children}

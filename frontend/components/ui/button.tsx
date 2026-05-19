@@ -9,10 +9,17 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: Size;
 }
 
+// Paired light/dark variants. The "default" variant is high-contrast on
+// both themes (Linear/Vercel pattern — primary action is inverted from
+// the page surface). Outline and ghost stay near-neutral with subtle
+// hover so they don't compete with the primary CTA.
 const variants: Record<Variant, string> = {
-  default: "bg-neutral-100 text-neutral-900 hover:bg-white",
-  outline: "border border-neutral-700 bg-transparent text-neutral-100 hover:bg-neutral-800",
-  ghost: "hover:bg-neutral-800 text-neutral-300",
+  default:
+    "bg-neutral-900 text-neutral-50 hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-white",
+  outline:
+    "border border-neutral-300 bg-white text-neutral-900 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-transparent dark:text-neutral-100 dark:hover:bg-neutral-800",
+  ghost:
+    "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-neutral-100",
 };
 
 const sizes: Record<Size, string> = {
