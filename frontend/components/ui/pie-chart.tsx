@@ -2,6 +2,7 @@
 
 import type { UrlObject } from "url";
 import Link from "next/link";
+import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -20,14 +21,23 @@ function formatNumber(n: number): string {
 // segment along a circle, ordered head-to-tail. ``size`` defaults to 96
 // so it fits in a 4-column grid even on narrow widths; pass a smaller
 // value for compact panels.
+//
+// Interactivity: hover a slice → it pops out (translate radially) and
+// gains a brighter glow; the matching legend row in PieGroup highlights
+// at the same time via shared ``hoveredLabel`` state. Click forwards to
+// ``href`` if set (filter application).
 export function SvgPie({
   slices,
   total,
   size = 96,
+  hoveredLabel,
+  onHover,
 }: {
   slices: PieSlice[];
   total: number;
   size?: number;
+  hoveredLabel?: string | null;
+  onHover?: (label: string | null) => void;
 }) {
   const r = (size - 24) / 2; // ring thickness = 14, leave 12px padding total
   const cx = size / 2;
@@ -41,35 +51,49 @@ export function SvgPie({
       height={size}
       role="img"
       aria-label="비율 차트"
-      className="shrink-0 -rotate-90"
+      className="shrink-0 -rotate-90 overflow-visible"
     >
       <circle
         cx={cx}
         cy={cy}
         r={r}
         fill="none"
-        // Track tint — light mode soft grey, dark mode darker grey.
         className="stroke-neutral-200 dark:stroke-neutral-800"
         strokeWidth={14}
       />
-      {slices.map((s) => {
+      {slices.map((s, i) => {
         const frac = total > 0 ? s.count / total : 0;
         const len = circumference * frac;
         const dasharray = `${len} ${circumference}`;
         const dashoffset = -circumference * (acc / total);
+        // Compute the angle of the slice midpoint so we can offset it
+        // radially when hovered (gives a "pop out" effect).
+        const midAngle = (2 * Math.PI * (acc + s.count / 2)) / total;
         acc += s.count;
+        const hovered = hoveredLabel === s.label;
+        const dimmed = hoveredLabel != null && !hovered;
+        const dx = hovered ? Math.cos(midAngle) * 3 : 0;
+        const dy = hovered ? Math.sin(midAngle) * 3 : 0;
         return (
           <circle
-            key={s.label}
+            key={`${s.label}-${i}`}
             cx={cx}
             cy={cy}
             r={r}
             fill="none"
             stroke={s.color}
-            strokeWidth={14}
+            strokeWidth={hovered ? 16 : 14}
             strokeDasharray={dasharray}
             strokeDashoffset={dashoffset}
             strokeLinecap="butt"
+            style={{
+              transform: `translate(${dx}px, ${dy}px)`,
+              opacity: dimmed ? 0.35 : 1,
+              transition: "transform 150ms ease, opacity 150ms ease, stroke-width 150ms ease",
+              cursor: onHover ? "pointer" : undefined,
+            }}
+            onMouseEnter={() => onHover?.(s.label)}
+            onMouseLeave={() => onHover?.(null)}
           />
         );
       })}
@@ -96,26 +120,56 @@ export function PieGroup({
   emptyLabel?: string;
   className?: string;
 }) {
+  const [hovered, setHovered] = useState<string | null>(null);
   const groupTotal = groupTotalOverride ?? slices.reduce((s, x) => s + x.count, 0);
   const ringDenom = groupTotal || 1;
   if (slices.length === 0 || groupTotal === 0) {
-    return <p className={cn("text-xs text-neutral-600 dark:text-neutral-500", className)}>{emptyLabel}</p>;
+    return (
+      <p className={cn("text-xs text-neutral-600 dark:text-neutral-500", className)}>
+        {emptyLabel}
+      </p>
+    );
   }
   return (
-    <div className={cn("flex flex-col items-center gap-3 sm:flex-row sm:items-start sm:gap-4", className)}>
-      <SvgPie slices={slices} total={ringDenom} size={size} />
+    <div
+      className={cn(
+        "flex flex-col items-center gap-3 sm:flex-row sm:items-start sm:gap-4",
+        className,
+      )}
+    >
+      <SvgPie
+        slices={slices}
+        total={ringDenom}
+        size={size}
+        hoveredLabel={hovered}
+        onHover={setHovered}
+      />
       <ul className="min-w-0 flex-1 space-y-1 text-[11px]">
         {slices.map((s) => {
           const groupPct = (s.count / ringDenom) * 100;
           const corpusPct = total > 0 ? (s.count / total) * 100 : 0;
+          const isHovered = hovered === s.label;
+          const isDimmed = hovered != null && !isHovered;
           const inner = (
             <div className="flex items-baseline justify-between gap-2">
               <span className="flex min-w-0 items-center gap-1.5">
                 <span
-                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
-                  style={{ backgroundColor: s.color }}
+                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm transition-transform duration-150"
+                  style={{
+                    backgroundColor: s.color,
+                    transform: isHovered ? "scale(1.3)" : "scale(1)",
+                  }}
                 />
-                <span className="truncate text-neutral-800 dark:text-neutral-300">{s.label}</span>
+                <span
+                  className={cn(
+                    "truncate transition-colors",
+                    isHovered
+                      ? "font-medium text-neutral-900 dark:text-neutral-100"
+                      : "text-neutral-800 dark:text-neutral-300",
+                  )}
+                >
+                  {s.label}
+                </span>
               </span>
               <span className="shrink-0 tabular-nums text-neutral-700 dark:text-neutral-400">
                 {formatNumber(s.count)}
@@ -128,18 +182,23 @@ export function PieGroup({
               </span>
             </div>
           );
+          const rowCls = cn(
+            "block rounded px-1 py-0.5 transition-all duration-150",
+            isDimmed && "opacity-50",
+            s.href && "hover:bg-sky-50 dark:hover:bg-sky-500/5",
+          );
           return (
-            <li key={s.label}>
+            <li
+              key={s.label}
+              onMouseEnter={() => setHovered(s.label)}
+              onMouseLeave={() => setHovered(null)}
+            >
               {s.href ? (
-                <Link
-                  href={s.href}
-                  className="block rounded px-1 py-0.5 transition-colors hover:bg-sky-500/5"
-                  title={`${s.label} 필터 적용`}
-                >
+                <Link href={s.href} className={rowCls} title={`${s.label} 필터 적용`}>
                   {inner}
                 </Link>
               ) : (
-                <div className="px-1 py-0.5">{inner}</div>
+                <div className={rowCls}>{inner}</div>
               )}
             </li>
           );

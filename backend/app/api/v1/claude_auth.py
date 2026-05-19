@@ -236,6 +236,57 @@ def _claude_version() -> str | None:
 # Routes
 # ---------------------------------------------------------------------------
 
+def _normalize_expires_at(raw: Any) -> int | None:
+    """Return ``expiresAt`` as epoch milliseconds (CLI canonical format).
+
+    Older credentials written by PR 10-AS (before PR 10-AT) stored
+    seconds-since-epoch instead — those values are ~10^10 which the CLI
+    interprets as ms-since-epoch and shows as "1970-01" in the UI. We
+    detect the magnitude and migrate transparently on read: any value
+    smaller than 10^11 (i.e. ~year 5138 in seconds, but year 1973 in ms)
+    is treated as seconds and multiplied by 1000.
+    """
+    if raw is None:
+        return None
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        return None
+    # 10^11 ms = 1973-03; any reasonable token expiry in ms is far above
+    # that. Anything below means it must be seconds.
+    if 0 < v < 100_000_000_000:
+        return v * 1000
+    return v
+
+
+def _migrate_credentials_if_needed(creds: dict[str, Any]) -> dict[str, Any]:
+    """Rewrite ``.credentials.json`` if its expiresAt is in seconds.
+
+    The CLI itself uses ``Date.now()`` (ms) for comparison, so a seconds
+    value makes the CLI think the token expired in 1970 and refresh on
+    every AI call — needlessly burning the refresh_token quota and
+    sometimes failing. Migrate once on first status read after upgrade.
+    """
+    oauth = creds.get("claudeAiOauth")
+    if not isinstance(oauth, dict):
+        return creds
+    raw = oauth.get("expiresAt")
+    if raw is None:
+        return creds
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        return creds
+    if 0 < v < 100_000_000_000:
+        oauth["expiresAt"] = v * 1000
+        try:
+            _write_credentials(creds)
+            log.info("claude_auth.expires_at_migrated_to_ms", from_seconds=v)
+        except OSError as e:
+            log.warning("claude_auth.migration_write_failed", error=str(e))
+    return creds
+
+
 @router.get("/status", response_model=StatusOut, response_model_by_alias=True)
 async def status_route() -> StatusOut:
     creds = _read_credentials()
@@ -246,11 +297,12 @@ async def status_route() -> StatusOut:
             cli_present=cli_version is not None,
             cli_version=cli_version,
         )
+    creds = _migrate_credentials_if_needed(creds)
     oauth = creds.get("claudeAiOauth") or {}
-    expires_at = oauth.get("expiresAt")
+    expires_at = _normalize_expires_at(oauth.get("expiresAt"))
     return StatusOut(
         logged_in=True,
-        expires_at=int(expires_at) if expires_at is not None else None,
+        expires_at=expires_at,
         scopes=list(oauth.get("scopes") or []),
         cli_present=cli_version is not None,
         cli_version=cli_version,
