@@ -50,9 +50,9 @@ const STATUS_LABEL: Record<SandboxStatus, string> = {
 };
 
 const STATUS_TONE: Record<SandboxStatus, string> = {
-  pending: "border-neutral-700 bg-neutral-700/30 text-neutral-300",
+  pending: "border-neutral-700 bg-neutral-700/30 text-neutral-700 dark:text-neutral-300",
   running: "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200",
-  stopped: "border-neutral-700 bg-surface-2 text-neutral-400",
+  stopped: "border-neutral-700 bg-neutral-50 dark:bg-surface-2 text-neutral-400",
   expired: "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200",
   failed: "border-rose-500/40 bg-rose-500/10 text-rose-800 dark:text-rose-200",
 };
@@ -117,16 +117,16 @@ export function SandboxSessionsPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-neutral-800 bg-surface-1 px-3 py-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-surface-1 px-3 py-2 text-xs">
         <div className="flex flex-wrap items-center gap-3 text-neutral-400">
           <span>
             현재 실행 중{" "}
             <span className="font-semibold text-emerald-700 dark:text-emerald-300">{data.runningCount}</span>개
           </span>
           <span>
-            목록 표시 <span className="text-neutral-200">{data.total}</span>개
+            목록 표시 <span className="text-neutral-800 dark:text-neutral-200">{data.total}</span>개
           </span>
-          <label className="flex cursor-pointer items-center gap-1.5 text-neutral-400 hover:text-neutral-200">
+          <label className="flex cursor-pointer items-center gap-1.5 text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200">
             <input
               type="checkbox"
               checked={includeStopped}
@@ -172,13 +172,13 @@ export function SandboxSessionsPanel() {
       )}
 
       {data.items.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-neutral-700 bg-surface-1 p-6 text-center text-xs text-neutral-500">
+        <div className="rounded-lg border border-dashed border-neutral-700 bg-white dark:bg-surface-1 p-6 text-center text-xs text-neutral-500">
           {includeStopped
             ? "표시할 세션이 없습니다."
             : "현재 실행 중인 샌드박스 세션이 없습니다."}
         </div>
       ) : (
-        <ul className="divide-y divide-neutral-800 overflow-hidden rounded-md border border-neutral-800">
+        <ul className="divide-y divide-neutral-800 overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
           {data.items.map((item) => (
             <SessionRow
               key={item.id}
@@ -190,10 +190,10 @@ export function SandboxSessionsPanel() {
         </ul>
       )}
 
-      <div className="space-y-2 border-t border-neutral-800 pt-4">
+      <div className="space-y-2 border-t border-neutral-200 dark:border-neutral-800 pt-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold text-neutral-100">
+            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
               vulhub 공식 환경 동기화
             </h3>
             <p className="mt-0.5 text-xs text-neutral-500">
@@ -261,7 +261,7 @@ function SessionRow({
 }) {
   const stoppable = item.status === "running" || item.status === "pending";
   return (
-    <li className="flex flex-wrap items-center gap-3 bg-surface-1 px-3 py-2.5 text-xs">
+    <li className="flex flex-wrap items-center gap-3 bg-white dark:bg-surface-1 px-3 py-2.5 text-xs">
       <span
         className={cn(
           "inline-flex shrink-0 items-center gap-1 rounded border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
@@ -280,7 +280,7 @@ function SessionRow({
           {item.cveId ? (
             <Link
               href={`/cve/${item.cveId}`}
-              className="inline-flex items-center gap-1 font-mono text-sm text-neutral-100 hover:text-sky-700 dark:hover:text-sky-300 hover:underline"
+              className="inline-flex items-center gap-1 font-mono text-sm text-neutral-900 dark:text-neutral-100 hover:text-sky-700 dark:hover:text-sky-300 hover:underline"
               title="이 세션이 연결된 CVE 상세 페이지로 이동"
             >
               {item.cveId}
@@ -289,7 +289,7 @@ function SessionRow({
           ) : (
             <span className="font-mono text-sm text-neutral-500">CVE 정보 없음</span>
           )}
-          <span className="rounded border border-neutral-800 bg-surface-2 px-1.5 py-0.5 text-[10px] text-neutral-400">
+          <span className="rounded border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-1.5 py-0.5 text-[10px] text-neutral-400">
             {SOURCE_LABEL[item.labSource]}
           </span>
           <span className="font-mono text-[10px] text-neutral-500">{item.labKind}</span>

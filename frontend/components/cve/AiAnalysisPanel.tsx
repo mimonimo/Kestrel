@@ -40,7 +40,7 @@ function CopyButton({ text }: { text: string }) {
         "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors",
         copied
           ? "text-emerald-700 dark:text-emerald-300"
-          : "text-neutral-400 hover:bg-surface-3 hover:text-neutral-100",
+          : "text-neutral-400 hover:bg-surface-3 hover:text-neutral-900 dark:hover:text-neutral-100",
       )}
       aria-label="페이로드 복사"
     >
@@ -55,18 +55,18 @@ function CodeBlock({ source }: { source: string }) {
   const lines = useMemo(() => source.replace(/\n$/, "").split("\n"), [source]);
 
   return (
-    <div className="overflow-hidden rounded-md border border-neutral-800 bg-surface-2">
-      <div className="flex items-center justify-between border-b border-neutral-800 bg-surface-3 px-3 py-1.5">
-        <span className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">
+    <div className="overflow-hidden rounded-md border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-2">
+      <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-3 py-1.5 dark:border-neutral-800 dark:bg-surface-3">
+        <span className="font-mono text-[10px] uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
           {language}
         </span>
         <CopyButton text={source} />
       </div>
-      <pre className="overflow-x-auto px-0 py-3 text-xs leading-relaxed text-neutral-100">
+      <pre className="overflow-x-auto px-0 py-3 text-xs leading-relaxed text-neutral-800 dark:text-neutral-100">
         <code className="block font-mono">
           {lines.map((line, i) => (
             <div key={i} className="flex">
-              <span className="sticky left-0 select-none bg-surface-2 pl-3 pr-3 text-right font-mono text-[10px] text-neutral-600">
+              <span className="sticky left-0 select-none bg-neutral-50 pl-3 pr-3 text-right font-mono text-[10px] text-neutral-500 dark:bg-surface-2 dark:text-neutral-600">
                 {String(i + 1).padStart(2, " ")}
               </span>
               <span className="whitespace-pre pr-4">{line || " "}</span>
@@ -100,7 +100,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
           <button
             type="button"
             onClick={() => analyze.mutate()}
-            className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-200"
+            className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
           >
             <RotateCcw className="h-3 w-3" />
             다시 분석
@@ -110,16 +110,16 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
       <CardContent className="space-y-4">
         {!data && !analyze.isPending && !error && (
           <div className="flex flex-col items-start gap-2">
-            <p className="text-sm text-neutral-400">
-              이 CVE 의 공격 시나리오, 재현 가능한 PoC 페이로드, 그리고 즉시 적용
-              가능한 차단 패치 항목을 한 번에 받아봅니다. 분석 결과는 보안 운영팀이
-              그대로 점검·티켓팅에 사용할 수 있는 형태로 정리됩니다.
+            <p className="text-sm text-neutral-700 dark:text-neutral-400">
+              공격 시나리오 · 재현 가능한 PoC 페이로드 · 즉시 적용 가능한 차단
+              패치를 한 번에. 보안 운영팀이 그대로 점검·티켓팅에 쓸 수 있는
+              형태로 정리됩니다.
             </p>
             <Button
               type="button"
               onClick={() => analyze.mutate()}
               size="md"
-              className="mt-1"
+              className="mt-1 rounded-full bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:text-white dark:hover:bg-violet-400"
             >
               <Sparkles className="mr-1.5 h-4 w-4" />
               AI 심층 분석 요청
@@ -128,9 +128,9 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
         )}
 
         {analyze.isPending && (
-          <div className="flex items-center gap-2 py-4 text-sm text-neutral-400">
+          <div className="flex items-center gap-2 py-4 text-sm text-neutral-700 dark:text-neutral-400">
             <Loader2 className="h-4 w-4 animate-spin text-violet-600 dark:text-violet-400" />
-            AI가 취약점을 분석 중입니다…
+            AI 가 취약점을 분석 중입니다…
           </div>
         )}
 
@@ -155,22 +155,22 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
         {data && (
           <div className="space-y-5">
             <section>
-              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-500">
                 공격 기법
               </h3>
-              <p className="whitespace-pre-line text-sm leading-relaxed text-neutral-200">
+              <p className="whitespace-pre-line text-sm leading-relaxed text-neutral-800 dark:text-neutral-200">
                 {data.attackMethod}
               </p>
             </section>
 
             <section>
-              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-500">
                 예시 페이로드 ({data.payloadExamples.length}종)
               </h3>
               <div className="space-y-3">
                 {data.payloadExamples.map((p, i) => (
                   <div key={i} className="space-y-1">
-                    <div className="text-[11px] font-medium text-neutral-500">
+                    <div className="text-[11px] font-medium text-neutral-500 dark:text-neutral-500">
                       #{i + 1}
                     </div>
                     <CodeBlock source={p} />
@@ -180,14 +180,14 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
             </section>
 
             <section>
-              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-500">
                 패치 / 대응 항목 ({data.mitigations.length}개)
               </h3>
               <ul className="space-y-2">
                 {data.mitigations.map((item, i) => (
                   <li
                     key={i}
-                    className="rounded-md border border-neutral-800 bg-surface-2 p-3 text-sm leading-relaxed text-neutral-200"
+                    className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm leading-relaxed text-neutral-800 dark:border-neutral-800 dark:bg-surface-2 dark:text-neutral-200"
                   >
                     <span className="mr-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-[11px] font-semibold text-violet-700 dark:text-violet-300">
                       {i + 1}

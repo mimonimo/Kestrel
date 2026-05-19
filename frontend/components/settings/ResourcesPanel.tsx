@@ -116,7 +116,7 @@ function CardShell({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-neutral-800 bg-surface-1 p-5">
+    <section className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-surface-1 p-5">
       <header className="mb-4 flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           <div
@@ -130,7 +130,7 @@ function CardShell({
             <Icon className="h-4 w-4" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-neutral-100">{title}</h2>
+            <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{title}</h2>
             <p className="mt-0.5 text-xs text-neutral-500">{subtitle}</p>
           </div>
         </div>
@@ -158,11 +158,11 @@ function CardShell({
 
 function StatChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-neutral-800 bg-surface-2 px-3 py-2">
+    <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 py-2">
       <div className="text-[10px] uppercase tracking-wide text-neutral-500">
         {label}
       </div>
-      <div className="mt-0.5 font-mono text-sm text-neutral-100">{value}</div>
+      <div className="mt-0.5 font-mono text-sm text-neutral-900 dark:text-neutral-100">{value}</div>
     </div>
   );
 }
@@ -189,8 +189,8 @@ function DbCard({ res, onRefresh }: { res: DbResource; onRefresh: () => void }) 
       </div>
 
       {res.tableSizes.length > 0 && (
-        <details className="mt-4 rounded-md border border-neutral-800 bg-surface-2">
-          <summary className="cursor-pointer px-3 py-2 text-xs text-neutral-300 hover:text-neutral-100">
+        <details className="mt-4 rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2">
+          <summary className="cursor-pointer px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100">
             테이블별 크기 ({res.tableSizes.length}개)
           </summary>
           <table className="w-full text-xs">
@@ -203,14 +203,14 @@ function DbCard({ res, onRefresh }: { res: DbResource; onRefresh: () => void }) 
             </thead>
             <tbody className="divide-y divide-neutral-800">
               {res.tableSizes.map((t: TableSize) => (
-                <tr key={t.name} className="bg-surface-1">
-                  <td className="px-3 py-1.5 font-mono text-neutral-200">
+                <tr key={t.name} className="bg-white dark:bg-surface-1">
+                  <td className="px-3 py-1.5 font-mono text-neutral-800 dark:text-neutral-200">
                     {t.name}
                   </td>
-                  <td className="px-3 py-1.5 text-right text-neutral-300">
+                  <td className="px-3 py-1.5 text-right text-neutral-700 dark:text-neutral-300">
                     {formatNumber(t.rows)}
                   </td>
-                  <td className="px-3 py-1.5 text-right text-neutral-200">
+                  <td className="px-3 py-1.5 text-right text-neutral-800 dark:text-neutral-200">
                     {formatBytes(t.totalBytes)}
                   </td>
                 </tr>
@@ -329,10 +329,10 @@ function ActionRow({
     mutation.mutate();
   };
   return (
-    <div className="rounded-md border border-neutral-800 bg-surface-2 p-3">
+    <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-sm font-medium text-neutral-100">
+          <div className="flex items-center gap-2 text-sm font-medium text-neutral-900 dark:text-neutral-100">
             <Icon
               className={cn(
                 "h-4 w-4",

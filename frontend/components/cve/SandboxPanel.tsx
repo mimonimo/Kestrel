@@ -98,7 +98,7 @@ function SourceBadge({
     },
     generic: {
       label: "표준 실습 환경",
-      cls: "border-neutral-600 bg-neutral-700/30 text-neutral-300",
+      cls: "border-neutral-600 bg-neutral-700/30 text-neutral-700 dark:text-neutral-300",
       Icon: FlaskConical,
       tip: "취약점 유형(예: XSS, RCE)별로 미리 만들어 둔 표준 환경입니다.",
     },
@@ -196,19 +196,19 @@ function ContainerAccessHelper({ containerName }: { containerName: string }) {
     }
   };
   return (
-    <div className="mt-3 rounded border border-neutral-800 bg-surface-2 p-3 text-xs">
-      <div className="mb-2 flex items-center gap-1.5 text-neutral-300">
+    <div className="mt-3 rounded border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 p-3 text-xs">
+      <div className="mb-2 flex items-center gap-1.5 text-neutral-700 dark:text-neutral-300">
         <span className="font-medium">컨테이너 접속</span>
         <span className="text-neutral-500">— 호스트 터미널에서 실행</span>
       </div>
       <div className="flex items-center gap-2">
-        <code className="flex-1 select-all overflow-x-auto rounded border border-neutral-800 bg-neutral-900 px-2 py-1.5 font-mono text-[11px] text-emerald-700 dark:text-emerald-300">
+        <code className="flex-1 select-all overflow-x-auto rounded border border-neutral-200 dark:border-neutral-800 bg-neutral-900 px-2 py-1.5 font-mono text-[11px] text-emerald-700 dark:text-emerald-300">
           {cmd}
         </code>
         <button
           type="button"
           onClick={onCopy}
-          className="inline-flex items-center gap-1 rounded border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 hover:border-neutral-500 hover:text-neutral-100"
+          className="inline-flex items-center gap-1 rounded border border-neutral-700 px-2 py-1 text-[11px] text-neutral-700 dark:text-neutral-300 hover:border-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
         >
           {copied ? <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3 w-3" />}
           {copied ? "복사됨" : "복사"}
@@ -271,17 +271,17 @@ function CandidatePivotList({
   // is open. Show toggle unconditionally as long as a session exists;
   // empty list inside collapses the body.
   return (
-    <div className="mt-2 rounded border border-neutral-800 bg-surface-2/40">
+    <div className="mt-2 rounded border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2/40">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs text-neutral-300 hover:text-neutral-100"
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100"
       >
         <span>다른 합성 환경으로 시작하기</span>
         <span className="text-neutral-500">{open ? "▴" : "▾"}</span>
       </button>
       {open && (
-        <div className="border-t border-neutral-800 px-3 py-2">
+        <div className="border-t border-neutral-200 dark:border-neutral-800 px-3 py-2">
           {list.isLoading && (
             <p className="text-xs text-neutral-500">불러오는 중…</p>
           )}
@@ -305,7 +305,7 @@ function CandidatePivotList({
                       "flex items-center justify-between gap-3 rounded px-2 py-1.5 text-xs",
                       isCurrent
                         ? "bg-amber-500/15 text-amber-100"
-                        : "bg-surface-1 text-neutral-300",
+                        : "bg-white dark:bg-surface-1 text-neutral-700 dark:text-neutral-300",
                     )}
                   >
                     <div className="flex min-w-0 flex-col gap-0.5">
@@ -350,7 +350,7 @@ function CandidatePivotList({
                         type="button"
                         disabled={pinning}
                         onClick={() => onPick(c.mappingId)}
-                        className="rounded border border-neutral-600 px-2 py-0.5 text-[10px] font-medium text-neutral-200 hover:border-neutral-400 hover:text-neutral-100 disabled:opacity-40"
+                        className="rounded border border-neutral-600 px-2 py-0.5 text-[10px] font-medium text-neutral-800 dark:text-neutral-200 hover:border-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 disabled:opacity-40"
                       >
                         {pinning ? "…" : "이 환경으로 시작"}
                       </button>
@@ -415,7 +415,7 @@ function RunResult({ result }: { result: SandboxExecResponse }) {
         <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
           AI 판정 결과
         </div>
-        <p className="mt-1 text-sm text-neutral-200">{verdict.summary}</p>
+        <p className="mt-1 text-sm text-neutral-800 dark:text-neutral-200">{verdict.summary}</p>
         {verdict.evidence && (
           <p className="mt-1 text-xs text-neutral-400">판단 근거: {verdict.evidence}</p>
         )}
@@ -433,7 +433,7 @@ function RunResult({ result }: { result: SandboxExecResponse }) {
         <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
           실제로 보낸 페이로드
         </div>
-        <pre className="mt-1 overflow-x-auto rounded border border-neutral-800 bg-surface-2 p-2 font-mono text-[11px] text-neutral-100">
+        <pre className="mt-1 overflow-x-auto rounded border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 p-2 font-mono text-[11px] text-neutral-900 dark:text-neutral-100">
           {adapted.payload}
         </pre>
         {adapted.rationale && (
@@ -447,7 +447,7 @@ function RunResult({ result }: { result: SandboxExecResponse }) {
         <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
           서버 응답 본문 (앞부분{exchange.bodyTruncated ? ", 일부 잘림" : ""})
         </div>
-        <pre className="mt-1 max-h-64 overflow-auto rounded border border-neutral-800 bg-surface-2 p-2 font-mono text-[11px] text-neutral-100">
+        <pre className="mt-1 max-h-64 overflow-auto rounded border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 p-2 font-mono text-[11px] text-neutral-900 dark:text-neutral-100">
           {exchange.body || "(빈 응답)"}
         </pre>
       </div>
@@ -811,7 +811,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
 
         {session && (
           <div className="space-y-3">
-            <div className="rounded border border-neutral-800 bg-surface-2 p-3 text-xs">
+            <div className="rounded border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 p-3 text-xs">
               <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={cn(
@@ -820,7 +820,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
                       ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
                       : session.status === "failed"
                       ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
-                      : "bg-neutral-700/40 text-neutral-300",
+                      : "bg-neutral-700/40 text-neutral-700 dark:text-neutral-300",
                   )}
                 >
                   {session.status}
@@ -884,7 +884,7 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
               )}
               {session.lab?.injectionPoints && session.lab.injectionPoints.length > 0 && (
                 <details className="mt-2">
-                  <summary className="cursor-pointer text-neutral-400 hover:text-neutral-200">
+                  <summary className="cursor-pointer text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200">
                     공격 입력 지점 {session.lab.injectionPoints.length}개
                   </summary>
                   <ul className="mt-2 space-y-1 font-mono text-[11px] text-neutral-400">
@@ -997,8 +997,8 @@ function SynthesisTimeline({
   })();
 
   return (
-    <div className="space-y-3 rounded border border-neutral-800 bg-surface-2 p-3 text-xs">
-      <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
+    <div className="space-y-3 rounded border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 p-3 text-xs">
+      <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-2">
         <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-200">
           <Sparkles className="h-3.5 w-3.5" />
           <span className="font-medium">AI 환경 합성 진행 상황</span>
@@ -1009,7 +1009,7 @@ function SynthesisTimeline({
             onClick={onCancel}
             size="sm"
             variant="ghost"
-            className="h-7 px-2 text-neutral-300 hover:text-neutral-100"
+            className="h-7 px-2 text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             진행 화면 닫기
           </Button>
@@ -1059,7 +1059,7 @@ function SynthesisTimeline({
                         : "text-emerald-800 dark:text-emerald-200"
                       : isCurrent
                         ? "text-amber-800 dark:text-amber-200"
-                        : "text-neutral-300",
+                        : "text-neutral-700 dark:text-neutral-300",
                   )}
                 >
                   {PHASE_LABEL[phase] ?? phase}

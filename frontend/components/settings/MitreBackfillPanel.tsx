@@ -71,13 +71,15 @@ export function MitreBackfillPanel() {
         </Button>
         <Button
           size="md"
-          variant="outline"
+          // Primary action when not in confirm mode (default tone = matches
+          // 저장 등 다른 설정 페이지 primary 버튼). 확인 단계는 위험 신호로
+          // amber outline 으로 전환.
+          variant={confirmFull ? "outline" : "default"}
           disabled={backfill.isPending}
           onClick={onClickFull}
           className={cn(
-            confirmFull
-              ? "border-amber-500/40 text-amber-800 hover:bg-amber-500/10 dark:text-amber-200"
-              : "border-violet-500/40 text-violet-800 hover:bg-violet-500/10 dark:text-violet-200",
+            confirmFull &&
+              "border-amber-500/40 text-amber-800 hover:bg-amber-500/10 dark:text-amber-200",
           )}
         >
           {backfill.isPending && backfill.variables === "full" ? (
@@ -94,7 +96,6 @@ export function MitreBackfillPanel() {
             size="md"
             variant="ghost"
             onClick={() => setConfirmFull(false)}
-            className="text-neutral-600 dark:text-neutral-400"
           >
             취소
           </Button>

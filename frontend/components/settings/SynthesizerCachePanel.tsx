@@ -94,10 +94,10 @@ export function SynthesizerCachePanel() {
 
       <div className="flex flex-wrap items-center gap-3 text-[11px] text-neutral-400">
         <span>
-          최대 보관 기간 <span className="text-neutral-200">{data.maxAgeDays}일</span>
+          최대 보관 기간 <span className="text-neutral-800 dark:text-neutral-200">{data.maxAgeDays}일</span>
         </span>
         <span>
-          현재 사용 중 <span className="text-neutral-200">{data.inUseCount}개</span>
+          현재 사용 중 <span className="text-neutral-800 dark:text-neutral-200">{data.inUseCount}개</span>
         </span>
         {data.missingImageCount > 0 && (
           <span className="text-amber-700 dark:text-amber-300">
@@ -106,7 +106,7 @@ export function SynthesizerCachePanel() {
         )}
         <span>
           가장 오랫동안 사용되지 않은 시점{" "}
-          <span className="text-neutral-200">{formatRelative(data.oldestLastUsedAt)}</span>
+          <span className="text-neutral-800 dark:text-neutral-200">{formatRelative(data.oldestLastUsedAt)}</span>
         </span>
       </div>
 
@@ -140,7 +140,7 @@ export function SynthesizerCachePanel() {
       )}
 
       {data.entries.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-neutral-700 bg-surface-1 p-6 text-center text-xs text-neutral-500">
+        <div className="rounded-lg border border-dashed border-neutral-700 bg-white dark:bg-surface-1 p-6 text-center text-xs text-neutral-500">
           저장된 합성 환경이 없습니다. AI 합성을 한 번도 사용하지 않았거나 모두
           정리되었습니다.
         </div>
@@ -167,12 +167,12 @@ function Stat({
   percent: number;
 }) {
   return (
-    <div className="rounded-md border border-neutral-800 bg-surface-1 p-3">
+    <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-surface-1 p-3">
       <div className="flex items-baseline justify-between">
         <span className="text-[11px] text-neutral-500">{label}</span>
-        <span className="text-sm font-semibold text-neutral-100">{value}</span>
+        <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{value}</span>
       </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2">
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-neutral-50 dark:bg-surface-2">
         <div
           className={cn(
             "h-full rounded-full transition-all",
@@ -191,9 +191,9 @@ function Stat({
 
 function CacheTable({ entries }: { entries: SynthesizeCacheEntry[] }) {
   return (
-    <div className="overflow-hidden rounded-md border border-neutral-800">
+    <div className="overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
       <table className="w-full text-xs">
-        <thead className="bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-500">
+        <thead className="bg-neutral-50 dark:bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-500">
           <tr>
             <th className="px-3 py-2 text-left">CVE</th>
             <th className="px-3 py-2 text-left">환경 식별자</th>
@@ -204,12 +204,12 @@ function CacheTable({ entries }: { entries: SynthesizeCacheEntry[] }) {
         </thead>
         <tbody className="divide-y divide-neutral-800">
           {entries.map((e) => (
-            <tr key={`${e.cveId}-${e.imageTag || e.labKind}`} className="bg-surface-1">
-              <td className="px-3 py-2 font-mono text-neutral-200">{e.cveId}</td>
+            <tr key={`${e.cveId}-${e.imageTag || e.labKind}`} className="bg-white dark:bg-surface-1">
+              <td className="px-3 py-2 font-mono text-neutral-800 dark:text-neutral-200">{e.cveId}</td>
               <td className="px-3 py-2 font-mono text-[10px] text-neutral-400">
                 {e.imageTag || e.labKind}
               </td>
-              <td className="px-3 py-2 text-right text-neutral-200">{e.sizeMb} MB</td>
+              <td className="px-3 py-2 text-right text-neutral-800 dark:text-neutral-200">{e.sizeMb} MB</td>
               <td className="px-3 py-2 text-right text-neutral-400">
                 {formatRelative(e.lastUsedAt)}
                 <span className="ml-1 text-[10px] text-neutral-600">({e.ageDays}일)</span>
@@ -241,7 +241,7 @@ function Badge({
   const cls = {
     amber: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
     sky: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-    neutral: "border-neutral-700 bg-surface-2 text-neutral-400",
+    neutral: "border-neutral-700 bg-neutral-50 dark:bg-surface-2 text-neutral-400",
   }[tone];
   return (
     <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-[10px]", cls)}>

@@ -1109,6 +1109,31 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-AY — 설정/CVE 상세 패널 surface 통일 + MITRE 백필 버튼 톤 정렬 + rounded 강조 ✅
+
+> 사용자 보고:
+> - "난 우리 페이지에서 이부분(분포 패널)이 제일 맘에 들어" → 분포 패널 톤을 전체에.
+> - "동글동글한 느낌 좋아" → rounded-lg/full 일관 유지.
+> - "설정 페이지에 톤 안맞는 버튼 있음 찾아서 수정해"
+
+**Bulk 정규화 — `bg-surface-1` `bg-surface-2` `border-neutral-800` `text-neutral-100/200/300`**
+- 8 파일 (ApiKeyField, SandboxSessionsPanel, SynthesizerCachePanel, AssetsManager, ResourcesPanel, AiSettingsForm, SandboxPanel, AiAnalysisPanel) 라이트/다크 페어링 일괄. 65 surface 토큰 + 59 텍스트 톤 + 12 prefix-variant 보정.
+- 결과: 모든 패널·하위 카드가 `bg-white border-neutral-200` (라이트) ↔ `dark:bg-surface-1 dark:border-neutral-800` (다크) 로 단일 surface 시스템.
+
+**`components/cve/AiAnalysisPanel.tsx`**
+- CodeBlock 라이트/다크 페어링. 코드 블록 라이트 모드 `bg-neutral-50 border-neutral-200`, 헤더 `bg-white`. 가상 line gutter 까지 분리.
+- mitigation `<li>` 카드도 라이트 `bg-neutral-50`, 다크 `bg-surface-2`. 둥근 `rounded-lg`.
+- AI 심층 분석 요청 primary button → `rounded-full bg-violet-600` (panel 의 violet 액센트 톤 사용, rounded-full 로 둥근 느낌 강조).
+- 본문 안내 문장 한 줄로 축소 (TMI 제거).
+
+**`components/settings/MitreBackfillPanel.tsx` — 톤 안 맞는 버튼 fix**
+- "전체 백필 시작" 버튼이 `border-violet-500/40 text-violet-800` outline 으로 다른 설정 페이지 primary 버튼과 톤 불일치 → `variant="default"` (neutral high-contrast) 로 변경. 확인 단계 (`confirmFull`) 만 amber outline 으로 위험 표시.
+- 취소 버튼의 redundant text-neutral 클래스 제거 (Button ghost variant 이 이미 페어링 보유).
+
+**검증**: tsc exit 0. frontend rebuild + `/` 200 + `/settings` 200 + `/cve/<id>` 200.
+
+---
+
 ### PR 10-AX — 가시성 회귀 수정 (active chip, search button, badge contrast) + 다크 surface 톤 완화 ✅
 
 > 사용자 보고 연속:

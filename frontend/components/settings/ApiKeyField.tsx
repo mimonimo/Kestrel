@@ -81,9 +81,9 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-neutral-800 bg-surface-1 p-5">
+    <div className="space-y-3 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-surface-1 p-5">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-neutral-100">{meta.label}</h3>
+        <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{meta.label}</h3>
         <div className="flex shrink-0 items-center gap-2">
           {ready && value && (
             <button
@@ -105,7 +105,7 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
             href={meta.docsUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 rounded border border-neutral-300 px-2 py-1 text-[11px] text-neutral-700 hover:border-neutral-400 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-500 dark:hover:text-neutral-200"
+            className="inline-flex items-center gap-1 rounded border border-neutral-300 px-2 py-1 text-[11px] text-neutral-700 hover:border-neutral-400 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-500 dark:hover:text-neutral-800 dark:hover:text-neutral-200"
           >
             <ExternalLink className="h-3 w-3" />
             발급
@@ -121,7 +121,7 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
           <button
             type="button"
             onClick={() => setShow((s) => !s)}
-            className="rounded p-1 text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-500 dark:hover:bg-surface-3 dark:hover:text-neutral-200"
+            className="rounded p-1 text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-500 dark:hover:bg-surface-3 dark:hover:text-neutral-800 dark:hover:text-neutral-200"
             aria-label={show ? "값 숨기기" : "값 보기"}
           >
             {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

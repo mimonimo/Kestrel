@@ -102,7 +102,7 @@ function CredentialList({
 
   if (items.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-neutral-700 bg-surface-1 p-6 text-center text-sm text-neutral-400">
+      <div className="rounded-lg border border-dashed border-neutral-700 bg-white dark:bg-surface-1 p-6 text-center text-sm text-neutral-400">
         저장된 AI 키가 없습니다. 아래에서 새로 추가해주세요.
       </div>
     );
@@ -110,7 +110,7 @@ function CredentialList({
 
   return (
     <div className="space-y-2">
-      <div className="text-xs font-medium text-neutral-300">저장된 키</div>
+      <div className="text-xs font-medium text-neutral-700 dark:text-neutral-300">저장된 키</div>
       <ul className="space-y-2">
         {items.map((c) => {
           const isActive = c.id === activeId;
@@ -124,7 +124,7 @@ function CredentialList({
                 "flex items-center justify-between gap-3 rounded-lg border p-3",
                 isActive
                   ? "border-sky-500/50 bg-sky-500/10"
-                  : "border-neutral-800 bg-surface-1",
+                  : "border-neutral-200 dark:border-neutral-800 bg-white dark:bg-surface-1",
               )}
             >
               <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -141,7 +141,7 @@ function CredentialList({
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium text-neutral-100">
+                    <span className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
                       {c.label}
                     </span>
                     {isActive && (
@@ -367,7 +367,7 @@ function ModelSelect({
       disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
       aria-label={`${credential.label} 모델 변경`}
-      className="cursor-pointer rounded border border-neutral-800 bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-neutral-200 hover:border-neutral-600 focus:border-neutral-500 focus:outline-none disabled:cursor-wait"
+      className="cursor-pointer rounded border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-neutral-800 dark:text-neutral-200 hover:border-neutral-600 focus:border-neutral-500 focus:outline-none disabled:cursor-wait"
     >
       {options.map((m) => (
         <option key={m} value={m}>
@@ -428,16 +428,16 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
         if (!canSubmit) return;
         create.mutate();
       }}
-      className="space-y-4 rounded-lg border border-neutral-800 bg-surface-1 p-5"
+      className="space-y-4 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-surface-1 p-5"
     >
       <div className="flex items-center gap-2">
         <Plus className="h-4 w-4 text-neutral-400" />
-        <h3 className="text-sm font-semibold text-neutral-100">새 키 추가</h3>
+        <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">새 키 추가</h3>
       </div>
 
       <div>
         <label className="block text-xs">
-          <span className="mb-1 block font-medium text-neutral-300">
+          <span className="mb-1 block font-medium text-neutral-700 dark:text-neutral-300">
             이름 <span className="text-neutral-500">(선택, 비우면 자동 생성)</span>
           </span>
           <Input
@@ -453,7 +453,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
       <div className="grid gap-4 sm:grid-cols-2">
         {PROVIDERS.length > 1 ? (
           <label className="block text-xs">
-            <span className="mb-1 block font-medium text-neutral-300">AI 제공자</span>
+            <span className="mb-1 block font-medium text-neutral-700 dark:text-neutral-300">AI 제공자</span>
             <select
               value={provider}
               onChange={(e) => {
@@ -463,7 +463,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
                 setModel(meta.models[0]);
                 setBaseUrl(meta.defaultBaseUrl ?? "");
               }}
-              className="w-full rounded-md border border-neutral-800 bg-surface-2 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-600 focus:outline-none"
+              className="w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:border-neutral-600 focus:outline-none"
             >
               {PROVIDERS.map((p) => (
                 <option key={p.value} value={p.value}>
@@ -477,19 +477,19 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
           // 없음. 정적 라벨로 표시 — sandbox provider 매트릭스 단순화의
           // 시각적 반영.
           <div className="block text-xs">
-            <span className="mb-1 block font-medium text-neutral-300">AI 제공자</span>
-            <div className="flex h-[42px] w-full items-center rounded-md border border-neutral-800 bg-surface-2 px-3 text-sm text-neutral-100">
+            <span className="mb-1 block font-medium text-neutral-700 dark:text-neutral-300">AI 제공자</span>
+            <div className="flex h-[42px] w-full items-center rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 text-sm text-neutral-900 dark:text-neutral-100">
               {providerMeta.label}
             </div>
           </div>
         )}
 
         <label className="block text-xs">
-          <span className="mb-1 block font-medium text-neutral-300">모델</span>
+          <span className="mb-1 block font-medium text-neutral-700 dark:text-neutral-300">모델</span>
           <select
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            className="w-full rounded-md border border-neutral-800 bg-surface-2 px-3 py-2 text-sm text-neutral-100 focus:border-neutral-600 focus:outline-none"
+            className="w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:border-neutral-600 focus:outline-none"
           >
             {providerMeta.models.map((m) => (
               <option key={m} value={m}>
@@ -509,7 +509,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
       {keyRequired && (
         <div>
           <label className="block text-xs">
-            <span className="mb-1 block font-medium text-neutral-300">
+            <span className="mb-1 block font-medium text-neutral-700 dark:text-neutral-300">
               Base URL{" "}
               <span className="text-neutral-500">
                 {providerMeta.defaultBaseUrl ? "(자동 채움, 필요 시 수정)" : "(선택사항)"}
@@ -534,7 +534,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
       {keyRequired ? (
         <div>
           <div className="mb-1 flex items-center justify-between">
-            <span className="text-xs font-medium text-neutral-300">API 키</span>
+            <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">API 키</span>
           </div>
           <div className="relative">
             <Input
@@ -550,7 +550,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
             <button
               type="button"
               onClick={() => setShowKey((s) => !s)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700 dark:hover:bg-surface-3 dark:hover:text-neutral-200"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700 dark:hover:bg-surface-3 dark:hover:text-neutral-800 dark:hover:text-neutral-200"
               aria-label={showKey ? "값 숨기기" : "값 보기"}
             >
               {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -562,14 +562,14 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
           </p>
         </div>
       ) : (
-        <div className="rounded-md border border-neutral-800 bg-surface-2 px-3 py-2 text-[11px] text-neutral-400">
+        <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 py-2 text-[11px] text-neutral-400">
           이 제공자는 별도 API 키가 필요 없습니다. 호스트에 로그인된 Claude
           구독 자격 증명을 그대로 사용합니다.
         </div>
       )}
 
       {hasExisting && (
-        <label className="flex items-center gap-2 text-xs text-neutral-300">
+        <label className="flex items-center gap-2 text-xs text-neutral-700 dark:text-neutral-300">
           <input
             type="checkbox"
             checked={activate}
