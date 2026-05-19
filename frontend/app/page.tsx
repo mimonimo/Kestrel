@@ -84,19 +84,11 @@ function Dashboard() {
 
   return (
     <div className="mx-auto max-w-7xl px-6">
-      <section className="pt-16 pb-10 text-center">
-        <h1 className="text-4xl sm:text-5xl font-bold tracking-tight mb-3">
-          <span className="bg-gradient-to-r from-blue-400 via-sky-300 to-cyan-300 bg-clip-text text-transparent">
-            Kestrel
-          </span>
-        </h1>
-        <p className="text-neutral-400 text-sm sm:text-base mb-8">
-          NVD · Exploit-DB · GitHub Advisory 를 한 곳에서. 매일 들어오는 CVE 와
-          제로데이를 한 화면에서 모니터링하세요.
-        </p>
-        <div className="mx-auto max-w-2xl">
-          <SearchBar initialQuery={queryInput} onSearch={(q) => setQueryInput(q)} />
-        </div>
+      {/* Dashboard header — compact, work-focused (was a hero-style landing).
+          Keeps the search bar accessible at the top of the page but doesn't
+          dominate the screen with branding the user has already arrived at. */}
+      <section className="pt-8 pb-6">
+        <SearchBar initialQuery={queryInput} onSearch={(q) => setQueryInput(q)} />
       </section>
 
       <div className="mb-6">

@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { api, type FacetBucket } from "@/lib/api";
+import { PIE_PALETTE as SHARED_PIE_PALETTE, PieGroup, type PieSlice } from "@/components/ui/pie-chart";
 import { cn } from "@/lib/utils";
 
 const SEV_ORDER = ["critical", "high", "medium", "low"] as const;
@@ -61,11 +62,9 @@ const SOURCE_TINT: Record<string, string> = {
   exploit_db: "bg-amber-500/80",
 };
 
-// Cycle of distinct colors for non-canonical groups (types / domains).
-const PIE_PALETTE = [
-  "#f472b6", "#a78bfa", "#38bdf8", "#34d399",
-  "#fbbf24", "#fb923c", "#f43f5e", "#22d3ee",
-];
+// Re-export the shared palette so existing local callers keep working
+// without churn. The actual array lives in components/ui/pie-chart.
+const PIE_PALETTE = SHARED_PIE_PALETTE;
 
 const VIEW_KEY = "kestrel:vuln-dist:view"; // 'bar' | 'pie'
 const COLLAPSED_KEY = "kestrel:vuln-dist:collapsed"; // '1' | '0'
@@ -212,30 +211,28 @@ export function VulnDistributionPanel() {
   ];
 
   return (
-    <section className="mb-8 rounded-xl border border-sky-500/20 bg-gradient-to-br from-sky-500/5 to-transparent p-5">
+    <section className="mb-8 rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-surface-1">
       <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/15 ring-1 ring-sky-400/30">
-            <BarChart3 className="h-4 w-4 text-sky-700 dark:text-sky-300" />
-          </div>
-          <h2 className="text-base font-semibold text-neutral-100">
+        <div className="flex min-w-0 items-baseline gap-2.5">
+          <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
             수집된 취약점 분포
           </h2>
-          <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-xs font-medium text-sky-800 dark:text-sky-200">
-            총 {formatNumber(total)}건
+          <span className="tabular-nums text-sm text-neutral-700 dark:text-neutral-400">
+            {formatNumber(total)}
+            <span className="ml-0.5 text-xs text-neutral-500 dark:text-neutral-600">건</span>
           </span>
           {dayLo && dayHi && (
-            <span className="text-xs text-neutral-500">
-              {dayLo} ~ {dayHi}
+            <span className="hidden text-[11px] tabular-nums text-neutral-500 dark:text-neutral-600 sm:inline">
+              {dayLo} – {dayHi}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           {/* View toggle (bar / pie) */}
           <div
             role="group"
             aria-label="차트 보기 방식"
-            className="inline-flex overflow-hidden rounded-md border border-neutral-800 bg-surface-2"
+            className="inline-flex overflow-hidden rounded-md border border-neutral-300 bg-white dark:border-neutral-800 dark:bg-surface-2"
           >
             <button
               type="button"
@@ -243,8 +240,8 @@ export function VulnDistributionPanel() {
               className={cn(
                 "inline-flex items-center gap-1 px-2 py-1 text-[11px] transition-colors",
                 view === "bar"
-                  ? "bg-sky-500/15 text-sky-800 dark:text-sky-200"
-                  : "text-neutral-400 hover:text-neutral-100",
+                  ? "bg-neutral-100 text-neutral-900 dark:bg-surface-3 dark:text-neutral-100"
+                  : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
               )}
               aria-pressed={view === "bar"}
             >
@@ -255,10 +252,10 @@ export function VulnDistributionPanel() {
               type="button"
               onClick={() => setViewPersisted("pie")}
               className={cn(
-                "inline-flex items-center gap-1 border-l border-neutral-800 px-2 py-1 text-[11px] transition-colors",
+                "inline-flex items-center gap-1 border-l border-neutral-300 px-2 py-1 text-[11px] transition-colors dark:border-neutral-800",
                 view === "pie"
-                  ? "bg-sky-500/15 text-sky-800 dark:text-sky-200"
-                  : "text-neutral-400 hover:text-neutral-100",
+                  ? "bg-neutral-100 text-neutral-900 dark:bg-surface-3 dark:text-neutral-100"
+                  : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
               )}
               aria-pressed={view === "pie"}
             >
@@ -269,18 +266,12 @@ export function VulnDistributionPanel() {
           <button
             type="button"
             onClick={() => setCollapsedPersisted(!collapsed)}
-            className="inline-flex items-center gap-1 rounded-md border border-neutral-800 bg-surface-2 px-2 py-1 text-[11px] text-neutral-400 hover:text-neutral-100"
+            className="inline-flex items-center gap-1 rounded-md border border-neutral-300 px-2 py-1 text-[11px] text-neutral-600 hover:text-neutral-900 dark:border-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-100"
             aria-expanded={!collapsed}
+            aria-label={collapsed ? "펼치기" : "숨기기"}
+            title={collapsed ? "펼치기" : "숨기기"}
           >
-            {collapsed ? (
-              <>
-                <ChevronDown className="h-3 w-3" /> 펼치기
-              </>
-            ) : (
-              <>
-                <ChevronUp className="h-3 w-3" /> 숨기기
-              </>
-            )}
+            {collapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
           </button>
         </div>
       </header>
@@ -290,7 +281,7 @@ export function VulnDistributionPanel() {
           {groups.map((g) => (
             <Group key={g.title} title={g.title}>
               {g.slices.length === 0 ? (
-                <p className="text-xs text-neutral-500">집계 데이터 없음.</p>
+                <p className="text-xs text-neutral-500 dark:text-neutral-600">집계 데이터 없음.</p>
               ) : view === "pie" ? (
                 <PieGroup slices={g.slices} total={total} />
               ) : (
@@ -312,7 +303,7 @@ export function VulnDistributionPanel() {
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="space-y-2">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-500">
         {title}
       </h3>
       {children}
@@ -392,105 +383,7 @@ function BarGroup({
   );
 }
 
-function PieGroup({ slices, total }: { slices: Slice[]; total: number }) {
-  const groupTotal = slices.reduce((s, x) => s + x.count, 0);
-  const ringDenom = groupTotal || 1;
-  return (
-    <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start sm:gap-4">
-      <SvgPie slices={slices} total={ringDenom} />
-      <ul className="min-w-0 flex-1 space-y-1 text-[11px]">
-        {slices.map((s) => {
-          const groupPct = (s.count / ringDenom) * 100;
-          const corpusPct = total > 0 ? (s.count / total) * 100 : 0;
-          const inner = (
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="flex min-w-0 items-center gap-1.5">
-                <span
-                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
-                  style={{ backgroundColor: s.color }}
-                />
-                <span className="truncate text-neutral-300">{s.label}</span>
-              </span>
-              <span className="shrink-0 tabular-nums text-neutral-400">
-                {formatNumber(s.count)}
-                <span
-                  className="ml-1 text-neutral-600"
-                  title={`그룹 내 ${groupPct.toFixed(1)}% · 전체 ${corpusPct.toFixed(2)}%`}
-                >
-                  ({groupPct.toFixed(0)}%)
-                </span>
-              </span>
-            </div>
-          );
-          return (
-            <li key={s.label}>
-              {s.href ? (
-                <Link
-                  href={s.href}
-                  className="block rounded px-1 py-0.5 transition-colors hover:bg-sky-500/5"
-                  title={`${s.label} 필터 적용`}
-                >
-                  {inner}
-                </Link>
-              ) : (
-                <div className="px-1 py-0.5">{inner}</div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-// Inline SVG donut — no external chart lib. Each slice is a stroke-dash
-// segment along a circle, ordered head-to-tail. Cap the donut at 100px
-// so it fits in a 4-column grid even on narrow widths.
-function SvgPie({ slices, total }: { slices: Slice[]; total: number }) {
-  const size = 96;
-  const r = 36;
-  const cx = size / 2;
-  const cy = size / 2;
-  const circumference = 2 * Math.PI * r;
-  let acc = 0;
-  return (
-    <svg
-      viewBox={`0 0 ${size} ${size}`}
-      width={size}
-      height={size}
-      role="img"
-      aria-label="비율 차트"
-      className="shrink-0 -rotate-90"
-    >
-      <circle
-        cx={cx}
-        cy={cy}
-        r={r}
-        fill="none"
-        stroke="rgb(38 38 38 / 0.6)"
-        strokeWidth={14}
-      />
-      {slices.map((s) => {
-        const frac = total > 0 ? s.count / total : 0;
-        const len = circumference * frac;
-        const dasharray = `${len} ${circumference}`;
-        const dashoffset = -circumference * (acc / total);
-        acc += s.count;
-        return (
-          <circle
-            key={s.label}
-            cx={cx}
-            cy={cy}
-            r={r}
-            fill="none"
-            stroke={s.color}
-            strokeWidth={14}
-            strokeDasharray={dasharray}
-            strokeDashoffset={dashoffset}
-            strokeLinecap="butt"
-          />
-        );
-      })}
-    </svg>
-  );
-}
+// Local Slice type is structurally identical to the shared PieSlice — keep
+// it as a re-export so existing callers in this file (BarGroup etc.) don't
+// need to import from a separate module just to type their arguments.
+export type { PieSlice as _PieSliceReexport };

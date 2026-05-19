@@ -4,105 +4,63 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
+import { PIE_PALETTE, PieGroup, type PieSlice } from "@/components/ui/pie-chart";
 import { api, type LabKindStatsBucket } from "@/lib/api";
-import { cn } from "@/lib/utils";
 
 const KEY = ["sandbox", "lab-kind-stats"];
 
-// Per-source / per-kind tints. Keep in lockstep with SandboxPanel's
-// LabKindBadge palette so the dashboard and the in-session badge feel
-// like the same axis. Unknown kinds fall through to neutral grey so
-// adding a new catalog entry doesn't break the panel.
-const SOURCE_TINT: Record<string, string> = {
-  vulhub: "bg-emerald-500/20 text-emerald-800 dark:text-emerald-200",
-  generic: "bg-neutral-700/40 text-neutral-300",
-  synthesized: "bg-amber-500/20 text-amber-800 dark:text-amber-200",
+// Canonical source palette — keep aligned with SandboxPanel's badges so
+// the dashboard chart and in-session chip feel like the same axis.
+// Hex (not Tailwind classes) because the SVG ring strokes need raw colors.
+const SOURCE_COLOR: Record<string, string> = {
+  vulhub: "#34d399",       // emerald-400
+  generic: "#a3a3a3",      // neutral-400
+  synthesized: "#fbbf24",  // amber-400
 };
 
-const KIND_TINT: Record<string, string> = {
-  xss: "bg-rose-500/20 text-rose-800 dark:text-rose-200",
-  rce: "bg-red-500/20 text-red-800 dark:text-red-200",
-  sqli: "bg-orange-500/20 text-orange-800 dark:text-orange-200",
-  ssti: "bg-purple-500/20 text-purple-200",
-  "path-traversal": "bg-cyan-500/20 text-cyan-800 dark:text-cyan-200",
-  ssrf: "bg-blue-500/20 text-blue-200",
-  "auth-bypass": "bg-yellow-500/20 text-yellow-200",
-  xxe: "bg-teal-500/20 text-teal-200",
-  "open-redirect": "bg-indigo-500/20 text-indigo-200",
-  deserialization: "bg-fuchsia-500/20 text-fuchsia-800 dark:text-fuchsia-200",
-  "synthesized/*": "bg-amber-500/20 text-amber-800 dark:text-amber-200",
+// Per-kind palette — strong accents so the pie slices read at a glance.
+const KIND_COLOR: Record<string, string> = {
+  xss: "#f43f5e",            // rose
+  rce: "#ef4444",            // red
+  sqli: "#fb923c",           // orange
+  ssti: "#a78bfa",           // violet
+  "path-traversal": "#22d3ee", // cyan
+  ssrf: "#38bdf8",           // sky
+  "auth-bypass": "#facc15",  // yellow
+  xxe: "#14b8a6",            // teal
+  "open-redirect": "#818cf8", // indigo
+  deserialization: "#e879f9", // fuchsia
 };
 
-function pct(num: number, den: number): number {
-  if (den <= 0) return 0;
-  return Math.round((num / den) * 1000) / 10;  // one decimal
-}
-
-function Bar({
-  buckets,
-  total,
-  tintMap,
-  labelKey,
-}: {
-  buckets: LabKindStatsBucket[];
-  total: number;
-  tintMap: Record<string, string>;
-  labelKey: "source" | "labKind";
-}) {
-  if (total === 0 || buckets.length === 0) {
-    return <p className="text-xs text-neutral-500">데이터 없음</p>;
-  }
-  // Cap display to top 8 — anything past the top is rolled into "기타".
-  const top = buckets.slice(0, 8);
-  const rest = buckets.slice(8);
+function buildSlices(
+  buckets: LabKindStatsBucket[],
+  labelKey: "source" | "labKind",
+  palette: Record<string, string>,
+  topN = 8,
+): PieSlice[] {
+  if (buckets.length === 0) return [];
+  // Roll any remainder beyond topN into a "기타" bucket so the donut
+  // stays readable on a dozen+ kinds.
+  const ordered = [...buckets].sort((a, b) => b.count - a.count);
+  const top = ordered.slice(0, topN);
+  const rest = ordered.slice(topN);
   const restCount = rest.reduce((s, b) => s + b.count, 0);
-  const display = restCount > 0
-    ? [...top, { source: "기타", labKind: "기타", count: restCount, verifiedCount: 0 }]
-    : top;
-
-  return (
-    <div className="space-y-2">
-      <div className="flex h-3 w-full overflow-hidden rounded-full bg-neutral-800">
-        {display.map((b, i) => {
-          const key = b[labelKey];
-          const tint = tintMap[key] ?? "bg-neutral-600 text-neutral-200";
-          const w = pct(b.count, total);
-          return (
-            <div
-              key={`${key}-${i}`}
-              title={`${key}: ${b.count}개 (${w}%)`}
-              className={cn("h-full transition-all", tint.split(" ")[0])}
-              style={{ width: `${w}%` }}
-            />
-          );
-        })}
-      </div>
-      <ul className="flex flex-col gap-1 text-xs">
-        {display.map((b, i) => {
-          const key = b[labelKey];
-          const tint = tintMap[key] ?? "bg-neutral-700 text-neutral-300";
-          return (
-            <li key={`${key}-${i}`} className="flex items-center gap-2">
-              <span
-                className={cn(
-                  "inline-block min-w-[8.5rem] rounded px-2 py-0.5 text-center font-mono text-[11px]",
-                  tint,
-                )}
-              >
-                {key}
-              </span>
-              <span className="tabular-nums text-neutral-300">
-                {b.count} <span className="text-neutral-500">({pct(b.count, total)}%)</span>
-              </span>
-              {b.verifiedCount > 0 && (
-                <span className="text-emerald-700 dark:text-emerald-300/80">· verified {b.verifiedCount}</span>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
+  const slices: PieSlice[] = top.map((b, i) => {
+    const key = b[labelKey];
+    return {
+      label: key,
+      count: b.count,
+      color: palette[key] ?? PIE_PALETTE[i % PIE_PALETTE.length],
+    };
+  });
+  if (restCount > 0) {
+    slices.push({
+      label: "기타",
+      count: restCount,
+      color: "#a3a3a3",
+    });
+  }
+  return slices;
 }
 
 export function LabKindStatsPanel() {
@@ -115,7 +73,7 @@ export function LabKindStatsPanel() {
 
   if (stats.isLoading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-neutral-500">
+      <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-500">
         <Loader2 className="h-4 w-4 animate-spin" /> 실습 환경 분포를 불러오는 중…
       </div>
     );
@@ -129,15 +87,26 @@ export function LabKindStatsPanel() {
   }
   const data = stats.data!;
 
+  const sourceSlices = buildSlices(data.bySource, "source", SOURCE_COLOR);
+  const kindSlices = buildSlices(data.byKind, "labKind", KIND_COLOR);
+
   return (
-    <section className="space-y-5 rounded-lg border border-neutral-800 bg-surface-1 p-5">
+    <section className="space-y-5 rounded-lg border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-surface-1">
       <header className="flex items-baseline justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-neutral-100">실습 환경 분포</h2>
-          <p className="mt-1 text-xs text-neutral-500">
-            전체 {data.total}개 중 검증 완료 {data.verified}개. 한쪽으로 크게
-            치우쳐 있다면 합성 품질을 점검할 신호일 수 있습니다.
-          </p>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              실습 환경 분포
+            </h2>
+            <span className="text-xs tabular-nums text-neutral-600 dark:text-neutral-500">
+              {data.total.toLocaleString("ko-KR")}개
+              {data.verified > 0 && (
+                <span className="ml-1 text-emerald-700 dark:text-emerald-400">
+                  · 검증 {data.verified.toLocaleString("ko-KR")}
+                </span>
+              )}
+            </span>
+          </div>
         </div>
         <Button
           size="sm"
@@ -150,28 +119,18 @@ export function LabKindStatsPanel() {
         </Button>
       </header>
 
-      <div className="grid gap-5 md:grid-cols-2">
+      <div className="grid gap-6 md:grid-cols-2">
         <div className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-            출처별 (vulhub 공식 / 표준 / AI 합성)
+          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-500">
+            출처별 (vulhub · 표준 · AI 합성)
           </h3>
-          <Bar
-            buckets={data.bySource}
-            total={data.total}
-            tintMap={SOURCE_TINT}
-            labelKey="source"
-          />
+          <PieGroup slices={sourceSlices} total={data.total} />
         </div>
         <div className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-            취약점 유형별 (상위 8개)
+          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-500">
+            취약점 유형별 (상위 8)
           </h3>
-          <Bar
-            buckets={data.byKind}
-            total={data.total}
-            tintMap={KIND_TINT}
-            labelKey="labKind"
-          />
+          <PieGroup slices={kindSlices} total={data.total} />
         </div>
       </div>
     </section>

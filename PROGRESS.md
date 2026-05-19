@@ -1109,6 +1109,49 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-AV — 공유 PieGroup 컴포넌트 + 대시보드 hero 슬림화 + LabKind 원형 차트 ✅
+
+> 사용자 요청 3건:
+> 1. "취약점 수집 분포 부분 개선"
+> 2. "실습 환경 분포 부분도 원형 차트로 변경"
+> 3. "전체적인 UI/UX 고도화 작업이 필요함 — claude design 사용해서 최적화된
+>    UI/UX 구성 바람. 상용 서비스 급으로"
+
+**Shared — `components/ui/pie-chart.tsx` (신규)**
+- `<PieGroup>` + `<SvgPie>` 재사용 컴포넌트. donut 트랙 색을 `dark:stroke-*`
+  로 페어링, 텍스트도 라이트/다크 양쪽 톤. `PIE_PALETTE` 도 export.
+- 추후 다른 패널에서 분포 차트가 필요할 때 import 하면 끝 — VulnDistribution,
+  LabKindStats 둘 다 이미 활용.
+
+**Settings — `components/settings/LabKindStatsPanel.tsx`**
+- 가로 stacked-bar + 색칩 리스트 → SvgPie + 컬러 도트 범례 형태로 전면 교체.
+- 출처별/유형별 두 차트 grid. 출처 팔레트는 SOURCE_COLOR (vulhub emerald,
+  generic neutral, synthesized amber) — SandboxPanel 의 LabKindBadge 와 동일
+  축으로 인식되게 함.
+- header 의 description 한 문장 (`전체 N개 · 검증 V`) 으로 축소. 검증 0
+  이면 검증 라벨 자체 숨김 — TMI 제거.
+- 카드 배경 라이트 `bg-white` / 다크 `bg-surface-1`, 보더도 페어링.
+
+**Dashboard — `components/dashboard/VulnDistributionPanel.tsx`**
+- 로컬 `PieGroup` + `SvgPie` 정의 삭제 → 공유 컴포넌트 import.
+- 카드 톤 `bg-gradient-to-br from-sky-500/5` → `bg-white dark:bg-surface-1`
+  로 변경. 모노크롬 base + 헤더 정보만 노출. sky 액센트 칩/아이콘은 제거 —
+  카드 자체가 색조를 띠지 않아 옆에 놓일 다른 패널과 시각적 균형.
+- header 가벼워짐: 큰 sky 박스 아이콘 제거, "수집된 취약점 분포" 텍스트 +
+  tabular-nums 개수 + (sm 이상에서만) 기간 한 줄. 차트 토글 (막대/원형) 도
+  중립 톤 (`bg-neutral-100 dark:bg-surface-3` 활성)으로 통일.
+- 펼치기/숨기기 버튼 라벨 텍스트 제거 → 아이콘 + aria-label 만 (영역 좁아짐).
+
+**Dashboard — `app/page.tsx`**
+- 16rem 패딩의 거대한 "Kestrel" gradient 헤로 + 안내 문구 + 큰 검색바 →
+  "검색바 한 줄" 만 남기는 슬림 헤더로. dashboard 라우트는 사용자가 이미
+  들어와 있는 화면 — landing 톤 불필요. 첫 viewport 에 분포 + 필터 + 리스트
+  바로 보임.
+
+**검증**: tsc --noEmit exit 0. frontend rebuild + `/` 200 + `/settings` 200.
+
+---
+
 ### PR 10-AU — 라이트/다크 페어링 전체 일괄 (28 파일, 169 클래스) ✅
 
 > 사용자 지시: "너가 진행해" — 남은 라이트/다크 미페어링 컴포넌트 일괄 처리.
