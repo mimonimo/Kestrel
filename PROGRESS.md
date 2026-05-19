@@ -1109,6 +1109,38 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-AX — 가시성 회귀 수정 (active chip, search button, badge contrast) + 다크 surface 톤 완화 ✅
+
+> 사용자 보고 연속:
+> 1. "메인 대시보드 각종 태그들 라이트모드 가독성 안좋음"
+> 2. "왼쪽 필터는 누르면 흰색이라 안보이고 오른쪽 메인은 검정으로 나와서 안보임"
+> 3. "검색 부분도 버튼 안보임"
+> 4. "다크모드를 너무 다크 말고 조금 덜 다크로 / 보기 편안한 다크 톤으로"
+> 5. "Statista 느낌으로 / 통계에 신뢰를 줄 수 있도록"
+
+**`tailwind.config.ts` — surface 토큰 완화**
+- `surface-0` `#0a0a0b` → `#15171c` (페이지 bg)
+- `surface-1` `#111114` → `#1c1e24` (카드/패널)
+- `surface-2` `#17171c` → `#23262d` (raised input/chip bg)
+- `surface-3` `#1f2028` → `#2b2f37` (hover/active raise)
+- 약간 cool tint (HSL ~220°), 단계마다 ~3% lightness 차이 → Linear/Vercel 느낌. 터미널-블랙에서 dashboard-네이비-그레이로.
+
+**`components/search/FilterPanel.tsx` — Chip active 액센트**
+- 기존: `bg-neutral-900 text-neutral-50` (light) / `bg-neutral-100 text-neutral-900` (dark) — high-contrast 반전이지만 white-on-white / black-on-black 처럼 보이는 케이스가 발생.
+- 변경: sky 액센트 — `border-sky-500 bg-sky-50 text-sky-800` (light) / `dark:bg-sky-500/15 dark:text-sky-200` (dark). 카드 surface 와 명확히 구분.
+- count suffix 도 active 시 sky 톤, 비활성 시 neutral.
+
+**`components/ui/badge.tsx` — default 톤 완화**
+- 기존: `bg-neutral-900 text-neutral-50` / `dark:bg-neutral-100 dark:text-neutral-900` — 너무 punchy (다크 모드에서 흰 pill 이 "구멍" 처럼 보임).
+- 변경: `bg-neutral-800 text-neutral-50` / `dark:bg-neutral-200 dark:text-neutral-900` — 한 톤씩 부드럽게. secondary 도 다크쪽 `dark:bg-neutral-700` 로 raised.
+
+**`components/search/SearchBar.tsx` — primary CTA 액센트**
+- 검색 버튼이 neutral 반전이라 input 와 같은 톤대역으로 묻힘 → `bg-sky-600 hover:bg-sky-700` 으로 강조. dashboard 단일 primary action 이 명확히 보임.
+
+**검증**: tsc exit 0. frontend rebuild + `/` `/settings` `/community` 200.
+
+---
+
 ### PR 10-AW — 전역 컴포넌트 라이트/다크 페어링 + Header active-state + 카드/배지/버튼/입력 토큰 정비 ✅
 
 > 사용자 지시: "전체적으로 진행해 / claude design 사용해서 최적화된 UI/UX 구성. 상용 서비스 급으로"

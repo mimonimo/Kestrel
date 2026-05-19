@@ -257,8 +257,11 @@ function Chip({
         "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
         variant === "upper" && "uppercase",
         count === 0 && "opacity-50",
+        // Active state uses sky accent so it stands out clearly on both
+        // the white panel (light mode) and the dark surface-1 (dark mode).
+        // Neutral-on-neutral inversion blended into the card too easily.
         active
-          ? "border-neutral-900 bg-neutral-900 text-neutral-50 dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900"
+          ? "border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
           : "border-neutral-300 bg-white text-neutral-700 hover:border-neutral-500 hover:text-neutral-900 dark:border-neutral-700 dark:bg-transparent dark:text-neutral-300 dark:hover:border-neutral-500 dark:hover:text-neutral-100",
       )}
     >
@@ -267,7 +270,9 @@ function Chip({
         <span
           className={cn(
             "ml-1 text-[10px] font-normal tabular-nums",
-            active ? "text-neutral-600" : "text-neutral-500",
+            active
+              ? "text-sky-700/80 dark:text-sky-200/70"
+              : "text-neutral-500 dark:text-neutral-500",
           )}
         >
           ({_formatCount(count)})

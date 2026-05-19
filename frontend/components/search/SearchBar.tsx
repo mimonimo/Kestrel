@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 interface Props {
   initialQuery?: string;
@@ -40,7 +41,11 @@ export function SearchBar({ initialQuery = "", onSearch, size = "hero" }: Props)
         />
         <Button
           type="submit"
-          className={`absolute right-1.5 ${hero ? "h-8" : "h-8"}`}
+          // Sky accent so the primary action pops off the white/dark input
+          // (the default neutral inversion blends in too much).
+          className={cn(
+            "absolute right-1.5 h-8 bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-white dark:hover:bg-sky-400",
+          )}
           size="sm"
         >
           검색
