@@ -39,8 +39,13 @@ export function Header() {
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "rounded-full px-3 py-1.5 transition-colors",
+                  // Active uses sky accent — matches the filter-chip / search
+                  // button / VulnDistribution toggle accent system so the
+                  // dashboard feels visually coherent. Pure neutral-900↔neutral-100
+                  // inversion read as "black/white pill" and people kept saying
+                  // the label looked invisible at first glance.
                   active
-                    ? "bg-neutral-900 text-neutral-50 dark:bg-neutral-100 dark:text-neutral-900"
+                    ? "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
                     : "hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-surface-2 dark:hover:text-neutral-100",
                 )}
               >
@@ -63,7 +68,7 @@ export function Header() {
             className={cn(
               "flex h-8 items-center gap-1.5 rounded-full px-3 transition-colors",
               pathname.startsWith("/settings")
-                ? "bg-neutral-900 text-neutral-50 dark:bg-neutral-100 dark:text-neutral-900"
+                ? "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
                 : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100",
             )}
             aria-label="설정"
