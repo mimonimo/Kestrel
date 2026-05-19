@@ -38,9 +38,9 @@ export function Header() {
                 href={link.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "rounded-md px-2.5 py-1 transition-colors",
+                  "rounded-full px-3 py-1.5 transition-colors",
                   active
-                    ? "bg-neutral-100 text-neutral-900 dark:bg-surface-2 dark:text-neutral-100"
+                    ? "bg-neutral-900 text-neutral-50 dark:bg-neutral-100 dark:text-neutral-900"
                     : "hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-surface-2 dark:hover:text-neutral-100",
                 )}
               >
@@ -52,7 +52,7 @@ export function Header() {
             href="https://nvd.nist.gov/"
             target="_blank"
             rel="noopener noreferrer"
-            className="hidden rounded-md px-2.5 py-1 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-surface-2 dark:hover:text-neutral-100 sm:inline-block"
+            className="hidden rounded-full px-3 py-1.5 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-surface-2 dark:hover:text-neutral-100 sm:inline-block"
           >
             NVD ↗
           </a>
@@ -61,9 +61,9 @@ export function Header() {
           <Link
             href="/settings"
             className={cn(
-              "flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors",
+              "flex h-8 items-center gap-1.5 rounded-full px-3 transition-colors",
               pathname.startsWith("/settings")
-                ? "bg-neutral-100 text-neutral-900 dark:bg-surface-2 dark:text-neutral-100"
+                ? "bg-neutral-900 text-neutral-50 dark:bg-neutral-100 dark:text-neutral-900"
                 : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100",
             )}
             aria-label="설정"

@@ -167,7 +167,7 @@ function Stat({
   percent: number;
 }) {
   return (
-    <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-surface-1 p-3">
+    <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-surface-1 p-3">
       <div className="flex items-baseline justify-between">
         <span className="text-[11px] text-neutral-500">{label}</span>
         <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{value}</span>
@@ -191,7 +191,7 @@ function Stat({
 
 function CacheTable({ entries }: { entries: SynthesizeCacheEntry[] }) {
   return (
-    <div className="overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
+    <div className="overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
       <table className="w-full text-xs">
         <thead className="bg-neutral-50 dark:bg-surface-2 text-[10px] uppercase tracking-wider text-neutral-500">
           <tr>
@@ -253,14 +253,14 @@ function Badge({
 function GcResultBanner({ evicted }: { evicted: EvictedImage[] }) {
   if (evicted.length === 0) {
     return (
-      <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+      <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
         정리 완료 — 정리할 항목이 없었습니다 (모든 항목이 보관 한도 이내).
       </div>
     );
   }
   const totalMb = evicted.reduce((s, e) => s + e.sizeMb, 0);
   return (
-    <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
       정리 완료 — {evicted.length}개 환경 ({totalMb} MB) 회수했습니다.
       <ul className="mt-1 space-y-0.5 text-[11px] text-emerald-800 dark:text-emerald-200/80">
         {evicted.slice(0, 5).map((e) => (

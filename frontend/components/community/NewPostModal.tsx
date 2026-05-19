@@ -83,7 +83,7 @@ export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
             maxLength={64}
           />
           <textarea
-            className="block min-h-[160px] w-full rounded-md border border-neutral-800 bg-surface-2 p-3 text-sm text-neutral-100 placeholder:text-neutral-500 focus:border-neutral-600 focus:outline-none"
+            className="block min-h-[160px] w-full rounded-lg border border-neutral-800 bg-surface-2 p-3 text-sm text-neutral-100 placeholder:text-neutral-500 focus:border-neutral-600 focus:outline-none"
             placeholder="본문 (마크다운은 지원하지 않습니다)"
             value={content}
             onChange={(e) => setContent(e.target.value)}

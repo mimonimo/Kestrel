@@ -87,7 +87,7 @@ export function AssetsManager() {
             )}
           </div>
           {open && debounced.trim().length > 0 && (
-            <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-neutral-700 bg-neutral-50 dark:bg-surface-2 shadow-xl">
+            <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-neutral-700 bg-neutral-50 dark:bg-surface-2 shadow-xl">
               {data && data.items.length > 0 ? (
                 <ul className="divide-y divide-neutral-800">
                   {data.items.map((item) => (
@@ -128,7 +128,7 @@ export function AssetsManager() {
             <select
               value={version}
               onChange={(e) => setVersion(e.target.value)}
-              className="block h-10 w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 text-sm text-neutral-900 dark:text-neutral-100 focus:border-neutral-600 focus:outline-none"
+              className="block h-10 w-full rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 text-sm text-neutral-900 dark:text-neutral-100 focus:border-neutral-600 focus:outline-none"
             >
               <option value="">버전 (전체)</option>
               {versionOptions.map((v) => (
@@ -168,7 +168,7 @@ export function AssetsManager() {
           고를 수 있어 매칭 정확도가 보장됩니다.
         </p>
       ) : (
-        <ul className="divide-y divide-neutral-800 rounded-md border border-neutral-200 dark:border-neutral-800 bg-surface-0">
+        <ul className="divide-y divide-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-surface-0">
           {list.map((a) => (
             <li key={a.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
               <div className="min-w-0 flex-1">

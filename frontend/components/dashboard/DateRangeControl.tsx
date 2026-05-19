@@ -178,7 +178,7 @@ export function DateRangeControl({ fromDate, toDate, onChange }: Props) {
         <div
           role="dialog"
           aria-label="기간 필터"
-          className="absolute left-0 top-[calc(100%+6px)] z-30 w-[300px] rounded-md border border-neutral-700 bg-surface-1 p-3 text-xs shadow-lg"
+          className="absolute left-0 top-[calc(100%+6px)] z-30 w-[300px] rounded-lg border border-neutral-700 bg-surface-1 p-3 text-xs shadow-lg"
         >
           <div className="mb-2 flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">

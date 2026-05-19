@@ -1109,6 +1109,43 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-AZ — 전역 rounded 강화 + 헤더 알림/설정 pill + StatusBanner 페어링 + 36 클래스 rounded-md→lg ✅
+
+> 사용자 보고: "이런 버튼들도 아직 너무 네모임 개선해주고 현재 대시보드처럼 커뮤니티, 설정탭, 알림 등 모든 부분에 적용 및 업데이트 부탁"
+
+**기본 primitive radius 한 단계 bump**
+- `components/ui/button.tsx` default `rounded-md` → `rounded-lg`. 모든 호출자가 자동 혜택. rounded-full 필요한 곳은 className override 로.
+- `components/ui/input.tsx` `rounded-md` → `rounded-lg`. 입력 필드도 통일.
+
+**Header — 네비/알림/설정 모두 pill 톤**
+- nav link active state: `bg-neutral-100 text-neutral-900` (subtle) → `bg-neutral-900 text-neutral-50` (high-contrast pill). 다크는 반전. rounded-md → rounded-full + px-3 py-1.5 로 pill 느낌 강조.
+- NVD 외부 링크도 같은 rounded-full pill.
+- 설정 버튼 → rounded-full pill, 활성 시 high-contrast 반전.
+
+**NotificationBell — 둥근 아이콘 버튼 + popover**
+- 종 버튼: `rounded-md border` 사각형 → `rounded-full` 32×32 icon-only. unread 배지 `ring-2 ring-white dark:ring-surface-0` 로 surface 와 분리.
+- popover 카드: `rounded-lg border-neutral-800 bg-surface-1` → `rounded-xl` + 라이트/다크 페어링 (header/divider/footer/링크/타임스탬프 모두).
+
+**RefreshBar — 패널 + 새로고침 버튼 페어링 + pill 버튼**
+- 카드 자체 `bg-surface-1` → `bg-white dark:bg-surface-1` + `rounded-xl`.
+- "수동 새로고침" 버튼 `rounded-md` → `rounded-full`, 라이트/다크 페어링.
+
+**VulnDistributionPanel — 토글 그룹·접기 버튼 둥글게**
+- 막대/원형 토글 그룹 `rounded-md` 박스 → `rounded-full` pill. 활성 항목 high-contrast (`bg-neutral-900 text-neutral-50`).
+- 펼치기/숨기기 버튼: `rounded-md` 텍스트 박스 → `rounded-full` 28×28 icon-only.
+- 로딩 상태 sky 그라데이션 → 신중한 white/surface-1 카드.
+
+**StatusBanner (우측 하단 floating)** — 라이트/다크 페어링
+- 팝오버 카드 `rounded-lg bg-surface-1` → `rounded-xl` + 라이트 `bg-white border-neutral-200` 페어링.
+- 헤더·푸터·구분선·닫기 버튼·"이 알림 숨기기" 텍스트 모두 양쪽 모드 톤. 닫기 버튼·dismiss 버튼은 `rounded-full`.
+
+**전역 bulk** — `rounded-md` → `rounded-lg`
+- Python 스크립트로 className 안의 `rounded-md` 36개를 `rounded-lg` 로 일괄 변경. 모든 카드·박스가 한 단계 더 부드러워짐.
+
+**검증**: tsc exit 0. frontend rebuild + `/` `/settings` `/community` `/cve/<id>` 모두 200.
+
+---
+
 ### PR 10-AY — 설정/CVE 상세 패널 surface 통일 + MITRE 백필 버튼 톤 정렬 + rounded 강조 ✅
 
 > 사용자 보고:

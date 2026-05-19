@@ -463,7 +463,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
                 setModel(meta.models[0]);
                 setBaseUrl(meta.defaultBaseUrl ?? "");
               }}
-              className="w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:border-neutral-600 focus:outline-none"
+              className="w-full rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:border-neutral-600 focus:outline-none"
             >
               {PROVIDERS.map((p) => (
                 <option key={p.value} value={p.value}>
@@ -478,7 +478,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
           // 시각적 반영.
           <div className="block text-xs">
             <span className="mb-1 block font-medium text-neutral-700 dark:text-neutral-300">AI 제공자</span>
-            <div className="flex h-[42px] w-full items-center rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 text-sm text-neutral-900 dark:text-neutral-100">
+            <div className="flex h-[42px] w-full items-center rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 text-sm text-neutral-900 dark:text-neutral-100">
               {providerMeta.label}
             </div>
           </div>
@@ -489,7 +489,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
           <select
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            className="w-full rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:border-neutral-600 focus:outline-none"
+            className="w-full rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:border-neutral-600 focus:outline-none"
           >
             {providerMeta.models.map((m) => (
               <option key={m} value={m}>
@@ -501,7 +501,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
       </div>
 
       {providerMeta.note && (
-        <div className="rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] text-sky-700 dark:text-sky-300">
+        <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11px] text-sky-700 dark:text-sky-300">
           {providerMeta.note}
         </div>
       )}
@@ -562,7 +562,7 @@ function AddCredentialForm({ hasExisting }: { hasExisting: boolean }) {
           </p>
         </div>
       ) : (
-        <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 py-2 text-[11px] text-neutral-400">
+        <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 py-2 text-[11px] text-neutral-400">
           이 제공자는 별도 API 키가 필요 없습니다. 호스트에 로그인된 Claude
           구독 자격 증명을 그대로 사용합니다.
         </div>

@@ -51,7 +51,7 @@ export function MyAssetsPanel() {
           </div>
           <Link
             href="/settings"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-sky-500 px-3 py-1.5 text-xs font-medium text-white shadow hover:bg-sky-400"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-sky-500 px-3 py-1.5 text-xs font-medium text-white shadow hover:bg-sky-400"
           >
             <Settings2 className="h-3.5 w-3.5" /> 자산 등록하기
           </Link>
@@ -86,7 +86,7 @@ export function MyAssetsPanel() {
           <SortSelect value={sort} onChange={setSort} />
           <Link
             href="/settings"
-            className="inline-flex items-center gap-1 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-300 hover:border-sky-400/50 hover:text-neutral-100"
+            className="inline-flex items-center gap-1 rounded-lg border border-neutral-700 px-2.5 py-1 text-xs text-neutral-300 hover:border-sky-400/50 hover:text-neutral-100"
           >
             <Settings2 className="h-3.5 w-3.5" /> 자산 관리
           </Link>
@@ -130,7 +130,7 @@ export function MyAssetsPanel() {
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={safePage === 0}
                 aria-label="이전 취약점"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-neutral-700 text-neutral-300 hover:border-sky-400/50 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-700 text-neutral-300 hover:border-sky-400/50 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
@@ -144,7 +144,7 @@ export function MyAssetsPanel() {
                 onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
                 disabled={safePage >= pageCount - 1}
                 aria-label="다음 취약점"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-neutral-700 text-neutral-300 hover:border-sky-400/50 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-neutral-700 text-neutral-300 hover:border-sky-400/50 hover:text-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>

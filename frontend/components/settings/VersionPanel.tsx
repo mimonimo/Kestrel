@@ -104,7 +104,7 @@ export function VersionPanel() {
         />
       </div>
 
-      <div className="rounded-md border border-neutral-800 bg-surface-2 p-4 text-xs">
+      <div className="rounded-lg border border-neutral-800 bg-surface-2 p-4 text-xs">
         <h4 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-neutral-100">
           <Terminal className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
           최신 버전으로 업데이트

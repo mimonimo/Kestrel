@@ -181,7 +181,7 @@ export function ClaudeAuthPanel() {
     <div className="min-w-0 space-y-4">
       {/* ── 현재 로그인 상태 ─────────────────────────────────────────── */}
       {data.loggedIn ? (
-        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-4 dark:bg-emerald-500/5">
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 dark:bg-emerald-500/5">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-700 ring-1 ring-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
@@ -219,7 +219,7 @@ export function ClaudeAuthPanel() {
           </div>
         </div>
       ) : (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 dark:bg-amber-500/5">
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 dark:bg-amber-500/5">
           <div className="flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-700 ring-1 ring-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300">
               <ShieldAlert className="h-4 w-4" />
@@ -265,7 +265,7 @@ export function ClaudeAuthPanel() {
         // ``min-w-0`` chain — flex/grid descendants need every ancestor
         // to allow shrink, otherwise a 400-char OAuth URL stretches the
         // whole panel and breaks the settings page layout.
-        <div className="min-w-0 space-y-3 overflow-hidden rounded-md border border-sky-500/30 bg-sky-500/10 p-4 dark:bg-sky-500/5">
+        <div className="min-w-0 space-y-3 overflow-hidden rounded-lg border border-sky-500/30 bg-sky-500/10 p-4 dark:bg-sky-500/5">
           <h3 className="text-sm font-semibold text-sky-900 dark:text-sky-200">
             로그인 진행 중 — 두 단계로 끝납니다
           </h3>
@@ -383,7 +383,7 @@ export function ClaudeAuthPanel() {
 
       {/* ── 수동 자격증명 붙여넣기 (CLI 토큰 교환이 멈출 때의 우회 경로) ─── */}
       {!data.loggedIn && (
-        <div className="rounded-md border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-2">
+        <div className="rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-2">
           <button
             type="button"
             onClick={() => setManualOpen((v) => !v)}
@@ -424,7 +424,7 @@ export function ClaudeAuthPanel() {
                 placeholder='{"claudeAiOauth":{"accessToken":"...","refreshToken":"...","expiresAt":...,"scopes":[...]}}'
                 rows={6}
                 disabled={manualSave.isPending}
-                className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-[11px] text-neutral-900 placeholder:text-neutral-400 focus-visible:border-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-800 dark:bg-surface-1 dark:text-neutral-200 dark:placeholder:text-neutral-600 dark:focus-visible:border-neutral-600 dark:focus-visible:ring-neutral-600"
+                className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 font-mono text-[11px] text-neutral-900 placeholder:text-neutral-400 focus-visible:border-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-800 dark:bg-surface-1 dark:text-neutral-200 dark:placeholder:text-neutral-600 dark:focus-visible:border-neutral-600 dark:focus-visible:ring-neutral-600"
               />
               <div className="flex items-center gap-2">
                 <Button

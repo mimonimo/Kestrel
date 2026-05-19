@@ -158,7 +158,7 @@ function CardShell({
 
 function StatChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 py-2">
+    <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 px-3 py-2">
       <div className="text-[10px] uppercase tracking-wide text-neutral-500">
         {label}
       </div>
@@ -189,7 +189,7 @@ function DbCard({ res, onRefresh }: { res: DbResource; onRefresh: () => void }) 
       </div>
 
       {res.tableSizes.length > 0 && (
-        <details className="mt-4 rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2">
+        <details className="mt-4 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2">
           <summary className="cursor-pointer px-3 py-2 text-xs text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100">
             테이블별 크기 ({res.tableSizes.length}개)
           </summary>
@@ -329,7 +329,7 @@ function ActionRow({
     mutation.mutate();
   };
   return (
-    <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 p-3">
+    <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-surface-2 p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-sm font-medium text-neutral-900 dark:text-neutral-100">

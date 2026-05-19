@@ -142,8 +142,8 @@ export function VulnDistributionPanel() {
 
   if (facets.isLoading) {
     return (
-      <section className="mb-8 rounded-xl border border-sky-500/20 bg-gradient-to-br from-sky-500/5 to-transparent p-5">
-        <div className="flex items-center gap-2 text-sm text-neutral-500">
+      <section className="mb-8 rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-surface-1">
+        <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-500">
           <Loader2 className="h-4 w-4 animate-spin" /> 수집 분포 집계 중…
         </div>
       </section>
@@ -232,15 +232,15 @@ export function VulnDistributionPanel() {
           <div
             role="group"
             aria-label="차트 보기 방식"
-            className="inline-flex overflow-hidden rounded-md border border-neutral-300 bg-white dark:border-neutral-800 dark:bg-surface-2"
+            className="inline-flex overflow-hidden rounded-full border border-neutral-300 bg-white dark:border-neutral-800 dark:bg-surface-2"
           >
             <button
               type="button"
               onClick={() => setViewPersisted("bar")}
               className={cn(
-                "inline-flex items-center gap-1 px-2 py-1 text-[11px] transition-colors",
+                "inline-flex items-center gap-1 px-3 py-1 text-[11px] transition-colors",
                 view === "bar"
-                  ? "bg-neutral-100 text-neutral-900 dark:bg-surface-3 dark:text-neutral-100"
+                  ? "bg-neutral-900 text-neutral-50 dark:bg-neutral-100 dark:text-neutral-900"
                   : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
               )}
               aria-pressed={view === "bar"}
@@ -252,9 +252,9 @@ export function VulnDistributionPanel() {
               type="button"
               onClick={() => setViewPersisted("pie")}
               className={cn(
-                "inline-flex items-center gap-1 border-l border-neutral-300 px-2 py-1 text-[11px] transition-colors dark:border-neutral-800",
+                "inline-flex items-center gap-1 px-3 py-1 text-[11px] transition-colors",
                 view === "pie"
-                  ? "bg-neutral-100 text-neutral-900 dark:bg-surface-3 dark:text-neutral-100"
+                  ? "bg-neutral-900 text-neutral-50 dark:bg-neutral-100 dark:text-neutral-900"
                   : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
               )}
               aria-pressed={view === "pie"}
@@ -266,7 +266,7 @@ export function VulnDistributionPanel() {
           <button
             type="button"
             onClick={() => setCollapsedPersisted(!collapsed)}
-            className="inline-flex items-center gap-1 rounded-md border border-neutral-300 px-2 py-1 text-[11px] text-neutral-600 hover:text-neutral-900 dark:border-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-100"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-neutral-300 text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 dark:border-neutral-800 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
             aria-expanded={!collapsed}
             aria-label={collapsed ? "펼치기" : "숨기기"}
             title={collapsed ? "펼치기" : "숨기기"}
@@ -368,7 +368,7 @@ function BarGroup({
             {s.href ? (
               <Link
                 href={s.href}
-                className="block rounded-md px-1 py-1 transition-colors hover:bg-sky-500/5"
+                className="block rounded-lg px-1 py-1 transition-colors hover:bg-sky-500/5"
                 title={`${s.label} 필터 적용`}
               >
                 {inner}

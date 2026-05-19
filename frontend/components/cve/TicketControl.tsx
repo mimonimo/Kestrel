@@ -129,7 +129,7 @@ export function TicketControl({ cveId }: Props) {
           </div>
 
           <textarea
-            className="block min-h-[60px] w-full rounded-md border border-neutral-800 bg-surface-2 p-2 text-xs text-neutral-100 placeholder:text-neutral-500 focus:border-neutral-600 focus:outline-none"
+            className="block min-h-[60px] w-full rounded-lg border border-neutral-800 bg-surface-2 p-2 text-xs text-neutral-100 placeholder:text-neutral-500 focus:border-neutral-600 focus:outline-none"
             placeholder="대응 메모 (선택)"
             value={note}
             onChange={(e) => setNote(e.target.value)}

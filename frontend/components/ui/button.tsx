@@ -33,7 +33,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     <button
       ref={ref}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md font-medium transition-colors",
+        // rounded-lg as default — slightly softer than rounded-md while
+        // still feeling like a button (not a pill). Callers needing a
+        // full pill (`rounded-full`) or sharp edge override via className.
+        "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-lg font-medium transition-colors",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500",
         "disabled:pointer-events-none disabled:opacity-50",
         variants[variant],

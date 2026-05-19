@@ -64,11 +64,11 @@ export function RefreshBar() {
   };
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-surface-1 px-4 py-2.5 text-xs text-neutral-400">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-xs text-neutral-700 dark:border-neutral-800 dark:bg-surface-1 dark:text-neutral-400">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <span>
           마지막 동기화:{" "}
-          <span className="font-medium text-neutral-200">
+          <span className="font-medium text-neutral-900 dark:text-neutral-200">
             {lastSync ? timeAgo(lastSync) : "기록 없음"}
           </span>
         </span>
@@ -84,8 +84,8 @@ export function RefreshBar() {
                     : "bg-neutral-500",
               )}
             />
-            <span className="text-neutral-500">{SOURCE_LABEL[ing.source]}</span>
-            <span className="text-neutral-400">
+            <span className="text-neutral-600 dark:text-neutral-500">{SOURCE_LABEL[ing.source]}</span>
+            <span className="tabular-nums text-neutral-700 dark:text-neutral-400">
               {ing.finishedAt ? timeAgo(ing.finishedAt) : "—"}
             </span>
           </span>
@@ -102,8 +102,9 @@ export function RefreshBar() {
           onClick={onRefresh}
           disabled={submitting}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-md border border-neutral-700 bg-surface-2 px-3 py-1.5 text-xs font-medium text-neutral-100 transition-colors",
-            "hover:border-neutral-500 hover:bg-surface-3",
+            "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+            "border-neutral-300 bg-white text-neutral-800 hover:border-neutral-400 hover:bg-neutral-50",
+            "dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100 dark:hover:border-neutral-500 dark:hover:bg-surface-3",
             "disabled:cursor-not-allowed disabled:opacity-60",
           )}
         >

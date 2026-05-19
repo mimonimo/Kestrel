@@ -117,7 +117,7 @@ export function SandboxSessionsPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-surface-1 px-3 py-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-surface-1 px-3 py-2 text-xs">
         <div className="flex flex-wrap items-center gap-3 text-neutral-400">
           <span>
             현재 실행 중{" "}
@@ -178,7 +178,7 @@ export function SandboxSessionsPanel() {
             : "현재 실행 중인 샌드박스 세션이 없습니다."}
         </div>
       ) : (
-        <ul className="divide-y divide-neutral-800 overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
+        <ul className="divide-y divide-neutral-800 overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
           {data.items.map((item) => (
             <SessionRow
               key={item.id}
@@ -216,7 +216,7 @@ export function SandboxSessionsPanel() {
           </Button>
         </div>
         {sync.data && (
-          <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200">
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200">
             <CheckCircle2 className="mr-1 inline h-3 w-3" />
             동기화 완료 — 폴더 {sync.data.foldersScanned}개 검사,{" "}
             {sync.data.upserted}개 환경 갱신, 후보 {sync.data.candidates}개,{" "}

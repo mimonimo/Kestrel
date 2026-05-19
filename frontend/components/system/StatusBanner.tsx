@@ -185,11 +185,11 @@ export function StatusBanner() {
           ref={popoverRef}
           role="dialog"
           aria-label="시스템 상태 상세"
-          className="pointer-events-auto w-[min(92vw,380px)] overflow-hidden rounded-lg border border-neutral-700 bg-surface-1 shadow-2xl shadow-black/50"
+          className="pointer-events-auto w-[min(92vw,380px)] overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-2xl shadow-black/10 dark:border-neutral-700 dark:bg-surface-1 dark:shadow-black/50"
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between border-b border-neutral-800 bg-surface-2 px-4 py-2.5">
-            <div className="flex items-center gap-2 text-sm font-semibold text-neutral-100">
+          <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-4 py-2.5 dark:border-neutral-800 dark:bg-surface-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
               <Icon className={cn("h-4 w-4", iconTint)} />
               시스템 상태
             </div>
@@ -197,7 +197,7 @@ export function StatusBanner() {
               type="button"
               onClick={close}
               aria-label="닫기"
-              className="rounded p-1 text-neutral-400 hover:bg-surface-3 hover:text-neutral-100"
+              className="rounded-full p-1 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-100"
             >
               <X className="h-4 w-4" />
             </button>
@@ -211,17 +211,17 @@ export function StatusBanner() {
                   ) : (
                     <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-700 dark:text-sky-300" />
                   )}
-                  <span className="leading-relaxed text-neutral-300">{line.message}</span>
+                  <span className="leading-relaxed text-neutral-700 dark:text-neutral-300">{line.message}</span>
                 </div>
               ))
             ) : (
-              <p className="flex items-center gap-2 text-neutral-400">
+              <p className="flex items-center gap-2 text-neutral-700 dark:text-neutral-400">
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-300" />
                 모든 서비스가 정상 동작 중입니다.
               </p>
             )}
           </div>
-          <div className="flex items-center justify-between gap-2 border-t border-neutral-800 bg-surface-0 px-4 py-2 text-[11px] text-neutral-500">
+          <div className="flex items-center justify-between gap-2 border-t border-neutral-200 bg-neutral-50 px-4 py-2 text-[11px] text-neutral-600 dark:border-neutral-800 dark:bg-surface-0 dark:text-neutral-500">
             <span>
               {lastSync ? `마지막 수집 ${timeAgo(lastSync)}` : "수집 기록 없음"}
             </span>
@@ -229,7 +229,7 @@ export function StatusBanner() {
               <button
                 type="button"
                 onClick={dismiss}
-                className="rounded px-2 py-0.5 text-neutral-400 hover:bg-surface-3 hover:text-neutral-100"
+                className="rounded-full px-2 py-0.5 text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-100"
               >
                 이 알림 숨기기
               </button>

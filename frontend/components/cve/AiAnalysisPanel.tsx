@@ -55,7 +55,7 @@ function CodeBlock({ source }: { source: string }) {
   const lines = useMemo(() => source.replace(/\n$/, "").split("\n"), [source]);
 
   return (
-    <div className="overflow-hidden rounded-md border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-2">
+    <div className="overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-2">
       <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-3 py-1.5 dark:border-neutral-800 dark:bg-surface-3">
         <span className="font-mono text-[10px] uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
           {language}

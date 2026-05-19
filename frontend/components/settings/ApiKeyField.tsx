@@ -114,7 +114,7 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
       </div>
 
       {ready && value ? (
-        <div className="flex items-center justify-between gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-surface-2">
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-800 dark:bg-surface-2">
           <code className="flex-1 truncate font-mono text-sm text-neutral-900 dark:text-neutral-300">
             {show ? value : maskSecret(value)}
           </code>
