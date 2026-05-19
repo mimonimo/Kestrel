@@ -32,7 +32,7 @@ export function BookmarkButton({ cveId, size = "sm", stopPropagation = true, cla
         "inline-flex items-center justify-center rounded p-1 transition-colors",
         active
           ? "text-amber-700 dark:text-amber-300 hover:text-amber-800 dark:hover:text-amber-200"
-          : "text-neutral-500 hover:text-neutral-200",
+          : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200",
         className,
       )}
     >

@@ -8,15 +8,22 @@ const LABELS: Record<Severity, string> = {
   low: "LOW",
 };
 
+// Pair each severity color with explicit light/dark text shades. Light
+// mode needs the *darker* shade (700) to read on the soft alpha bg; dark
+// mode keeps the brighter shade (400) that pops on the dark surface.
 const STYLES: Record<Severity, string> = {
-  critical: "bg-red-600/20 text-red-600 dark:text-red-400 border border-red-600/40",
-  high: "bg-orange-600/20 text-orange-600 dark:text-orange-400 border border-orange-600/40",
-  medium: "bg-yellow-600/20 text-yellow-400 border border-yellow-600/40",
-  low: "bg-green-600/20 text-green-400 border border-green-600/40",
+  critical:
+    "bg-red-600/15 text-red-700 dark:text-red-400 border border-red-600/40",
+  high:
+    "bg-orange-600/15 text-orange-700 dark:text-orange-400 border border-orange-600/40",
+  medium:
+    "bg-yellow-600/15 text-yellow-700 dark:text-yellow-400 border border-yellow-600/40",
+  low:
+    "bg-green-600/15 text-green-700 dark:text-green-400 border border-green-600/40",
 };
 
 const UNKNOWN_STYLE =
-  "bg-neutral-700/30 text-neutral-400 border border-neutral-600/40";
+  "bg-neutral-200 text-neutral-700 border border-neutral-300 dark:bg-neutral-700/30 dark:text-neutral-400 dark:border-neutral-600/40";
 
 export function SeverityBadge({
   severity,

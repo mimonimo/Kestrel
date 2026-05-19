@@ -132,8 +132,8 @@ function Dashboard() {
                 className={cn(
                   "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
                   bookmarksOnly
-                    ? "border-amber-400/50 bg-amber-400/15 text-amber-800 dark:text-amber-200"
-                    : "border-neutral-700 text-neutral-400 hover:border-neutral-500 hover:text-neutral-100",
+                    ? "border-amber-400/60 bg-amber-400/20 text-amber-800 dark:bg-amber-400/15 dark:text-amber-200"
+                    : "border-neutral-300 text-neutral-700 hover:border-neutral-500 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-500 dark:hover:text-neutral-100",
                 )}
                 aria-pressed={bookmarksOnly}
               >
@@ -150,7 +150,7 @@ function Dashboard() {
             <CveListSkeleton count={6} />
           ) : activeData.items.length === 0 ? (
             bookmarksOnly ? (
-              <div className="rounded-lg border border-dashed border-neutral-800 bg-surface-1/50 py-12 text-center text-sm text-neutral-500">
+              <div className="rounded-lg border border-dashed border-neutral-300 bg-white/50 py-12 text-center text-sm text-neutral-600 dark:border-neutral-800 dark:bg-surface-1/50 dark:text-neutral-500">
                 아직 즐겨찾기한 CVE가 없습니다. 목록에서 별 아이콘을 눌러 추가하세요.
               </div>
             ) : (

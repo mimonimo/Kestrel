@@ -37,21 +37,21 @@ export function MyAssetsPanel() {
 
   if (list.length === 0) {
     return (
-      <section className="mb-8 overflow-hidden rounded-xl border border-sky-500/30 bg-gradient-to-br from-sky-500/10 via-blue-500/5 to-transparent p-5 shadow-[0_0_0_1px_rgba(56,189,248,0.05)]">
+      <section className="mb-8 overflow-hidden rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-surface-1">
         <div className="flex items-start gap-4">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-500/15 ring-1 ring-sky-400/30">
             <Server className="h-5 w-5 text-sky-700 dark:text-sky-300" />
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="text-base font-semibold text-neutral-100">내 시스템 취약점</h2>
-            <p className="mt-1 text-sm text-neutral-300">
+            <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">내 시스템 취약점</h2>
+            <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
               운영 중인 벤더·제품을 등록해 두면 그 자산에 영향을 주는 CVE 만
               따로 모아 보여드립니다. 매일 새로 들어오는 취약점도 자동 반영됩니다.
             </p>
           </div>
           <Link
             href="/settings"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-sky-500 px-3 py-1.5 text-xs font-medium text-white shadow hover:bg-sky-400"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 text-xs font-medium text-white shadow hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400"
           >
             <Settings2 className="h-3.5 w-3.5" /> 자산 등록하기
           </Link>

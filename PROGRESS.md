@@ -1109,6 +1109,24 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-BA — 라이트 모드 흰글씨/안 보이는 버튼 일괄 fix ✅
+
+> 사용자 보고: "버튼중에 라이트모드에서 자꾸 흰색 글씨라 안보이는 부분이 생기네. 개선해 전체적으로"
+
+**찾아 고친 곳들**
+- `dashboard/MyAssetsPanel.tsx` — 자산 등록하기 버튼: `bg-sky-500 text-white` (sky-500 은 light cyan, 흰 텍스트와 대비 부족) → `bg-sky-600` (라이트) / `dark:bg-sky-500` (다크). 카드 자체도 sky 그라데이션 hero 톤 → 모노크롬 카드.
+- `cve/SeverityBadge.tsx` — medium/low 가 dark-only 색상 (`text-yellow-400`, `text-green-400`) 이라 라이트 모드 알파 배경 위에서 색-on-색 → `text-{yellow,green}-700 dark:text-{...}-400` 페어링. unknown 칩도 라이트 모드 톤 추가.
+- `cve/BookmarkButton.tsx` — 비활성 hover 가 다크 전용 (`hover:text-neutral-200`) → `hover:text-neutral-700 dark:hover:text-neutral-200`.
+- `app/page.tsx` — 즐겨찾기만 토글: 비활성 `border-neutral-700 text-neutral-400` (다크 전용) → 라이트 페어링 추가. 빈-상태 카드 `bg-surface-1/50 border-neutral-800` → 라이트/다크 페어링.
+- `dashboard/SortSelect.tsx` — 다크 전용 (`border-neutral-700 bg-surface-2 text-neutral-300`) → 라이트 `bg-white text-neutral-700`. `<option>` 까지 라이트/다크 모두.
+- `settings/ApiKeyField.tsx` & `settings/AiSettingsForm.tsx` — 회귀 잔재 (`dark:hover:text-neutral-800 dark:hover:text-neutral-200` 중복) 정리. ApiKeyField "발급" 링크 `rounded-full` 로 통일.
+
+**Python 감사 스크립트** 추가 — `dark:hover:text-* dark:hover:text-*` 중복 + `bg-{light} text-white` 위험 패턴 자동 검출. 이번 PR 부터 회귀 방지.
+
+**검증**: tsc exit 0. frontend rebuild + `/` `/settings` `/cve/<id>` 모두 200.
+
+---
+
 ### PR 10-AZ — 전역 rounded 강화 + 헤더 알림/설정 pill + StatusBanner 페어링 + 36 클래스 rounded-md→lg ✅
 
 > 사용자 보고: "이런 버튼들도 아직 너무 네모임 개선해주고 현재 대시보드처럼 커뮤니티, 설정탭, 알림 등 모든 부분에 적용 및 업데이트 부탁"
