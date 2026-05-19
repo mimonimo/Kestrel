@@ -254,15 +254,12 @@ function Chip({
       onClick={onClick}
       title={title ? `${title}${count !== undefined ? ` — ${count}` : ""}` : undefined}
       className={cn(
-        "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+        "rounded-full border px-2.5 py-1 text-xs font-medium transition-all duration-150 active:scale-95",
         variant === "upper" && "uppercase",
         count === 0 && "opacity-50",
-        // Active state uses sky accent so it stands out clearly on both
-        // the white panel (light mode) and the dark surface-1 (dark mode).
-        // Neutral-on-neutral inversion blended into the card too easily.
         active
-          ? "border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
-          : "border-neutral-300 bg-white text-neutral-700 hover:border-neutral-500 hover:text-neutral-900 dark:border-neutral-700 dark:bg-transparent dark:text-neutral-300 dark:hover:border-neutral-500 dark:hover:text-neutral-100",
+          ? "border-sky-500 bg-sky-100 text-sky-800 shadow-sm shadow-sky-500/20 dark:bg-sky-500/20 dark:text-sky-200"
+          : "border-neutral-300 bg-white text-neutral-700 hover:-translate-y-0.5 hover:border-neutral-500 hover:text-neutral-900 hover:shadow-sm dark:border-neutral-700 dark:bg-transparent dark:text-neutral-300 dark:hover:border-neutral-500 dark:hover:text-neutral-100",
       )}
     >
       {children}

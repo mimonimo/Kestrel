@@ -38,14 +38,9 @@ export function Header() {
                 href={link.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "rounded-full px-3 py-1.5 transition-colors",
-                  // Active uses sky accent — matches the filter-chip / search
-                  // button / VulnDistribution toggle accent system so the
-                  // dashboard feels visually coherent. Pure neutral-900↔neutral-100
-                  // inversion read as "black/white pill" and people kept saying
-                  // the label looked invisible at first glance.
+                  "rounded-full px-3 py-1.5 transition-all duration-150 active:scale-95",
                   active
-                    ? "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
+                    ? "bg-sky-100 font-medium text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"
                     : "hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-surface-2 dark:hover:text-neutral-100",
                 )}
               >

@@ -240,8 +240,8 @@ export function VulnDistributionPanel() {
               className={cn(
                 "inline-flex items-center gap-1 px-3 py-1 text-[11px] transition-colors",
                 view === "bar"
-                  ? "bg-neutral-900 text-neutral-50 dark:bg-neutral-100 dark:text-neutral-900"
-                  : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
+                  ? "bg-sky-100 font-medium text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"
+                  : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-100",
               )}
               aria-pressed={view === "bar"}
             >
@@ -254,8 +254,8 @@ export function VulnDistributionPanel() {
               className={cn(
                 "inline-flex items-center gap-1 px-3 py-1 text-[11px] transition-colors",
                 view === "pie"
-                  ? "bg-neutral-900 text-neutral-50 dark:bg-neutral-100 dark:text-neutral-900"
-                  : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
+                  ? "bg-sky-100 font-medium text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"
+                  : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-100",
               )}
               aria-pressed={view === "pie"}
             >
