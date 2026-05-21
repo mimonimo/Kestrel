@@ -215,8 +215,8 @@ export function ClaudeIntegrationPanel() {
   if (!data.cliPresent) {
     return (
       <NoticeBox
-        title="이 백엔드 이미지에는 Claude Code CLI 가 없습니다"
-        message="대시보드 로그인 흐름은 컨테이너 안의 Claude Code CLI 가 OAuth 를 처리합니다. INSTALL_CLAUDE_CLI=1 (기본값) 로 백엔드 이미지를 다시 빌드해 주세요."
+        title="백엔드 이미지에 Claude Code CLI 없음"
+        message="INSTALL_CLAUDE_CLI=1 (기본값) 로 백엔드 이미지를 다시 빌드해 주세요."
         hint="bash scripts/update.sh --no-pull"
       />
     );

@@ -48,13 +48,13 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "theme",
         title: "화면 테마",
-        description: "다크 / 라이트 / 시스템 설정 자동 감지 중에서 선택합니다.",
+        description: "다크 · 라이트 · 시스템 자동",
         render: () => <ThemeSwitcher />,
       },
       {
         id: "assets",
         title: "내 자산",
-        description: "운영 중인 벤더·제품을 등록하면 영향 받는 CVE 만 따로 보입니다.",
+        description: "벤더·제품 등록 시 영향 받는 CVE 만 노출",
         render: () => <AssetsManager />,
       },
     ],
@@ -67,7 +67,7 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "external-keys",
         title: "외부 데이터 소스 API 키",
-        description: "비워도 동작하지만, 등록하면 수집 속도가 빨라집니다.",
+        description: "선택 입력 · 수집 속도 향상",
         render: () => (
           <div className="space-y-4">
             <ApiKeyField settingKey="nvdApiKey" />
@@ -78,7 +78,7 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "mitre-backfill",
         title: "MITRE 전체 백필",
-        description: "최초 1회만 실행. 평소엔 자동 델타 동기화.",
+        description: "최초 1회 실행 · 평소엔 자동 델타",
         render: () => <MitreBackfillPanel />,
       },
     ],
@@ -91,7 +91,7 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "ai-analysis",
         title: "Claude 연동",
-        description: "AI 심층 분석과 실습 환경 합성에 사용되는 Claude 인증과 모델을 한 곳에서.",
+        description: "AI 분석·합성에 사용되는 인증과 모델",
         render: () => <ClaudeIntegrationPanel />,
       },
     ],
@@ -104,19 +104,19 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "sandbox-sessions",
         title: "실행 중인 샌드박스 세션",
-        description: "실습 컨테이너 목록 + vulhub 동기화.",
+        description: "실습 컨테이너 · vulhub 동기화",
         render: () => <SandboxSessionsPanel />,
       },
       {
         id: "synth-cache",
         title: "합성된 실습 환경 저장 공간",
-        description: "AI 합성 이미지의 디스크 사용량입니다.",
+        description: "AI 합성 이미지 디스크 사용량",
         render: () => <SynthesizerCachePanel />,
       },
       {
         id: "lab-stats",
         title: "실습 환경 출처별 분포",
-        description: "vulhub · 표준 · 합성 비율과 유형별 점유율.",
+        description: "출처별·유형별 점유율",
         render: () => <LabKindStatsPanel />,
       },
     ],
@@ -129,7 +129,7 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "resources",
         title: "내부 자원 관리",
-        description: "DB · Redis · 검색 인덱스 사용량 + 점검 동작.",
+        description: "DB · Redis · 검색 인덱스 점검",
         render: () => (
           <Link
             href="/settings/resources"
@@ -155,24 +155,17 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "version",
         title: "버전 정보 / 업데이트",
-        description: "현재 빌드와 DB 마이그레이션 상태.",
+        description: "현재 빌드 · DB 마이그레이션 상태",
         render: () => <VersionPanel />,
       },
       {
         id: "storage-notes",
-        title: "설정 저장 위치 안내",
-        description: "",
+        title: "설정 저장 위치",
+        description: "각 설정의 저장 범위",
         render: () => (
-          <ul className="list-disc space-y-1 pl-5 text-xs text-neutral-500">
-            <li>
-              화면 테마와 외부 데이터 소스 키는 이 기기의 브라우저 안에만
-              저장됩니다.
-            </li>
-            <li>다른 기기·브라우저에서는 다시 입력해 주세요.</li>
-            <li>
-              AI 분석 키와 등록한 자산은 서버에 안전하게 저장되어 모든
-              기기에서 공유됩니다.
-            </li>
+          <ul className="list-disc space-y-1 pl-5 text-xs text-neutral-600 dark:text-neutral-500">
+            <li>화면 테마 · 외부 API 키 — 이 기기의 브라우저</li>
+            <li>AI 인증 · 등록 자산 — 서버 (모든 기기 공유)</li>
           </ul>
         ),
       },
@@ -191,6 +184,11 @@ export function SettingsLayout() {
   // bottom = -60% so a section is "active" once its top crosses ~40%
   // viewport height) so the nav lights up *as* the user reaches the
   // section, not when they scroll past it.
+  //
+  // Bottom sections reach this band naturally because the right column
+  // has `pb-[60vh]` spacer below the last section — that ensures even
+  // the document footer has enough room to scroll the last section's
+  // top into the 40% observation band.
   useEffect(() => {
     if (typeof window === "undefined") return;
     observer.current?.disconnect();
@@ -205,8 +203,6 @@ export function SettingsLayout() {
           }
         });
         if (visible.size === 0) return;
-        // Pick the visible section earliest in document order — matches
-        // the user's intuition of "what's at the top of my screen".
         const orderIndex = (id: string) => ALL_SECTION_IDS.indexOf(id);
         const next = [...visible.keys()].sort(
           (a, b) => orderIndex(a) - orderIndex(b),
@@ -289,10 +285,10 @@ export function SettingsLayout() {
                             href={`#${s.id}`}
                             onClick={() => handleNavClick(s.id)}
                             className={cn(
-                              "block rounded-md border-l-2 px-3 py-1.5 text-xs transition-colors",
+                              "block rounded-full px-3 py-1.5 text-xs transition-all duration-150 active:scale-95",
                               isActive
-                                ? "border-sky-400 bg-sky-500/10 text-sky-800 dark:text-sky-200"
-                                : "border-transparent text-neutral-400 hover:border-sky-500/30 hover:bg-sky-500/5 hover:text-sky-800 dark:hover:text-sky-200",
+                                ? "bg-sky-100 font-medium text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"
+                                : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100",
                             )}
                           >
                             {s.title}
@@ -311,8 +307,13 @@ export function SettingsLayout() {
         {/* min-w-0: a grid item's implicit min-width is its content's
             intrinsic size, so an un-truncated long string (e.g. the
             OAuth URL chip in ClaudeAuthPanel) can stretch this column
-            past the template and break the page ratio. */}
-        <div className="min-w-0">
+            past the template and break the page ratio.
+            pb-[60vh]: leaves enough scroll room below the last section
+            so the IntersectionObserver band (top 40% of viewport) can
+            still highlight it. Without this the last 2–3 sections never
+            "reach the top" and the nav stayed stuck on the previous
+            entry. */}
+        <div className="min-w-0 pb-[60vh]">
           {sections.map((s, i) => (
             <Section
               key={s.id}
@@ -349,12 +350,12 @@ function Section({
       // scroll-margin-top so anchor jumps clear the sticky page header.
       className={cn(
         "scroll-mt-20",
-        isFirst ? "" : "mt-10 border-t border-neutral-800 pt-8",
+        isFirst ? "" : "mt-10 border-t border-neutral-200 pt-8 dark:border-neutral-800",
       )}
     >
-      <h2 className="text-base font-semibold text-neutral-100">{title}</h2>
+      <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{title}</h2>
       {description ? (
-        <p className="mt-1 mb-4 text-xs text-neutral-500">{description}</p>
+        <p className="mt-1 mb-4 text-xs text-neutral-600 dark:text-neutral-500">{description}</p>
       ) : (
         <div className="mb-3" />
       )}

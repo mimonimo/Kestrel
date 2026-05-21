@@ -224,7 +224,7 @@ function DbCard({ res, onRefresh }: { res: DbResource; onRefresh: () => void }) 
         <ActionRow
           icon={Zap}
           label="통계 갱신 (ANALYZE)"
-          description="쿼리 플래너의 통계를 갱신해 검색·필터 응답이 다시 빨라지도록 합니다. 큰 데이터 수집 직후에 권장. 잠금 없이 안전합니다."
+          description="쿼리 플래너 통계 갱신 · 큰 수집 직후 권장 · 잠금 없음"
           confirmText={null}
           mutation={analyze}
         />
@@ -258,7 +258,7 @@ function RedisCard({ res, onRefresh }: { res: RedisResource; onRefresh: () => vo
         <ActionRow
           icon={Trash2}
           label="캐시 비우기 (FLUSHDB)"
-          description="모든 캐시 키를 즉시 삭제합니다. 다음 외부 API 호출은 캐시 없이 원본을 다시 받아오므로 잠시 느려질 수 있지만 데이터는 안전합니다. 잘못된 cursor 가 박혀 수집이 멈췄을 때 사용."
+          description="모든 캐시 키 삭제 · 잘못된 cursor 로 수집 멈춤 시 복구용"
           confirmText={`Redis 캐시를 모두 비웁니다. 현재 ${formatNumber(res.keyCount)}개의 키가 삭제됩니다. 계속할까요?`}
           mutation={flush}
         />
@@ -294,7 +294,7 @@ function MeiliCard({ res, onRefresh }: { res: MeiliResource; onRefresh: () => vo
         <ActionRow
           icon={Trash2}
           label="인덱스 초기화"
-          description="검색 인덱스를 완전히 삭제합니다. 백엔드가 다음 시작 시 빈 인덱스를 다시 만들고, 운영자가 'docker compose exec backend python -m scripts.reindex_meili' 를 실행해 PostgreSQL 본문에서 재색인해야 합니다. 검색이 잠시 동작하지 않을 수 있지만 CVE 데이터 자체는 안전합니다."
+          description="검색 인덱스 삭제 · 별도 재색인 명령 필요 · CVE 원본은 안전"
           confirmText={`검색 인덱스를 삭제하시겠습니까? 현재 ${formatNumber(res.documentCount)}개의 문서가 있으며, 재색인 명령을 별도로 실행해야 검색이 다시 동작합니다.`}
           mutation={drop}
           destructive
