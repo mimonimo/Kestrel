@@ -434,8 +434,10 @@ export function ClaudeIntegrationPanel() {
         </div>
       )}
 
-      {/* ── 시작 버튼 (로그인 안 됨 + 세션 없음) ────────────────────── */}
-      {!session && !data.loggedIn && (
+      {/* ── 로그인 / 다시 로그인 시작 버튼 ──────────────────────────
+          미연결 또는 만료된 상태에서 세션이 없을 때 항상 노출. 만료
+          케이스도 `data.loggedIn=true` 라 이전 코드에서 누락됐었음. */}
+      {!session && (!data.loggedIn || expired) && (
         <div className="flex flex-wrap items-center gap-3">
           <Button size="md" onClick={() => start.mutate()} disabled={start.isPending}>
             {start.isPending ? (
@@ -443,7 +445,7 @@ export function ClaudeIntegrationPanel() {
             ) : (
               <Sparkles className="mr-1.5 h-4 w-4" />
             )}
-            Claude 로그인
+            {expired ? "다시 로그인" : "Claude 로그인"}
           </Button>
           {start.error && (
             <span className="inline-flex items-center gap-1 text-xs text-rose-700 dark:text-rose-300">
@@ -531,7 +533,7 @@ export function ClaudeIntegrationPanel() {
       </div>
 
       {/* ── 수동 자격증명 붙여넣기 (CLI 토큰 교환 실패 우회) ─────── */}
-      {!data.loggedIn && !session && (
+      {(!data.loggedIn || expired) && !session && (
         <div className="rounded-xl border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-2">
           <button
             type="button"
