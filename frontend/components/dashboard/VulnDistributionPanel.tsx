@@ -1,16 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import type { UrlObject } from "url";
 import {
-  Activity,
-  BarChart3,
   ChevronDown,
   ChevronUp,
   Loader2,
-  Pause,
-  PieChart,
-  Play,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -26,24 +20,12 @@ const SEV_LABEL: Record<string, string> = {
   medium: "Medium",
   low: "Low",
 };
-// Hex tints for SVG pie slices + matching tailwind bg classes for bars.
+// Hex tints for SVG pie slices.
 const SEV_HEX: Record<string, string> = {
   critical: "#f43f5e",
   high: "#fb923c",
   medium: "#fbbf24",
   low: "#34d399",
-};
-const SEV_BAR_TINT: Record<string, string> = {
-  critical: "bg-rose-500/80",
-  high: "bg-orange-400/80",
-  medium: "bg-amber-300/70",
-  low: "bg-emerald-400/70",
-};
-const SEV_TEXT: Record<string, string> = {
-  critical: "text-rose-700 dark:text-rose-300",
-  high: "text-orange-700 dark:text-orange-300",
-  medium: "text-amber-700 dark:text-amber-300",
-  low: "text-emerald-700 dark:text-emerald-300",
 };
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -58,21 +40,13 @@ const SOURCE_HEX: Record<string, string> = {
   github_advisory: "#34d399",
   exploit_db: "#fbbf24",
 };
-const SOURCE_TINT: Record<string, string> = {
-  mitre: "bg-violet-500/80",
-  nvd: "bg-sky-500/80",
-  github_advisory: "bg-emerald-500/80",
-  exploit_db: "bg-amber-500/80",
-};
 
 // Re-export the shared palette so existing local callers keep working
 // without churn. The actual array lives in components/ui/pie-chart.
 const PIE_PALETTE = SHARED_PIE_PALETTE;
 
-const VIEW_KEY = "kestrel:vuln-dist:view"; // 'bar' | 'pie'
 const COLLAPSED_KEY = "kestrel:vuln-dist:collapsed"; // '1' | '0'
 const PERIOD_KEY = "kestrel:vuln-dist:period"; // PeriodKey
-const LIVE_KEY = "kestrel:vuln-dist:live"; // '1' | '0'
 
 type PeriodKey = "1d" | "7d" | "30d" | "90d" | "all";
 
@@ -130,10 +104,14 @@ function buildSlices(
 }
 
 export function VulnDistributionPanel() {
-  const [view, setView] = useState<"bar" | "pie">("bar");
   const [collapsed, setCollapsed] = useState(false);
   const [period, setPeriod] = useState<PeriodKey>("all");
-  const [live, setLive] = useState(false);
+
+  // Live polling is derived from period — "전체" (no window) auto-polls
+  // every 30s so new ingestions surface in near real time. Bounded
+  // windows (24시간/7일/…) skip the poll since the underlying data range
+  // is already explicit; refetch happens on tab focus instead.
+  const live = period === "all";
 
   // Recompute the window every render so "24시간" stays a moving window
   // — useMemo gates by `period` only since periodToWindow uses Date.now().
@@ -149,18 +127,10 @@ export function VulnDistributionPanel() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const v = window.localStorage.getItem(VIEW_KEY);
-    if (v === "bar" || v === "pie") setView(v);
     setCollapsed(window.localStorage.getItem(COLLAPSED_KEY) === "1");
     const p = window.localStorage.getItem(PERIOD_KEY);
     if (p && PERIODS.some((x) => x.value === p)) setPeriod(p as PeriodKey);
-    setLive(window.localStorage.getItem(LIVE_KEY) === "1");
   }, []);
-
-  const setViewPersisted = (v: "bar" | "pie") => {
-    setView(v);
-    if (typeof window !== "undefined") window.localStorage.setItem(VIEW_KEY, v);
-  };
 
   const setCollapsedPersisted = (c: boolean) => {
     setCollapsed(c);
@@ -172,13 +142,6 @@ export function VulnDistributionPanel() {
   const setPeriodPersisted = (p: PeriodKey) => {
     setPeriod(p);
     if (typeof window !== "undefined") window.localStorage.setItem(PERIOD_KEY, p);
-  };
-
-  const setLivePersisted = (l: boolean) => {
-    setLive(l);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(LIVE_KEY, l ? "1" : "0");
-    }
   };
 
   if (facets.isLoading) {
@@ -229,17 +192,14 @@ export function VulnDistributionPanel() {
   const dayLo = formatDay(data.earliestPublishedAt);
   const dayHi = formatDay(data.latestPublishedAt);
 
-  const groups: { title: string; slices: Slice[]; barTintMap?: Record<string, string>; barTextMap?: Record<string, string> }[] = [
+  const groups: { title: string; slices: Slice[] }[] = [
     {
       title: "심각도",
       slices: sevSlices,
-      barTintMap: SEV_BAR_TINT,
-      barTextMap: SEV_TEXT,
     },
     {
       title: "출처",
       slices: sourceSlices,
-      barTintMap: SOURCE_TINT,
     },
     {
       title: "취약점 유형 (상위 8)",
@@ -301,60 +261,9 @@ export function VulnDistributionPanel() {
               </button>
             ))}
           </div>
-          {/* Live polling toggle */}
-          <button
-            type="button"
-            onClick={() => setLivePersisted(!live)}
-            className={cn(
-              "inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-[11px] transition-colors active:scale-95",
-              live
-                ? "border-emerald-500 bg-emerald-50 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200"
-                : "border-neutral-300 text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-800 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100",
-            )}
-            aria-pressed={live}
-            title={live ? "실시간 업데이트 끄기 (30초 폴링)" : "실시간 업데이트 켜기"}
-          >
-            {live ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-            {live ? "라이브" : "정지"}
-          </button>
           {facets.isFetching && (
             <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-600 dark:text-sky-400" />
           )}
-          {/* View toggle (bar / pie) */}
-          <div
-            role="group"
-            aria-label="차트 보기 방식"
-            className="inline-flex overflow-hidden rounded-full border border-neutral-300 bg-white dark:border-neutral-800 dark:bg-surface-2"
-          >
-            <button
-              type="button"
-              onClick={() => setViewPersisted("bar")}
-              className={cn(
-                "inline-flex items-center gap-1 px-3 py-1 text-[11px] transition-colors",
-                view === "bar"
-                  ? "bg-sky-100 font-medium text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"
-                  : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-100",
-              )}
-              aria-pressed={view === "bar"}
-            >
-              <BarChart3 className="h-3 w-3" />
-              막대
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewPersisted("pie")}
-              className={cn(
-                "inline-flex items-center gap-1 px-3 py-1 text-[11px] transition-colors",
-                view === "pie"
-                  ? "bg-sky-100 font-medium text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"
-                  : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-100",
-              )}
-              aria-pressed={view === "pie"}
-            >
-              <PieChart className="h-3 w-3" />
-              원형
-            </button>
-          </div>
           <button
             type="button"
             onClick={() => setCollapsedPersisted(!collapsed)}
@@ -374,15 +283,8 @@ export function VulnDistributionPanel() {
             <Group key={g.title} title={g.title}>
               {g.slices.length === 0 ? (
                 <p className="text-xs text-neutral-500 dark:text-neutral-600">집계 데이터 없음.</p>
-              ) : view === "pie" ? (
-                <PieGroup slices={g.slices} total={total} />
               ) : (
-                <BarGroup
-                  slices={g.slices}
-                  total={total}
-                  barTintMap={g.barTintMap}
-                  barTextMap={g.barTextMap}
-                />
+                <PieGroup slices={g.slices} total={total} />
               )}
             </Group>
           ))}
@@ -400,78 +302,6 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
       </h3>
       {children}
     </div>
-  );
-}
-
-function BarGroup({
-  slices,
-  total,
-  barTintMap,
-  barTextMap,
-}: {
-  slices: Slice[];
-  total: number;
-  barTintMap?: Record<string, string>;
-  barTextMap?: Record<string, string>;
-}) {
-  return (
-    <ul className="space-y-1.5">
-      {slices.map((s) => {
-        const pct = total > 0 ? Math.max(0.5, (s.count / total) * 100) : 0;
-        const lookupKey = s.label.toLowerCase().replace(/^(critical|high|medium|low|mitre|nvd|ghsa|exploit-db).*$/, (m) => m);
-        const tintCls =
-          (barTintMap && Object.keys(barTintMap).find((k) => SEV_LABEL[k] === s.label || SOURCE_LABEL[k] === s.label) &&
-            barTintMap[Object.keys(barTintMap).find((k) => SEV_LABEL[k] === s.label || SOURCE_LABEL[k] === s.label)!]) ||
-          undefined;
-        const textCls =
-          (barTextMap && Object.keys(barTextMap).find((k) => SEV_LABEL[k] === s.label) &&
-            barTextMap[Object.keys(barTextMap).find((k) => SEV_LABEL[k] === s.label)!]) ||
-          undefined;
-        void lookupKey;
-        const inner = (
-          <>
-            <div className="flex items-baseline justify-between gap-2 text-[11px]">
-              <span className={cn("truncate font-medium", textCls ?? "text-neutral-300")}>
-                {s.label}
-              </span>
-              <span className="shrink-0 tabular-nums text-neutral-400">
-                {formatNumber(s.count)}
-                <span className="ml-1 text-neutral-600">({pct.toFixed(pct < 10 ? 1 : 0)}%)</span>
-              </span>
-            </div>
-            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-neutral-800/70">
-              <div
-                className={cn(
-                  "h-full rounded-full transition-[width]",
-                  tintCls ?? "",
-                )}
-                style={{
-                  width: `${pct}%`,
-                  // Fallback to slice color when no tint class matches
-                  // (types / domains use palette colors, not tailwind tokens).
-                  backgroundColor: tintCls ? undefined : s.color,
-                }}
-              />
-            </div>
-          </>
-        );
-        return (
-          <li key={s.label}>
-            {s.href ? (
-              <Link
-                href={s.href}
-                className="block rounded-lg px-1 py-1 transition-colors hover:bg-sky-500/5"
-                title={`${s.label} 필터 적용`}
-              >
-                {inner}
-              </Link>
-            ) : (
-              <div className="px-1 py-1">{inner}</div>
-            )}
-          </li>
-        );
-      })}
-    </ul>
   );
 }
 
