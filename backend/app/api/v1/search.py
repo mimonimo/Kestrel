@@ -330,24 +330,52 @@ _FACETS_CACHE_LOCK = asyncio.Lock()
     response_model=FacetsResponse,
     response_model_by_alias=True,
 )
-async def search_facets(db: AsyncSession = Depends(get_db)) -> FacetsResponse:
+async def search_facets(
+    db: AsyncSession = Depends(get_db),
+    from_: str | None = Query(default=None, alias="from"),
+    to: str | None = Query(default=None),
+) -> FacetsResponse:
+    """Facet aggregates, optionally narrowed by ``published_at`` window.
+
+    Date params are ISO-8601 (YYYY-MM-DD or full ISO). Cache key includes
+    them so consecutive requests for the same window hit the cache while
+    different windows compute independently.
+    """
     import time as _time
     now = _time.monotonic()
-    cached = _FACETS_CACHE.get("v1")
+    since = _parse_iso_date(from_)
+    until = _parse_iso_date(to)
+    cache_key = f"v2|{from_ or ''}|{to or ''}"
+    cached = _FACETS_CACHE.get(cache_key)
     if cached and now - cached[0] < _FACETS_CACHE_TTL:
         return cached[1]
     async with _FACETS_CACHE_LOCK:
-        # Re-check inside lock — another concurrent request may have
-        # populated the cache while we were waiting.
-        cached = _FACETS_CACHE.get("v1")
+        cached = _FACETS_CACHE.get(cache_key)
         if cached and now - cached[0] < _FACETS_CACHE_TTL:
             return cached[1]
-        result = await _build_facets(db)
-        _FACETS_CACHE["v1"] = (now, result)
+        result = await _build_facets(db, since=since, until=until)
+        _FACETS_CACHE[cache_key] = (now, result)
         return result
 
 
-async def _build_facets(db: AsyncSession) -> FacetsResponse:
+def _parse_iso_date(s: str | None) -> datetime | None:
+    if not s:
+        return None
+    try:
+        # Accept either YYYY-MM-DD or full ISO (with Z or offset).
+        if len(s) == 10:
+            return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+async def _build_facets(
+    db: AsyncSession,
+    *,
+    since: datetime | None = None,
+    until: datetime | None = None,
+) -> FacetsResponse:
     """Filter facet counts derived from the parsed CVE corpus.
 
     Replaces hardcoded chip lists in the frontend — chips are rendered
@@ -360,86 +388,108 @@ async def _build_facets(db: AsyncSession) -> FacetsResponse:
     Each facet runs a single GROUP BY against its source table; on the
     current scale (~75k vulns / 247 mappings / ~250k affected_products)
     these complete in a handful of milliseconds.
+
+    When ``since`` or ``until`` are passed we narrow on
+    ``Vulnerability.published_at`` — for cross-table facets (types / os
+    / domains) we JOIN through Vulnerability so the window applies to
+    each row's underlying CVE date, not the join row itself.
     """
-    # types — JOIN map → types, count distinct vulns per type name
-    type_rows = (
-        await db.execute(
-            select(
-                VulnerabilityType.name,
-                func.count(func.distinct(vulnerability_type_map.c.vulnerability_id)).label("c"),
-            )
-            .join(
-                vulnerability_type_map,
-                vulnerability_type_map.c.type_id == VulnerabilityType.id,
-            )
-            .group_by(VulnerabilityType.name)
-            .order_by(func.count().desc())
+    # Window filter — builds a list of conditions applied to every query.
+    def _date_window(col):
+        conds = []
+        if since is not None:
+            conds.append(col >= since)
+        if until is not None:
+            conds.append(col <= until)
+        return conds
+
+    # types — JOIN map → types → vulnerabilities for date filter.
+    type_q = (
+        select(
+            VulnerabilityType.name,
+            func.count(func.distinct(vulnerability_type_map.c.vulnerability_id)).label("c"),
         )
+        .join(
+            vulnerability_type_map,
+            vulnerability_type_map.c.type_id == VulnerabilityType.id,
+        )
+    )
+    if since is not None or until is not None:
+        type_q = type_q.join(
+            Vulnerability,
+            Vulnerability.id == vulnerability_type_map.c.vulnerability_id,
+        ).where(*_date_window(Vulnerability.published_at))
+    type_rows = (
+        await db.execute(type_q.group_by(VulnerabilityType.name).order_by(func.count().desc()))
     ).all()
 
-    # os families — JOIN affected_products, distinct vuln per os
+    # os families — JOIN affected_products → vulnerabilities for date filter.
+    os_q = select(
+        AffectedProduct.os_family,
+        func.count(func.distinct(AffectedProduct.vulnerability_id)).label("c"),
+    )
+    if since is not None or until is not None:
+        os_q = os_q.join(
+            Vulnerability,
+            Vulnerability.id == AffectedProduct.vulnerability_id,
+        ).where(*_date_window(Vulnerability.published_at))
     os_rows = (
-        await db.execute(
-            select(
-                AffectedProduct.os_family,
-                func.count(func.distinct(AffectedProduct.vulnerability_id)).label("c"),
-            )
-            .group_by(AffectedProduct.os_family)
-            .order_by(func.count().desc())
-        )
+        await db.execute(os_q.group_by(AffectedProduct.os_family).order_by(func.count().desc()))
     ).all()
 
     # severities — direct on Vulnerability
     sev_rows = (
         await db.execute(
             select(Vulnerability.severity, func.count())
-            .where(Vulnerability.severity.isnot(None))
+            .where(
+                Vulnerability.severity.isnot(None),
+                *_date_window(Vulnerability.published_at),
+            )
             .group_by(Vulnerability.severity)
             .order_by(func.count().desc())
         )
     ).all()
 
     # sources
+    src_q = select(Vulnerability.source, func.count())
+    if since is not None or until is not None:
+        src_q = src_q.where(*_date_window(Vulnerability.published_at))
     src_rows = (
-        await db.execute(
-            select(Vulnerability.source, func.count())
-            .group_by(Vulnerability.source)
-            .order_by(func.count().desc())
-        )
+        await db.execute(src_q.group_by(Vulnerability.source).order_by(func.count().desc()))
     ).all()
 
     # domains — TEXT[] unnested
+    dom_q = select(
+        func.unnest(Vulnerability.domains).label("d"),
+        func.count(),
+    )
+    if since is not None or until is not None:
+        dom_q = dom_q.where(*_date_window(Vulnerability.published_at))
     dom_rows = (
-        await db.execute(
-            select(
-                func.unnest(Vulnerability.domains).label("d"),
-                func.count(),
-            )
-            .group_by("d")
-            .order_by(func.count().desc())
-        )
+        await db.execute(dom_q.group_by("d").order_by(func.count().desc()))
     ).all()
 
     def _enum_value(v) -> str:
         return v.value if hasattr(v, "value") else str(v)
 
-    # publishedAt boundaries — single MIN/MAX scan over the indexed
-    # column. NULLs filtered so we don't show 1970-01-01 floor.
-    bounds = (
-        await db.execute(
-            select(
-                func.min(Vulnerability.published_at),
-                func.max(Vulnerability.published_at),
-            ).where(Vulnerability.published_at.isnot(None))
-        )
-    ).first()
+    # publishedAt boundaries — MIN/MAX over the (filtered) window so the
+    # header shows the actual span of the visible aggregation.
+    bounds_q = select(
+        func.min(Vulnerability.published_at),
+        func.max(Vulnerability.published_at),
+    ).where(
+        Vulnerability.published_at.isnot(None),
+        *_date_window(Vulnerability.published_at),
+    )
+    bounds = (await db.execute(bounds_q)).first()
     earliest = bounds[0] if bounds else None
     latest = bounds[1] if bounds else None
 
-    # Authoritative whole-corpus count — single SELECT COUNT(*).
-    total = (
-        await db.execute(select(func.count()).select_from(Vulnerability))
-    ).scalar_one()
+    # Authoritative count — narrowed by window too so charts add up.
+    total_q = select(func.count()).select_from(Vulnerability)
+    if since is not None or until is not None:
+        total_q = total_q.where(*_date_window(Vulnerability.published_at))
+    total = (await db.execute(total_q)).scalar_one()
 
     return FacetsResponse(
         total=int(total or 0),

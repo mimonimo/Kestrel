@@ -3,13 +3,16 @@
 import Link from "next/link";
 import type { UrlObject } from "url";
 import {
+  Activity,
   BarChart3,
   ChevronDown,
   ChevronUp,
   Loader2,
+  Pause,
   PieChart,
+  Play,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { api, type FacetBucket } from "@/lib/api";
@@ -68,6 +71,25 @@ const PIE_PALETTE = SHARED_PIE_PALETTE;
 
 const VIEW_KEY = "kestrel:vuln-dist:view"; // 'bar' | 'pie'
 const COLLAPSED_KEY = "kestrel:vuln-dist:collapsed"; // '1' | '0'
+const PERIOD_KEY = "kestrel:vuln-dist:period"; // PeriodKey
+const LIVE_KEY = "kestrel:vuln-dist:live"; // '1' | '0'
+
+type PeriodKey = "1d" | "7d" | "30d" | "90d" | "all";
+
+const PERIODS: { value: PeriodKey; label: string; days: number | null }[] = [
+  { value: "1d", label: "24시간", days: 1 },
+  { value: "7d", label: "7일", days: 7 },
+  { value: "30d", label: "30일", days: 30 },
+  { value: "90d", label: "90일", days: 90 },
+  { value: "all", label: "전체", days: null },
+];
+
+function periodToWindow(period: PeriodKey): { from?: string; to?: string } {
+  const def = PERIODS.find((p) => p.value === period);
+  if (!def || def.days === null) return {};
+  const from = new Date(Date.now() - def.days * 24 * 60 * 60 * 1000);
+  return { from: from.toISOString() };
+}
 
 function formatNumber(n: number): string {
   return n.toLocaleString("ko-KR");
@@ -108,35 +130,54 @@ function buildSlices(
 }
 
 export function VulnDistributionPanel() {
-  const facets = useQuery({
-    queryKey: ["search", "facets"],
-    queryFn: () => api.getSearchFacets(),
-    staleTime: 60_000,
-  });
-
   const [view, setView] = useState<"bar" | "pie">("bar");
   const [collapsed, setCollapsed] = useState(false);
+  const [period, setPeriod] = useState<PeriodKey>("all");
+  const [live, setLive] = useState(false);
 
-  // Hydrate from localStorage so the user's chosen view + collapse state
-  // sticks across page loads.
+  // Recompute the window every render so "24시간" stays a moving window
+  // — useMemo gates by `period` only since periodToWindow uses Date.now().
+  const window_ = useMemo(() => periodToWindow(period), [period]);
+
+  const facets = useQuery({
+    queryKey: ["search", "facets", window_.from ?? "", window_.to ?? ""],
+    queryFn: () => api.getSearchFacets(window_),
+    staleTime: live ? 0 : 60_000,
+    refetchInterval: live ? 30_000 : false,
+    refetchIntervalInBackground: false,
+  });
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const v = window.localStorage.getItem(VIEW_KEY);
     if (v === "bar" || v === "pie") setView(v);
     setCollapsed(window.localStorage.getItem(COLLAPSED_KEY) === "1");
+    const p = window.localStorage.getItem(PERIOD_KEY);
+    if (p && PERIODS.some((x) => x.value === p)) setPeriod(p as PeriodKey);
+    setLive(window.localStorage.getItem(LIVE_KEY) === "1");
   }, []);
 
   const setViewPersisted = (v: "bar" | "pie") => {
     setView(v);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(VIEW_KEY, v);
-    }
+    if (typeof window !== "undefined") window.localStorage.setItem(VIEW_KEY, v);
   };
 
   const setCollapsedPersisted = (c: boolean) => {
     setCollapsed(c);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(COLLAPSED_KEY, c ? "1" : "0");
+    }
+  };
+
+  const setPeriodPersisted = (p: PeriodKey) => {
+    setPeriod(p);
+    if (typeof window !== "undefined") window.localStorage.setItem(PERIOD_KEY, p);
+  };
+
+  const setLivePersisted = (l: boolean) => {
+    setLive(l);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(LIVE_KEY, l ? "1" : "0");
     }
   };
 
@@ -226,8 +267,59 @@ export function VulnDistributionPanel() {
               {dayLo} – {dayHi}
             </span>
           )}
+          {live && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 dark:text-emerald-200">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              </span>
+              LIVE
+            </span>
+          )}
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+          {/* Period selector — pill group */}
+          <div
+            role="group"
+            aria-label="집계 기간"
+            className="inline-flex overflow-hidden rounded-full border border-neutral-300 bg-white dark:border-neutral-800 dark:bg-surface-2"
+          >
+            {PERIODS.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                onClick={() => setPeriodPersisted(p.value)}
+                className={cn(
+                  "px-2.5 py-1 text-[11px] transition-colors",
+                  period === p.value
+                    ? "bg-sky-100 font-medium text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"
+                    : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-100",
+                )}
+                aria-pressed={period === p.value}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {/* Live polling toggle */}
+          <button
+            type="button"
+            onClick={() => setLivePersisted(!live)}
+            className={cn(
+              "inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-[11px] transition-colors active:scale-95",
+              live
+                ? "border-emerald-500 bg-emerald-50 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200"
+                : "border-neutral-300 text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:border-neutral-800 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100",
+            )}
+            aria-pressed={live}
+            title={live ? "실시간 업데이트 끄기 (30초 폴링)" : "실시간 업데이트 켜기"}
+          >
+            {live ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+            {live ? "라이브" : "정지"}
+          </button>
+          {facets.isFetching && (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-600 dark:text-sky-400" />
+          )}
           {/* View toggle (bar / pie) */}
           <div
             role="group"

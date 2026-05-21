@@ -379,8 +379,15 @@ export const api = {
     request<SynthesizeCacheReport>(`/sandbox/synthesize/cache`),
   getLabKindStats: () =>
     request<LabKindStatsReport>(`/sandbox/lab-kind-stats`),
-  getSearchFacets: () =>
-    request<SearchFacetsResponse>(`/search/facets`),
+  getSearchFacets: (window?: { from?: string; to?: string }) => {
+    const params = new URLSearchParams();
+    if (window?.from) params.set("from", window.from);
+    if (window?.to) params.set("to", window.to);
+    const qs = params.toString();
+    return request<SearchFacetsResponse>(
+      `/search/facets${qs ? `?${qs}` : ""}`,
+    );
+  },
   getAssetNotifications: (
     assets: Asset[],
     sinceDays = 14,
