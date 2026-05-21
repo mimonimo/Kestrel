@@ -12,10 +12,9 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { AiSettingsForm } from "@/components/settings/AiSettingsForm";
 import { ApiKeyField } from "@/components/settings/ApiKeyField";
 import { AssetsManager } from "@/components/settings/AssetsManager";
-import { ClaudeAuthPanel } from "@/components/settings/ClaudeAuthPanel";
+import { ClaudeIntegrationPanel } from "@/components/settings/ClaudeIntegrationPanel";
 import { LabKindStatsPanel } from "@/components/settings/LabKindStatsPanel";
 import { MitreBackfillPanel } from "@/components/settings/MitreBackfillPanel";
 import { SandboxSessionsPanel } from "@/components/settings/SandboxSessionsPanel";
@@ -91,27 +90,9 @@ const CATEGORIES: CategoryDef[] = [
     sections: [
       {
         id: "ai-analysis",
-        title: "Claude 인증 + 모델 라벨",
-        description: "AI 심층 분석과 실습 환경 합성에 사용되는 Claude 인증입니다.",
-        render: () => (
-          <div className="space-y-6">
-            <div>
-              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                1. Claude 인증
-              </h3>
-              <ClaudeAuthPanel />
-            </div>
-            <div className="border-t border-neutral-800 pt-6">
-              <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                2. 모델 라벨
-              </h3>
-              <p className="mb-3 text-[11px] text-neutral-500">
-                위 Claude 구독을 어떤 모델로 호출할지 선택합니다.
-              </p>
-              <AiSettingsForm />
-            </div>
-          </div>
-        ),
+        title: "Claude 연동",
+        description: "AI 심층 분석과 실습 환경 합성에 사용되는 Claude 인증과 모델을 한 곳에서.",
+        render: () => <ClaudeIntegrationPanel />,
       },
     ],
   },
