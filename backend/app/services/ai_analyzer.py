@@ -233,11 +233,35 @@ def _extract_first_json_object(raw: str) -> dict:
 def _parse_payload(raw: str) -> AiAnalysis:
     """Accept JSON in many shapes: raw object, fenced markdown, or with
     trailing prose. Strict schema check after extraction."""
+    # Empty raw = CLI exited 0 but emitted nothing — surfaced as the
+    # cryptic "Expecting value: line 1 column 1 (char 0)" parse error
+    # before. Distinguish so the user sees an actionable auth hint.
+    stripped = raw.strip()
+    if not stripped:
+        log.warning("ai_analyzer.empty_response")
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "AI 응답이 비어 있습니다. Claude CLI 인증이 만료됐거나 토큰 자동 "
+                "갱신이 실패했을 가능성이 큽니다. 설정 → Claude 연동에서 \"다시 "
+                "로그인\"을 한 번 눌러 보세요."
+            ),
+        )
     try:
-        data = _extract_first_json_object(raw)
+        data = _extract_first_json_object(stripped)
     except json.JSONDecodeError as e:
-        log.exception("ai_analyzer.parse_failed", raw=raw[:500])
-        raise HTTPException(status_code=502, detail=f"AI 응답 파싱 실패: {e}") from e
+        log.exception("ai_analyzer.parse_failed", raw=stripped[:500])
+        # Heuristic: if the response looks like an error message (starts
+        # with text, no `{`), surface it verbatim instead of a JSON
+        # parser error — much more actionable.
+        if not stripped.lstrip().startswith("{") and not stripped.lstrip().startswith("```"):
+            raise HTTPException(
+                status_code=502,
+                detail=f"AI 가 JSON 대신 텍스트를 반환했습니다: {stripped[:300]}",
+            ) from e
+        raise HTTPException(
+            status_code=502, detail=f"AI 응답 파싱 실패: {e}"
+        ) from e
     if not isinstance(data, dict):
         raise HTTPException(status_code=502, detail="AI 응답이 JSON 객체가 아닙니다.")
     try:

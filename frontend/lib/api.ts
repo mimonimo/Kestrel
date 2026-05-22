@@ -677,7 +677,12 @@ export interface ResourceActionResponse {
 // Claude Code OAuth (PR 10-AD): dashboard-driven login flow.
 export interface ClaudeAuthStatus {
   loggedIn: boolean;
-  expiresAt: number | null; // epoch seconds
+  expiresAt: number | null; // epoch milliseconds
+  // True when the credentials file has a refresh_token alongside the
+  // (possibly expired) access_token. Claude CLI uses it to auto-refresh
+  // — UI should treat this state as "still connected" even when
+  // expiresAt has passed.
+  refreshTokenPresent: boolean;
   scopes: string[];
   cliPresent: boolean;
   cliVersion: string | null;

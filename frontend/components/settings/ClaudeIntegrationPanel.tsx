@@ -2,7 +2,6 @@
 
 import {
   AlertCircle,
-  AlertTriangle,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -11,12 +10,11 @@ import {
   ExternalLink,
   Loader2,
   LogOut,
-  RefreshCw,
   ShieldAlert,
   Sparkles,
   Upload,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -33,8 +31,6 @@ import { cn } from "@/lib/utils";
 
 const STATUS_KEY = ["claude-auth", "status"];
 const CREDS_KEY = ["ai-credentials"];
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 // Available models for the Claude Code CLI provider. Order = recommendation
 // rank (top = best for deep analysis, bottom = fastest/cheapest).
 const MODELS: { value: string; label: string; tagline: string }[] = [
@@ -42,26 +38,6 @@ const MODELS: { value: string; label: string; tagline: string }[] = [
   { value: "claude-sonnet-4-6", label: "Sonnet 4.6", tagline: "균형 · 일상 분석" },
   { value: "claude-haiku-4-5-20251001", label: "Haiku 4.5", tagline: "빠른 응답 · 가벼운 작업" },
 ];
-
-interface ExpiryInfo {
-  stamp: string;        // YYYY-MM-DD HH:mm
-  daysLeft: number;     // negative if expired
-  level: "expired" | "soon" | "ok" | "long";
-}
-
-function describeExpiry(epochMs: number | null): ExpiryInfo | null {
-  if (!epochMs) return null;
-  const d = new Date(epochMs);
-  const diffMs = d.getTime() - Date.now();
-  const daysLeft = Math.floor(diffMs / DAY_MS);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  let level: ExpiryInfo["level"] = "ok";
-  if (diffMs < 0) level = "expired";
-  else if (daysLeft < 7) level = "soon";
-  else if (daysLeft > 30) level = "long";
-  return { stamp, daysLeft, level };
-}
 
 export function ClaudeIntegrationPanel() {
   const qc = useQueryClient();
@@ -168,7 +144,11 @@ export function ClaudeIntegrationPanel() {
     }
   };
 
-  const expiry = useMemo(() => describeExpiry(status.data?.expiresAt ?? null), [status.data?.expiresAt]);
+  // 만료 표시는 사용자 요청으로 제거. Anthropic OAuth 의 short-lived
+  // access_token 은 CLI 가 refresh_token 으로 자동 갱신하므로 UI 에서
+  // 카운트다운/경고/지금-갱신 버튼을 노출하는 게 오히려 혼란이었다.
+  // status.loggedIn 가 곧 연동 상태. 실제 토큰 무효는 AI 호출 시점에 자연
+  // surface 되며 사용자가 직접 "다시 로그인" 하면 됨.
 
   // The single Claude credential row (auto-created by backend on first login).
   const activeId = credsQuery.data?.activeCredentialId ?? null;
@@ -222,13 +202,11 @@ export function ClaudeIntegrationPanel() {
     );
   }
 
-  const expired = expiry?.level === "expired";
-  const expiringSoon = expiry?.level === "soon";
 
   return (
     <div className="min-w-0 space-y-5 rounded-2xl border border-neutral-200 bg-white p-6 dark:border-neutral-800 dark:bg-surface-1">
       {/* ── 상단 상태 영역 ─────────────────────────────────────────────── */}
-      {data.loggedIn && !expired ? (
+      {data.loggedIn ? (
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-700 ring-1 ring-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
@@ -238,26 +216,6 @@ export function ClaudeIntegrationPanel() {
               <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
                 Claude 연동됨
               </h3>
-              {expiry && (
-                <p className="mt-0.5 text-xs text-neutral-700 dark:text-neutral-400">
-                  자격증명 만료까지{" "}
-                  <span
-                    className={cn(
-                      "font-medium tabular-nums",
-                      expiringSoon
-                        ? "text-amber-700 dark:text-amber-300"
-                        : "text-neutral-900 dark:text-neutral-200",
-                    )}
-                  >
-                    {expiry.daysLeft >= 1
-                      ? `${expiry.daysLeft}일`
-                      : `${Math.max(1, Math.round((new Date(data.expiresAt!).getTime() - Date.now()) / (60 * 60 * 1000)))}시간`}
-                  </span>
-                  <span className="ml-2 text-neutral-500 dark:text-neutral-500">
-                    · {expiry.stamp}
-                  </span>
-                </p>
-              )}
               {data.scopes.length > 0 && (
                 <p className="mt-0.5 text-[11px] text-neutral-600 dark:text-neutral-500">
                   권한: {data.scopes.join(", ")}
@@ -265,66 +223,33 @@ export function ClaudeIntegrationPanel() {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {(expiringSoon || expired) && !session && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => start.mutate()}
-                disabled={start.isPending}
-                className="border-amber-500/50 text-amber-800 hover:bg-amber-500/10 dark:text-amber-200"
-                title="만료 전에 미리 갱신"
-              >
-                {start.isPending ? (
-                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="mr-1 h-3.5 w-3.5" />
-                )}
-                지금 갱신
-              </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={logout.isPending}
+            onClick={() => logout.mutate()}
+            className="text-rose-700 hover:bg-rose-500/10 dark:text-rose-300"
+          >
+            {logout.isPending ? (
+              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <LogOut className="mr-1 h-3.5 w-3.5" />
             )}
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={logout.isPending}
-              onClick={() => logout.mutate()}
-              className="text-rose-700 hover:bg-rose-500/10 dark:text-rose-300"
-            >
-              {logout.isPending ? (
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <LogOut className="mr-1 h-3.5 w-3.5" />
-              )}
-              로그아웃
-            </Button>
-          </div>
+            로그아웃
+          </Button>
         </header>
       ) : (
         <header className="flex items-start gap-3">
-          <div
-            className={cn(
-              "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1",
-              expired
-                ? "bg-rose-500/15 text-rose-700 ring-rose-500/30 dark:text-rose-300"
-                : "bg-amber-500/15 text-amber-700 ring-amber-500/30 dark:text-amber-300",
-            )}
-          >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-700 ring-1 ring-amber-500/30 dark:text-amber-300">
             <ShieldAlert className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
             <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-              {expired ? "자격증명이 만료되었습니다" : "Claude 에 아직 연결되지 않았습니다"}
+              Claude 에 아직 연결되지 않았습니다
             </h3>
             <p className="mt-0.5 text-xs text-neutral-700 dark:text-neutral-400">
-              {expired
-                ? "다시 로그인하면 새 토큰으로 갱신됩니다."
-                : "구독 계정으로 한 번만 로그인하면 됩니다. API 키 불필요."}
+              구독 계정으로 한 번만 로그인하면 됩니다. API 키 불필요.
             </p>
-            {expired && expiry && (
-              <p className="mt-0.5 text-[11px] text-neutral-600 dark:text-neutral-500">
-                만료 시각 {expiry.stamp}
-              </p>
-            )}
           </div>
         </header>
       )}
@@ -434,10 +359,8 @@ export function ClaudeIntegrationPanel() {
         </div>
       )}
 
-      {/* ── 로그인 / 다시 로그인 시작 버튼 ──────────────────────────
-          미연결 또는 만료된 상태에서 세션이 없을 때 항상 노출. 만료
-          케이스도 `data.loggedIn=true` 라 이전 코드에서 누락됐었음. */}
-      {!session && (!data.loggedIn || expired) && (
+      {/* ── 로그인 시작 버튼 (미연결 + 세션 없음일 때만) ─────────── */}
+      {!session && !data.loggedIn && (
         <div className="flex flex-wrap items-center gap-3">
           <Button size="md" onClick={() => start.mutate()} disabled={start.isPending}>
             {start.isPending ? (
@@ -445,7 +368,7 @@ export function ClaudeIntegrationPanel() {
             ) : (
               <Sparkles className="mr-1.5 h-4 w-4" />
             )}
-            {expired ? "다시 로그인" : "Claude 로그인"}
+            Claude 로그인
           </Button>
           {start.error && (
             <span className="inline-flex items-center gap-1 text-xs text-rose-700 dark:text-rose-300">
@@ -456,11 +379,11 @@ export function ClaudeIntegrationPanel() {
         </div>
       )}
 
-      {/* ── 모델 선택 (로그인 상태 + 미만료일 때만 enabled) ───────── */}
+      {/* ── 모델 선택 (로그인 상태에서만 enabled) ─────────────────── */}
       <div
         className={cn(
           "rounded-xl border bg-neutral-50 p-4 dark:bg-surface-2",
-          data.loggedIn && !expired
+          data.loggedIn
             ? "border-neutral-200 dark:border-neutral-800"
             : "border-dashed border-neutral-300 dark:border-neutral-700",
         )}
@@ -479,7 +402,7 @@ export function ClaudeIntegrationPanel() {
           )}
         </div>
 
-        {!data.loggedIn || expired ? (
+        {!data.loggedIn ? (
           <p className="text-xs text-neutral-600 dark:text-neutral-500">
             로그인 후 모델을 선택할 수 있습니다.
           </p>
@@ -533,7 +456,7 @@ export function ClaudeIntegrationPanel() {
       </div>
 
       {/* ── 수동 자격증명 붙여넣기 (CLI 토큰 교환 실패 우회) ─────── */}
-      {(!data.loggedIn || expired) && !session && (
+      {!data.loggedIn && !session && (
         <div className="rounded-xl border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-2">
           <button
             type="button"
@@ -611,16 +534,6 @@ export function ClaudeIntegrationPanel() {
               )}
             </div>
           )}
-        </div>
-      )}
-
-      {/* ── 만료 임박 경고 배너 (logged-in + soon) ─────────────────── */}
-      {data.loggedIn && expiringSoon && !session && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-200">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          <span>
-            자격증명이 곧 만료됩니다 ({expiry?.daysLeft}일 남음). "지금 갱신"으로 미리 새 토큰을 받으세요.
-          </span>
         </div>
       )}
 

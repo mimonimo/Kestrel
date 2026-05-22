@@ -83,10 +83,19 @@ class _CamelOut(BaseModel):
 
 
 class StatusOut(_CamelOut):
-    """Current login state — what the settings panel renders on mount."""
+    """Current login state — what the settings panel renders on mount.
+
+    ``refresh_token_present`` distinguishes "access token expired but
+    CLI can refresh transparently" from "fully signed out". Anthropic
+    OAuth access tokens are short-lived (~8h); a present refresh token
+    means the CLI auto-refreshes on next call. Without surfacing this
+    the UI showed "만료됨" while claude.com still considered the user
+    signed in.
+    """
 
     logged_in: bool
     expires_at: int | None = None  # epoch milliseconds (matches CLI)
+    refresh_token_present: bool = False
     scopes: list[str] = []
     cli_present: bool
     cli_version: str | None = None
@@ -300,9 +309,11 @@ async def status_route() -> StatusOut:
     creds = _migrate_credentials_if_needed(creds)
     oauth = creds.get("claudeAiOauth") or {}
     expires_at = _normalize_expires_at(oauth.get("expiresAt"))
+    refresh_token_present = bool(oauth.get("refreshToken"))
     return StatusOut(
         logged_in=True,
         expires_at=expires_at,
+        refresh_token_present=refresh_token_present,
         scopes=list(oauth.get("scopes") or []),
         cli_present=cli_version is not None,
         cli_version=cli_version,

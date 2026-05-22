@@ -1,22 +1,43 @@
 import Link from "next/link";
+import { Sparkles } from "lucide-react";
+
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BookmarkButton } from "./BookmarkButton";
 import { SeverityBadge } from "./SeverityBadge";
 import { SourceBadgeCluster } from "./SourceBadgeCluster";
 import { TicketBadge } from "./TicketBadge";
-import { timeAgo } from "@/lib/utils";
+import { useAnalyzedCveIds } from "@/lib/analysis-history";
+import { cn, timeAgo } from "@/lib/utils";
 import type { VulnerabilityListItem as Item } from "@/lib/types";
 
 export function CveListItem({ vuln }: { vuln: Item }) {
   const osList = (vuln.osFamilies ?? []).filter((o) => o !== "other");
+  const analyzedIds = useAnalyzedCveIds();
+  const isAnalyzed = analyzedIds.has(vuln.cveId);
 
   return (
     <Link href={`/cve/${vuln.cveId}`} className="block">
-      <Card className="transition-all duration-150 hover:-translate-y-0.5 hover:border-neutral-300 hover:shadow-md hover:shadow-neutral-900/5 active:translate-y-0 active:shadow-sm dark:hover:border-neutral-700 dark:hover:shadow-black/30">
+      <Card
+        className={cn(
+          "transition-all duration-150 hover:-translate-y-0.5 hover:border-neutral-300 hover:shadow-md hover:shadow-neutral-900/5 active:translate-y-0 active:shadow-sm dark:hover:border-neutral-700 dark:hover:shadow-black/30",
+          // Left accent bar + soft tinted bg shifts (very subtle) signal
+          // "이 CVE 는 AI 분석 결과가 저장돼 있다" at a glance from the list.
+          isAnalyzed && "border-l-[3px] border-l-violet-500 dark:border-l-violet-400",
+        )}
+      >
         <CardHeader className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
+              {isAnalyzed && (
+                <span
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-500/15 text-violet-700 ring-1 ring-violet-500/30 dark:text-violet-300"
+                  title="이 CVE 의 AI 분석 결과가 저장돼 있습니다 — 클릭해 바로 확인"
+                  aria-label="AI 분석 완료"
+                >
+                  <Sparkles className="h-3 w-3" />
+                </span>
+              )}
               <span className="font-mono text-sm font-semibold text-neutral-600 dark:text-neutral-500">
                 {vuln.cveId}
               </span>

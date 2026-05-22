@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 
 import { ApiError, api, type AiAnalysisResponse } from "@/lib/api";
+import { recordAnalysisHistory } from "@/lib/analysis-history";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ErrorBox, FeedbackBoxButton } from "@/components/ui/feedback-box";
@@ -126,18 +127,13 @@ function CodeBlock({ source }: { source: string }) {
 }
 
 export function AiAnalysisPanel({ cveId }: { cveId: string }) {
-  // Track the previously-cached analysis for this CVE separately from
-  // the live mutation result. The "이전 분석 보기" button surfaces it
-  // without re-burning a Claude credit.
+  // Cached analysis for this CVE. Auto-rendered when the user revisits
+  // the CVE — no extra click required (the "N분 전 분석" chip in the
+  // header is the cue that it's a cached, not freshly-run, result).
   const [cached, setCached] = useState<CachedAnalysis | null>(null);
-  // When true, the panel renders the cached result instead of (or
-  // before) running a fresh analyze. Reset when user re-runs.
-  const [showingCached, setShowingCached] = useState(false);
 
-  // Hydrate cached entry on mount / cveId change.
   useEffect(() => {
     setCached(readCachedAnalysis(cveId));
-    setShowingCached(false);
   }, [cveId]);
 
   const analyze = useMutation<AiAnalysisResponse, Error>({
@@ -145,15 +141,25 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
     onSuccess: (result) => {
       writeCachedAnalysis(cveId, result);
       setCached({ result, timestamp: Date.now() });
-      setShowingCached(false);
+      // Append to the global cross-CVE analysis history (drives the
+      // "분석 기록 보기" floating button popover).
+      recordAnalysisHistory({
+        cveId,
+        attackMethod: result.attackMethod,
+        payloadCount: result.payloadExamples.length,
+        mitigationCount: result.mitigations.length,
+      });
     },
   });
 
-  // Display priority: live mutation result > explicitly-showing cached.
-  const data = analyze.data ?? (showingCached ? cached?.result ?? null : null);
+  // Display priority: live mutation result first, then cached. So
+  // `data` is non-null any time the user has either just analyzed OR
+  // analyzed this CVE in a previous visit — meaning revisiting the CVE
+  // never falls back to the "분석 요청" form when there's content to show.
+  const data = analyze.data ?? cached?.result ?? null;
+  const isFromCache = analyze.data == null && cached != null;
   const error = analyze.error;
   const isKeyMissing = error instanceof ApiError && error.status === 400;
-  const hasCachedOnly = cached != null && analyze.data == null;
 
   return (
     <Card>
@@ -163,8 +169,11 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-500">
             AI 심층 분석
           </h2>
-          {showingCached && cached && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-700 dark:bg-surface-2 dark:text-neutral-400">
+          {isFromCache && cached && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-700 dark:bg-surface-2 dark:text-neutral-400"
+              title={`마지막 분석: ${new Date(cached.timestamp).toLocaleString("ko-KR")}`}
+            >
               <Clock className="h-3 w-3" />
               {formatAnalysisAge(cached.timestamp)} 분석
             </span>
@@ -189,28 +198,15 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
               패치를 한 번에. 보안 운영팀이 그대로 점검·티켓팅에 쓸 수 있는
               형태로 정리됩니다.
             </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                onClick={() => analyze.mutate()}
-                size="md"
-                className="rounded-full bg-violet-600 text-white shadow-sm shadow-violet-600/20 hover:bg-violet-700 hover:shadow-md hover:shadow-violet-600/30 dark:bg-violet-500 dark:text-white dark:hover:bg-violet-400"
-              >
-                <Sparkles className="mr-1.5 h-4 w-4" />
-                AI 심층 분석 요청
-              </Button>
-              {hasCachedOnly && (
-                <button
-                  type="button"
-                  onClick={() => setShowingCached(true)}
-                  title={`마지막 분석: ${new Date(cached!.timestamp).toLocaleString("ko-KR")}`}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition-all duration-150 hover:border-violet-500/60 hover:bg-violet-50 hover:text-violet-800 active:scale-95 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-violet-500/60 dark:hover:bg-violet-500/10 dark:hover:text-violet-200"
-                >
-                  <Clock className="h-3.5 w-3.5" />
-                  이전 분석 보기 · {formatAnalysisAge(cached!.timestamp)}
-                </button>
-              )}
-            </div>
+            <Button
+              type="button"
+              onClick={() => analyze.mutate()}
+              size="md"
+              className="rounded-full bg-violet-600 text-white shadow-sm shadow-violet-600/20 hover:bg-violet-700 hover:shadow-md hover:shadow-violet-600/30 dark:bg-violet-500 dark:text-white dark:hover:bg-violet-400"
+            >
+              <Sparkles className="mr-1.5 h-4 w-4" />
+              AI 심층 분석 요청
+            </Button>
           </div>
         )}
 
