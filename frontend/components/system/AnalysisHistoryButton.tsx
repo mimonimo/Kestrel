@@ -105,11 +105,10 @@ export function AnalysisHistoryButton() {
   if (count === 0 && !isRunning && !open) return null;
 
   return (
-    // Stack above the StatusBanner. StatusBanner uses fixed bottom-4
-    // right-4 (sm:bottom-6 right-6) with a single anchor pill that's
-    // ~36px tall. Put this group at bottom-16 (≈ 64px) so the two
-    // float independently and never overlap.
-    <div className="pointer-events-none fixed bottom-16 right-4 z-50 flex flex-col items-end gap-2 sm:bottom-[5.5rem] sm:right-6">
+    // Anchored to the OPPOSITE corner (bottom-left) so it can never
+    // overlap StatusBanner's right-anchored "상태 보기" pill + popover.
+    // Popover opens from this container's left edge.
+    <div className="pointer-events-none fixed bottom-4 left-4 z-50 flex flex-col items-start gap-2 sm:bottom-6 sm:left-6">
       {open && (
         <div
           ref={popoverRef}
