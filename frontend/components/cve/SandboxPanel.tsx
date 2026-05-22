@@ -18,7 +18,7 @@ import {
   ThumbsUp,
   XCircle,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
@@ -455,10 +455,55 @@ function RunResult({ result }: { result: SandboxExecResponse }) {
   );
 }
 
+// Per-CVE persisted state — sessionId + lastResult survive navigation
+// away & back so the user doesn't lose context. Cleared when the session
+// is stopped or expires.
+const SESSION_KEY_PREFIX = "kestrel:sandbox-session:";
+const RESULT_KEY_PREFIX = "kestrel:sandbox-result:";
+
+function readPersisted<T>(key: string): T | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function writePersisted(key: string, value: unknown): void {
+  if (typeof window === "undefined") return;
+  if (value == null) {
+    window.localStorage.removeItem(key);
+  } else {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  }
+}
+
 export function SandboxPanel({ cveId }: { cveId: string }) {
   const qc = useQueryClient();
+  const sessionKey = SESSION_KEY_PREFIX + cveId;
+  const resultKey = RESULT_KEY_PREFIX + cveId;
+
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<SandboxExecResponse | null>(null);
+
+  // Hydrate from localStorage on mount (per cveId). Defers to next tick
+  // so SSR/CSR mismatch doesn't cause hydration warnings.
+  useEffect(() => {
+    setSessionId(readPersisted<string>(sessionKey));
+    setLastResult(readPersisted<SandboxExecResponse>(resultKey));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cveId]);
+
+  // Persist whenever state changes.
+  useEffect(() => {
+    writePersisted(sessionKey, sessionId);
+  }, [sessionKey, sessionId]);
+  useEffect(() => {
+    writePersisted(resultKey, lastResult);
+  }, [resultKey, lastResult]);
 
   // Synthesis stream state — lives in the panel because the stream is
   // bidirectional with React state (each event updates the timeline) and
@@ -474,7 +519,20 @@ export function SandboxPanel({ cveId }: { cveId: string }) {
     enabled: sessionId != null,
     refetchInterval: (q) =>
       q.state.data && q.state.data.status === "running" ? 30_000 : false,
+    retry: false,
   });
+
+  // Stale-session cleanup — persisted sessionId from a previous visit
+  // may already be reaped on the server (TTL ~30 min). Clear local state
+  // so the panel returns to its "start a new session" form instead of
+  // showing a permanent error.
+  useEffect(() => {
+    const e = sessionQuery.error as ApiError | undefined;
+    if (e && e.status === 404 && sessionId) {
+      setSessionId(null);
+      setLastResult(null);
+    }
+  }, [sessionQuery.error, sessionId]);
 
   const start = useMutation({
     mutationFn: (opts?: { attemptSynthesis?: boolean; mappingId?: number }) =>

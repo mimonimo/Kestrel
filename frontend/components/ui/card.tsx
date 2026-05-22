@@ -1,18 +1,17 @@
 import type { HTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
-// Base card surface — paired light/dark with tactile hover feedback.
-// Hover bumps the border tone AND adds a subtle shadow lift so cards
-// inside a list (CveListItem, settings panels) feel clickable without
-// being garish. Active state retracts the lift for a press feel.
+// Base card surface — paired light/dark. Static container by default
+// (CVE 상세 페이지의 정보 카드처럼 클릭하지 않는 컨테이너는 hover 시
+// 움직이면 오히려 불편). 클릭 가능한 카드 (CveListItem 등) 는 className
+// 으로 `group hover:-translate-y-0.5 hover:shadow-md ...` 를 추가해
+// 개별 opt-in 한다.
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
-        "rounded-lg border border-neutral-200 bg-white transition-all duration-150",
-        "hover:-translate-y-0.5 hover:border-neutral-300 hover:shadow-md hover:shadow-neutral-900/5",
-        "active:translate-y-0 active:shadow-sm",
-        "dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-neutral-700 dark:hover:shadow-black/30",
+        "rounded-lg border border-neutral-200 bg-white transition-colors duration-150",
+        "dark:border-neutral-800 dark:bg-surface-1",
         className,
       )}
       {...props}

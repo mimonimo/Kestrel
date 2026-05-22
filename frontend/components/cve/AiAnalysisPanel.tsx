@@ -1,7 +1,7 @@
 "use client";
 
-import { Check, Copy, Loader2, RotateCcw, Sparkles } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Check, Clock, Copy, Loader2, RotateCcw, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 
 import { ApiError, api, type AiAnalysisResponse } from "@/lib/api";
@@ -9,6 +9,53 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ErrorBox, FeedbackBoxButton } from "@/components/ui/feedback-box";
 import { cn } from "@/lib/utils";
+
+// Per-CVE cache for the most recent AI analysis result. Survives
+// navigation away & back so the user can revisit a previous analysis
+// without re-burning a Claude credit on the same vulnerability.
+const ANALYSIS_KEY_PREFIX = "kestrel:ai-analysis:";
+
+interface CachedAnalysis {
+  result: AiAnalysisResponse;
+  timestamp: number; // epoch ms
+}
+
+function readCachedAnalysis(cveId: string): CachedAnalysis | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(ANALYSIS_KEY_PREFIX + cveId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedAnalysis;
+    if (!parsed?.result || typeof parsed.timestamp !== "number") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedAnalysis(cveId: string, result: AiAnalysisResponse): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      ANALYSIS_KEY_PREFIX + cveId,
+      JSON.stringify({ result, timestamp: Date.now() }),
+    );
+  } catch {
+    // localStorage quota exceeded — silently skip; the in-memory result
+    // is still available.
+  }
+}
+
+function formatAnalysisAge(epochMs: number): string {
+  const diff = Date.now() - epochMs;
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "방금";
+  if (mins < 60) return `${mins}분 전`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}시간 전`;
+  const days = Math.floor(hours / 24);
+  return `${days}일 전`;
+}
 
 function detectLanguage(source: string): string {
   const s = source.trim();
@@ -79,28 +126,55 @@ function CodeBlock({ source }: { source: string }) {
 }
 
 export function AiAnalysisPanel({ cveId }: { cveId: string }) {
+  // Track the previously-cached analysis for this CVE separately from
+  // the live mutation result. The "이전 분석 보기" button surfaces it
+  // without re-burning a Claude credit.
+  const [cached, setCached] = useState<CachedAnalysis | null>(null);
+  // When true, the panel renders the cached result instead of (or
+  // before) running a fresh analyze. Reset when user re-runs.
+  const [showingCached, setShowingCached] = useState(false);
+
+  // Hydrate cached entry on mount / cveId change.
+  useEffect(() => {
+    setCached(readCachedAnalysis(cveId));
+    setShowingCached(false);
+  }, [cveId]);
+
   const analyze = useMutation<AiAnalysisResponse, Error>({
     mutationFn: () => api.analyzeCve(cveId),
+    onSuccess: (result) => {
+      writeCachedAnalysis(cveId, result);
+      setCached({ result, timestamp: Date.now() });
+      setShowingCached(false);
+    },
   });
 
-  const data = analyze.data;
+  // Display priority: live mutation result > explicitly-showing cached.
+  const data = analyze.data ?? (showingCached ? cached?.result ?? null : null);
   const error = analyze.error;
   const isKeyMissing = error instanceof ApiError && error.status === 400;
+  const hasCachedOnly = cached != null && analyze.data == null;
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-400" />
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-500">
             AI 심층 분석
           </h2>
+          {showingCached && cached && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-700 dark:bg-surface-2 dark:text-neutral-400">
+              <Clock className="h-3 w-3" />
+              {formatAnalysisAge(cached.timestamp)} 분석
+            </span>
+          )}
         </div>
         {data && !analyze.isPending && (
           <button
             type="button"
             onClick={() => analyze.mutate()}
-            className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+            className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
           >
             <RotateCcw className="h-3 w-3" />
             다시 분석
@@ -109,21 +183,34 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
       </CardHeader>
       <CardContent className="space-y-4">
         {!data && !analyze.isPending && !error && (
-          <div className="flex flex-col items-start gap-2">
+          <div className="flex flex-col items-start gap-3">
             <p className="text-sm text-neutral-700 dark:text-neutral-400">
               공격 시나리오 · 재현 가능한 PoC 페이로드 · 즉시 적용 가능한 차단
               패치를 한 번에. 보안 운영팀이 그대로 점검·티켓팅에 쓸 수 있는
               형태로 정리됩니다.
             </p>
-            <Button
-              type="button"
-              onClick={() => analyze.mutate()}
-              size="md"
-              className="mt-1 rounded-full bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:text-white dark:hover:bg-violet-400"
-            >
-              <Sparkles className="mr-1.5 h-4 w-4" />
-              AI 심층 분석 요청
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                onClick={() => analyze.mutate()}
+                size="md"
+                className="rounded-full bg-violet-600 text-white shadow-sm shadow-violet-600/20 hover:bg-violet-700 hover:shadow-md hover:shadow-violet-600/30 dark:bg-violet-500 dark:text-white dark:hover:bg-violet-400"
+              >
+                <Sparkles className="mr-1.5 h-4 w-4" />
+                AI 심층 분석 요청
+              </Button>
+              {hasCachedOnly && (
+                <button
+                  type="button"
+                  onClick={() => setShowingCached(true)}
+                  title={`마지막 분석: ${new Date(cached!.timestamp).toLocaleString("ko-KR")}`}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 transition-all duration-150 hover:border-violet-500/60 hover:bg-violet-50 hover:text-violet-800 active:scale-95 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-violet-500/60 dark:hover:bg-violet-500/10 dark:hover:text-violet-200"
+                >
+                  <Clock className="h-3.5 w-3.5" />
+                  이전 분석 보기 · {formatAnalysisAge(cached!.timestamp)}
+                </button>
+              )}
+            </div>
           </div>
         )}
 

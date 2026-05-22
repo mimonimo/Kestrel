@@ -13,7 +13,7 @@ export function CveListItem({ vuln }: { vuln: Item }) {
 
   return (
     <Link href={`/cve/${vuln.cveId}`} className="block">
-      <Card>
+      <Card className="transition-all duration-150 hover:-translate-y-0.5 hover:border-neutral-300 hover:shadow-md hover:shadow-neutral-900/5 active:translate-y-0 active:shadow-sm dark:hover:border-neutral-700 dark:hover:shadow-black/30">
         <CardHeader className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
