@@ -470,15 +470,25 @@ async def _call_claude_cli_text(
             status_code=502,
             detail="claude CLI 실행 실패: 바이너리를 찾을 수 없습니다.",
         ) from e
+    # Timeout — bumped 180s → 360s. Anthropic's deep-analysis calls
+    # routinely take 30-90s and a long-CVE prompt with retry on transient
+    # network errors can push past the old 3-min ceiling. 6 min is the
+    # sweet spot: enough headroom for the slowest legitimate call, still
+    # short enough to kill a truly stuck process.
+    cli_timeout = 360
     try:
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(), timeout=180
+            proc.communicate(), timeout=cli_timeout
         )
     except asyncio.TimeoutError as e:
         proc.kill()
         raise HTTPException(
             status_code=504,
-            detail="claude CLI 응답이 제한 시간(180초) 내에 돌아오지 않았습니다.",
+            detail=(
+                f"Claude CLI 가 {cli_timeout}초 안에 응답하지 않았습니다. "
+                "토큰 갱신이 막혔거나 Anthropic 측 지연일 수 있어요 — "
+                "설정 → Claude 연동에서 \"다시 로그인\" 후 재시도하면 대부분 해결됩니다."
+            ),
         ) from e
     stdout_text = stdout_bytes.decode("utf-8", errors="replace").strip()
     stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
