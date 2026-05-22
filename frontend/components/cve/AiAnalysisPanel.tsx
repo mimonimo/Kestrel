@@ -2,7 +2,7 @@
 
 import { Check, Clock, Copy, Loader2, RotateCcw, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, api, type AiAnalysisResponse } from "@/lib/api";
 import { recordAnalysisHistory } from "@/lib/analysis-history";
@@ -127,6 +127,7 @@ function CodeBlock({ source }: { source: string }) {
 }
 
 export function AiAnalysisPanel({ cveId }: { cveId: string }) {
+  const qc = useQueryClient();
   // Cached analysis for this CVE. Auto-rendered when the user revisits
   // the CVE — no extra click required (the "N분 전 분석" chip in the
   // header is the cue that it's a cached, not freshly-run, result).
@@ -136,30 +137,59 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
     setCached(readCachedAnalysis(cveId));
   }, [cveId]);
 
-  const analyze = useMutation<AiAnalysisResponse, Error>({
-    mutationFn: () => api.analyzeCve(cveId),
-    onSuccess: (result) => {
-      writeCachedAnalysis(cveId, result);
-      setCached({ result, timestamp: Date.now() });
-      // Append to the global cross-CVE analysis history (drives the
-      // "분석 기록 보기" floating button popover).
-      recordAnalysisHistory({
-        cveId,
-        attackMethod: result.attackMethod,
-        payloadCount: result.payloadExamples.length,
-        mitigationCount: result.mitigations.length,
-      });
-    },
+  // ``useQuery`` (instead of ``useMutation``) so the in-flight request
+  // state lives in the shared QueryClient cache and survives component
+  // unmount/remount when the user navigates away and back. Previously
+  // a mutation was component-local — leaving the CVE detail page mid-
+  // analysis dropped the "분석 중" state and the panel reset to the
+  // initial form when the user returned.
+  //
+  // enabled=false means the query never auto-fetches; only manual
+  // ``refetch()`` triggers it. gcTime=Infinity keeps the cached state
+  // for the lifetime of the QueryClient (i.e., the whole session).
+  const analyze = useQuery<AiAnalysisResponse, Error>({
+    queryKey: ["ai-analysis", cveId],
+    queryFn: () => api.analyzeCve(cveId),
+    enabled: false,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
   });
 
-  // Display priority: live mutation result first, then cached. So
-  // `data` is non-null any time the user has either just analyzed OR
-  // analyzed this CVE in a previous visit — meaning revisiting the CVE
-  // never falls back to the "분석 요청" form when there's content to show.
+  // Persist successful result + push to global history.
+  useEffect(() => {
+    if (!analyze.data) return;
+    writeCachedAnalysis(cveId, analyze.data);
+    setCached({ result: analyze.data, timestamp: Date.now() });
+    recordAnalysisHistory({
+      cveId,
+      attackMethod: analyze.data.attackMethod,
+      payloadCount: analyze.data.payloadExamples.length,
+      mitigationCount: analyze.data.mitigations.length,
+    });
+  }, [analyze.data, cveId]);
+
+  const runAnalysis = () => {
+    // refetch() honors enabled:false by ignoring the flag — exactly
+    // what we want for a manual trigger.
+    analyze.refetch();
+  };
+
+  // Display priority: live result first, then cached. So `data` is
+  // non-null any time the user has either just analyzed OR analyzed
+  // this CVE in a previous visit — revisit never falls back to the
+  // "분석 요청" form when content is available.
   const data = analyze.data ?? cached?.result ?? null;
   const isFromCache = analyze.data == null && cached != null;
   const error = analyze.error;
   const isKeyMissing = error instanceof ApiError && error.status === 400;
+  // useQuery uses isFetching for in-flight state (isPending is for
+  // first load before any fetch attempt).
+  const isRunning = analyze.isFetching;
+  // Surface the global mutation status to the parent QueryClient so
+  // future cross-component features (e.g., AnalysisHistoryButton showing
+  // "분석 중" badge) can read it via qc.getQueryState.
+  void qc;
 
   return (
     <Card>
@@ -179,10 +209,10 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
             </span>
           )}
         </div>
-        {data && !analyze.isPending && (
+        {data && !isRunning && (
           <button
             type="button"
-            onClick={() => analyze.mutate()}
+            onClick={() => runAnalysis()}
             className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
           >
             <RotateCcw className="h-3 w-3" />
@@ -191,7 +221,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
         )}
       </CardHeader>
       <CardContent className="space-y-4">
-        {!data && !analyze.isPending && !error && (
+        {!data && !isRunning && !error && (
           <div className="flex flex-col items-start gap-3">
             <p className="text-sm text-neutral-700 dark:text-neutral-400">
               공격 시나리오 · 재현 가능한 PoC 페이로드 · 즉시 적용 가능한 차단
@@ -200,7 +230,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
             </p>
             <Button
               type="button"
-              onClick={() => analyze.mutate()}
+              onClick={() => runAnalysis()}
               size="md"
               className="rounded-full bg-violet-600 text-white shadow-sm shadow-violet-600/20 hover:bg-violet-700 hover:shadow-md hover:shadow-violet-600/30 dark:bg-violet-500 dark:text-white dark:hover:bg-violet-400"
             >
@@ -210,7 +240,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
           </div>
         )}
 
-        {analyze.isPending && (
+        {isRunning && (
           <div className="flex items-center gap-2 py-4 text-sm text-neutral-700 dark:text-neutral-400">
             <Loader2 className="h-4 w-4 animate-spin text-violet-600 dark:text-violet-400" />
             AI 가 취약점을 분석 중입니다…
@@ -226,7 +256,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
                 {isKeyMissing && (
                   <FeedbackBoxButton href="/settings">설정으로 이동</FeedbackBoxButton>
                 )}
-                <FeedbackBoxButton onClick={() => analyze.mutate()}>
+                <FeedbackBoxButton onClick={() => runAnalysis()}>
                   <RotateCcw className="h-3 w-3" />
                   다시 시도
                 </FeedbackBoxButton>
