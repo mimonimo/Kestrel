@@ -14,6 +14,7 @@ import { NotificationBell } from "./NotificationBell";
 // pattern that scales to many more sections later.
 const NAV_LINKS: { href: Route; label: string; match: (p: string) => boolean }[] = [
   { href: "/" as Route, label: "대시보드", match: (p) => p === "/" },
+  { href: "/analysis" as Route, label: "AI 분석", match: (p) => p.startsWith("/analysis") },
   { href: "/community" as Route, label: "커뮤니티", match: (p) => p.startsWith("/community") },
 ];
 

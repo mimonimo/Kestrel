@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { History, Sparkles, Trash2, X } from "lucide-react";
+import { History, Loader2, Sparkles, Trash2, X } from "lucide-react";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 
 import {
   clearAnalysisHistory,
@@ -24,10 +25,33 @@ function formatAge(epochMs: number): string {
 }
 
 export function AnalysisHistoryButton() {
+  const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [entries, setEntries] = useState<AnalysisHistoryEntry[]>([]);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+
+  // Cross-session live status — useIsFetching scoped to AiAnalysisPanel's
+  // useQuery key. Increments while ANY CVE detail page has its analysis
+  // request in flight. Survives navigation because the QueryClient is at
+  // the root Provider.
+  const runningCount = useIsFetching({
+    queryKey: ["ai-analysis"],
+    exact: false,
+  });
+
+  // Pull the specific CVE IDs currently in flight so the popover can
+  // list them with a spinner. Re-derived on every render — cheap (the
+  // cache holds at most ~50 entries) and react-query bumps the
+  // useIsFetching counter on state change so we re-render automatically.
+  const runningCveIds = useMemo<string[]>(() => {
+    const all = qc.getQueryCache().findAll({ queryKey: ["ai-analysis"] });
+    return all
+      .filter((q) => q.state.fetchStatus === "fetching")
+      .map((q) => (q.queryKey[1] as string | undefined) ?? "")
+      .filter((id): id is string => !!id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runningCount, qc]);
 
   const refresh = useCallback(() => {
     setEntries(readAnalysisHistory());
@@ -73,10 +97,12 @@ export function AnalysisHistoryButton() {
 
   const count = entries.length;
   const recentExcerpt = useMemo(() => entries.slice(0, 8), [entries]);
+  const isRunning = runningCount > 0;
 
-  // Render nothing until at least one analysis exists — the button has
-  // no value before then and would clutter every page footer.
-  if (count === 0 && !open) return null;
+  // Render nothing when there's nothing to surface (no completed history
+  // AND no in-flight analysis) — keeps the page footer uncluttered for
+  // first-time users who haven't tried the AI feature yet.
+  if (count === 0 && !isRunning && !open) return null;
 
   return (
     // Stack above the StatusBanner. StatusBanner uses fixed bottom-4
@@ -107,11 +133,32 @@ export function AnalysisHistoryButton() {
             </button>
           </div>
           <div className="max-h-[60vh] overflow-y-auto">
-            {entries.length === 0 ? (
+            {runningCveIds.length > 0 && (
+              <div className="border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
+                <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-violet-700 dark:text-violet-300">
+                  분석 중 {runningCveIds.length}건
+                </div>
+                <ul className="space-y-1">
+                  {runningCveIds.map((cid) => (
+                    <li key={cid}>
+                      <Link
+                        href={`/cve/${encodeURIComponent(cid)}` as never}
+                        onClick={() => setOpen(false)}
+                        className="flex items-center gap-2 rounded-lg px-2 py-1 text-[11px] text-neutral-900 transition-colors hover:bg-violet-50 dark:text-neutral-100 dark:hover:bg-violet-500/10"
+                      >
+                        <Loader2 className="h-3 w-3 animate-spin text-violet-600 dark:text-violet-400" />
+                        <span className="font-mono">{cid}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {entries.length === 0 && runningCveIds.length === 0 ? (
               <p className="px-4 py-6 text-center text-xs text-neutral-600 dark:text-neutral-500">
                 아직 실행한 AI 분석이 없습니다.
               </p>
-            ) : (
+            ) : entries.length === 0 ? null : (
               <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
                 {recentExcerpt.map((e) => (
                   <li
@@ -156,46 +203,72 @@ export function AnalysisHistoryButton() {
               </ul>
             )}
           </div>
-          {entries.length > 0 && (
+          {(entries.length > 0 || runningCveIds.length > 0) && (
             <div className="flex items-center justify-between gap-2 border-t border-neutral-200 bg-neutral-50 px-4 py-2 text-[11px] dark:border-neutral-800 dark:bg-surface-0">
-              <span className="tabular-nums text-neutral-600 dark:text-neutral-500">
-                총 {entries.length}건
-                {entries.length > recentExcerpt.length &&
-                  ` · ${recentExcerpt.length}개 표시`}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirm("모든 분석 기록을 지우시겠습니까?")) {
-                    clearAnalysisHistory();
-                  }
-                }}
-                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-100"
+              <Link
+                href={"/analysis" as never}
+                onClick={() => setOpen(false)}
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium text-violet-700 hover:bg-violet-500/10 hover:text-violet-900 dark:text-violet-300 dark:hover:text-violet-200"
               >
-                <Trash2 className="h-3 w-3" />
-                전체 지우기
-              </button>
+                전체 기록 보기 →
+              </Link>
+              {entries.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm("모든 분석 기록을 지우시겠습니까?")) {
+                      clearAnalysisHistory();
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-100"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  전체 지우기
+                </button>
+              )}
             </div>
           )}
         </div>
       )}
 
+      {/* Pill matches StatusBanner's "상태 보기" aesthetic:
+            - light/glassy bg (paired light/dark)
+            - small status dot (pulsing violet when running, static dot when idle)
+            - icon + label + optional count chip */}
       <button
         ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "pointer-events-auto flex items-center gap-2 rounded-full border border-violet-500/40 bg-violet-500/15 px-3.5 py-2 text-xs font-medium text-violet-800 shadow-lg shadow-violet-500/20 backdrop-blur transition-all duration-150 hover:bg-violet-500/25 active:scale-95 dark:text-violet-200",
+          "pointer-events-auto flex items-center gap-2 rounded-full border px-3.5 py-2 text-xs font-medium shadow-lg shadow-black/10 backdrop-blur transition-all duration-150 active:scale-95",
+          isRunning
+            ? "border-violet-500/40 bg-violet-500/15 text-violet-800 hover:bg-violet-500/25 dark:text-violet-200"
+            : "border-neutral-200 bg-white/90 text-neutral-700 hover:bg-white dark:border-neutral-700 dark:bg-surface-1/90 dark:text-neutral-300 dark:hover:bg-surface-1",
         )}
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-label="AI 분석 기록 보기"
       >
-        <History className="h-4 w-4" />
-        <span>분석 기록</span>
-        {count > 0 && (
-          <span className="tabular-nums rounded-full bg-violet-500/30 px-1.5 py-0.5 text-[10px] font-semibold text-violet-900 dark:bg-violet-500/40 dark:text-violet-50">
-            {count}
+        <span className="relative flex h-2 w-2">
+          {isRunning && (
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-60" />
+          )}
+          <span
+            className={cn(
+              "relative inline-flex h-2 w-2 rounded-full",
+              isRunning ? "bg-violet-500" : "bg-violet-400",
+            )}
+          />
+        </span>
+        {isRunning ? (
+          <Loader2 className="h-4 w-4 animate-spin text-violet-600 dark:text-violet-400" />
+        ) : (
+          <History className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+        )}
+        <span>{isRunning ? "분석 중" : "분석 기록"}</span>
+        {(isRunning ? runningCount : count) > 0 && (
+          <span className="tabular-nums rounded-full bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-violet-800 dark:bg-violet-500/30 dark:text-violet-100">
+            {isRunning ? runningCount : count}
           </span>
         )}
       </button>
