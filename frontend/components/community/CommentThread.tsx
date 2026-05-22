@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
+import { recordCommentHistory } from "@/lib/comment-history";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatRelativeKo } from "@/lib/format";
@@ -37,7 +38,18 @@ export function CommentThread({ postId, vulnerabilityId }: Props) {
         postId,
         vulnerabilityId,
       }),
-    onSuccess: () => {
+    onSuccess: (created) => {
+      // Mirror to local history so the /analysis 댓글 탭 can list it
+      // without iterating every post on the server. excerpt is the
+      // trimmed body; cveId is set when this thread is attached to a
+      // CVE detail page (vulnerabilityId is the same string).
+      recordCommentHistory({
+        id: created.id,
+        postId,
+        vulnerabilityId,
+        cveId: vulnerabilityId,
+        excerpt: created.content,
+      });
       setContent("");
       setError(null);
       qc.invalidateQueries({ queryKey });
