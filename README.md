@@ -2,29 +2,33 @@
 
 <br/>
 
-# Kestrel
+# **`Kestrel`**
 
-### CVE 인텔리전스 플랫폼 — 무엇부터 패치할지 알려드립니다
+### 어디서부터 패치할지, AI 가 답합니다
 
-> 모든 것을 동시에 막을 수는 없습니다.
-> 심각도가 아니라 *실제 위협*을 기준으로.
+<sub>**`CVSS`** 이론&nbsp;&nbsp;·&nbsp;&nbsp;**`EPSS`** 예측&nbsp;&nbsp;·&nbsp;&nbsp;**`KEV`** 실측 — 세 신호로 본 진짜 우선순위</sub>
 
 <br/>
 
-[![docker compose up](https://img.shields.io/badge/docker_compose_up-한_줄_배포-2496ed?style=for-the-badge&logo=docker&logoColor=white)](#빠른-시작)
-[![Claude](https://img.shields.io/badge/Claude_AI-심층_분석-d97757?style=for-the-badge&logo=anthropic&logoColor=white)](#ai-분석-흐름)
-[![KEV · EPSS](https://img.shields.io/badge/KEV_·_EPSS-실시간-f43f5e?style=for-the-badge)](#데이터-흐름)
-[![MIT](https://img.shields.io/badge/MIT-라이선스-3b82f6?style=for-the-badge)](./LICENSE)
+<img src="docs/screenshots/dashboard.png" alt="Kestrel 대시보드" width="100%"/>
+
+<br/>
+<br/>
+
+[![one-line deploy](https://img.shields.io/badge/docker_compose_up-한_줄_배포-2496ed?style=for-the-badge&logo=docker&logoColor=white)](#빠른-시작)
+&nbsp;
+[![Claude AI](https://img.shields.io/badge/Claude_AI-심층_분석-d97757?style=for-the-badge&logo=anthropic&logoColor=white)](#ai-분석-흐름)
+&nbsp;
+[![KEV · EPSS](https://img.shields.io/badge/KEV_·_EPSS-실시간_연동-f43f5e?style=for-the-badge)](#데이터-흐름)
+&nbsp;
+[![License](https://img.shields.io/badge/MIT-라이선스-3b82f6?style=for-the-badge)](./LICENSE)
 
 </div>
 
-<br/>
+---
 
-## 메인 대시보드
-
-<p align="center">
-  <img src="docs/screenshots/dashboard.png" alt="메인 대시보드" width="100%"/>
-</p>
+> **모든 것을 동시에 막을 수는 없습니다.**
+> 심각도가 아니라 _실제 위협_을 기준으로.
 
 <br/>
 
