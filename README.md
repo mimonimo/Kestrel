@@ -13,13 +13,13 @@
 <br/>
 <br/>
 
-[![one-line deploy](https://img.shields.io/badge/docker_compose_up-한_줄_배포-2496ed?style=for-the-badge&logo=docker&logoColor=white)](#빠른-시작)
-&nbsp;
-[![Claude AI](https://img.shields.io/badge/Claude_AI-심층_분석-d97757?style=for-the-badge&logo=anthropic&logoColor=white)](#ai-분석-흐름)
-&nbsp;
-[![KEV · EPSS](https://img.shields.io/badge/KEV_·_EPSS-실시간_연동-f43f5e?style=for-the-badge)](#데이터-흐름)
-&nbsp;
-[![License](https://img.shields.io/badge/MIT-라이선스-3b82f6?style=for-the-badge)](./LICENSE)
+<a href="#빠른-시작"><img src="https://img.shields.io/badge/docker_compose_up-한_줄_배포-2496ed?style=flat&logo=docker&logoColor=white" height="34" alt="one-line deploy"/></a>
+&nbsp;&nbsp;
+<a href="#ai-분석-흐름"><img src="https://img.shields.io/badge/Claude_AI-심층_분석-d97757?style=flat&logo=anthropic&logoColor=white" height="34" alt="Claude AI"/></a>
+&nbsp;&nbsp;
+<a href="#데이터-흐름"><img src="https://img.shields.io/badge/KEV_·_EPSS-실시간_연동-f43f5e?style=flat" height="34" alt="KEV · EPSS"/></a>
+&nbsp;&nbsp;
+<a href="./LICENSE"><img src="https://img.shields.io/badge/MIT-라이선스-3b82f6?style=flat" height="34" alt="License"/></a>
 
 </div>
 
