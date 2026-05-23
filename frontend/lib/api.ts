@@ -149,6 +149,7 @@ export const api = {
     filters.domains?.forEach((d) => params.append("domain", d));
     if (filters.fromDate) params.set("from", filters.fromDate);
     if (filters.toDate) params.set("to", filters.toDate);
+    if (filters.priority) params.set("priority", filters.priority);
     if (sort && sort !== "newest") params.set("sort", sort);
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
@@ -354,6 +355,23 @@ export const api = {
       method: "POST",
     }),
 
+  askFollowup: (body: AskFollowupRequest) =>
+    request<AskFollowupResponse>(`/analysis/ask`, {
+      method: "POST",
+      body: JSON.stringify({
+        cveId: body.cveId,
+        question: body.question,
+        prior: body.prior,
+        history: body.history ?? [],
+      }),
+    }),
+
+  compareCves: (cveIds: string[]) =>
+    request<CompareResponse>(`/analysis/compare`, {
+      method: "POST",
+      body: JSON.stringify({ cveIds }),
+    }),
+
   startSandbox: (body: {
     cveId: string;
     labKind?: string;
@@ -379,10 +397,46 @@ export const api = {
     request<SynthesizeCacheReport>(`/sandbox/synthesize/cache`),
   getLabKindStats: () =>
     request<LabKindStatsReport>(`/sandbox/lab-kind-stats`),
-  getSearchFacets: (window?: { from?: string; to?: string }) => {
+  getDashboardInsights: (opts?: {
+    days?: number;
+    vendorLimit?: number;
+    recentLimit?: number;
+  }) => {
+    const params = new URLSearchParams();
+    if (opts?.days != null) params.set("days", String(opts.days));
+    if (opts?.vendorLimit != null) params.set("vendor_limit", String(opts.vendorLimit));
+    if (opts?.recentLimit != null) params.set("recent_limit", String(opts.recentLimit));
+    const qs = params.toString();
+    return request<DashboardInsightsResponse>(
+      `/dashboard/insights${qs ? `?${qs}` : ""}`,
+    );
+  },
+
+  getDashboardPriorities: (opts?: { perBucket?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.perBucket != null) params.set("per_bucket", String(opts.perBucket));
+    const qs = params.toString();
+    return request<DashboardPrioritiesResponse>(
+      `/dashboard/priorities${qs ? `?${qs}` : ""}`,
+    );
+  },
+
+  getSearchFacets: (
+    window?: { from?: string; to?: string },
+    filters?: {
+      severity?: string;
+      source?: string;
+      type?: string;
+      domain?: string;
+    },
+  ) => {
     const params = new URLSearchParams();
     if (window?.from) params.set("from", window.from);
     if (window?.to) params.set("to", window.to);
+    if (filters?.severity) params.set("severity", filters.severity);
+    if (filters?.source) params.set("source", filters.source);
+    if (filters?.type) params.set("type", filters.type);
+    if (filters?.domain) params.set("domain", filters.domain);
     const qs = params.toString();
     return request<SearchFacetsResponse>(
       `/search/facets${qs ? `?${qs}` : ""}`,
@@ -519,6 +573,35 @@ export interface AiAnalysisResponse {
   attackMethod: string;
   payloadExamples: string[];
   mitigations: string[];
+}
+
+export interface QaTurn {
+  question: string;
+  answer: string;
+}
+
+export interface AskFollowupRequest {
+  cveId: string;
+  question: string;
+  prior?: AiAnalysisResponse;
+  history?: QaTurn[];
+}
+
+export interface AskFollowupResponse {
+  answer: string;
+}
+
+export interface ComparePerCveNote {
+  cveId: string;
+  note: string;
+}
+
+export interface CompareResponse {
+  summary: string;
+  commonPattern: string;
+  differences: string[];
+  sharedMitigations: string[];
+  perCveNotes: ComparePerCveNote[];
 }
 
 export type SandboxStatus =
@@ -846,6 +929,93 @@ export interface LabKindStatsReport {
 export interface FacetBucket {
   value: string;
   count: number;
+}
+
+export interface DashboardTimelineDay {
+  date: string;
+  total: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+
+export interface DashboardVendorBucket {
+  vendor: string;
+  count: number;
+}
+
+export interface DashboardCvssBucket {
+  label: string;
+  rangeLo: number;
+  rangeHi: number;
+  count: number;
+}
+
+export interface DashboardCvssHistogramBin {
+  lo: number;
+  hi: number;
+  count: number;
+}
+
+export interface DashboardCvssDistribution {
+  histogram: DashboardCvssHistogramBin[];
+  total: number;
+  mean: number | null;
+  median: number | null;
+  p90: number | null;
+  unscored: number;
+}
+
+export interface DashboardRecentItem {
+  cveId: string;
+  title: string;
+  severity: string | null;
+  cvssScore: number | null;
+  publishedAt: string | null;
+}
+
+export interface DashboardPrioritySignalCounts {
+  cvssCritical: number;
+  cvssHigh: number;
+  epssHigh: number;
+  epssTopPercentile: number;
+  kevListed: number;
+}
+
+export interface DashboardInsightsResponse {
+  timeline: DashboardTimelineDay[];
+  topVendors: DashboardVendorBucket[];
+  cvssBuckets: DashboardCvssBucket[];
+  cvssDistribution: DashboardCvssDistribution;
+  recentCritical: DashboardRecentItem[];
+  prioritySignals: DashboardPrioritySignalCounts;
+  generatedAt: string;
+}
+
+export interface DashboardPriorityItem {
+  cveId: string;
+  title: string;
+  severity: string | null;
+  cvssScore: number | null;
+  epssScore: number | null;
+  epssPercentile: number | null;
+  kevListed: boolean;
+  kevDateAdded: string | null;
+  publishedAt: string | null;
+}
+
+export interface DashboardPriorityBucket {
+  key: "kev" | "epss_high" | "cvss_mid_epss_high" | "cvss_high_epss_low";
+  label: string;
+  rationale: string;
+  count: number;
+  items: DashboardPriorityItem[];
+}
+
+export interface DashboardPrioritiesResponse {
+  buckets: DashboardPriorityBucket[];
+  generatedAt: string;
 }
 
 export interface SearchFacetsResponse {

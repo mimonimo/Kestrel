@@ -10,7 +10,20 @@ export interface PieSlice {
   label: string;
   count: number;
   color: string;
+  // Click navigates to this URL (CVE list filter). Mutually exclusive
+  // with ``onClick`` — onClick wins when both are set.
   href?: UrlObject;
+  // Click toggles a cross-filter selection in the parent component.
+  // When this is set the slice/legend row become buttons instead of
+  // links so screen-reader semantics stay correct.
+  onClick?: () => void;
+  // Highlight the slice as the currently active filter (raised + bold
+  // legend). Other slices in the same group should set ``dimmed`` so
+  // the active one visually dominates.
+  selected?: boolean;
+  // Greyed-out, non-active slice in a group where something else is
+  // selected.
+  dimmed?: boolean;
 }
 
 function formatNumber(n: number): string {
@@ -71,9 +84,14 @@ export function SvgPie({
         const midAngle = (2 * Math.PI * (acc + s.count / 2)) / total;
         acc += s.count;
         const hovered = hoveredLabel === s.label;
-        const dimmed = hoveredLabel != null && !hovered;
-        const dx = hovered ? Math.cos(midAngle) * 3 : 0;
-        const dy = hovered ? Math.sin(midAngle) * 3 : 0;
+        // Selected slices stay popped out + bright even without hover so
+        // the active cross-filter is obvious; sibling slices in the same
+        // group fade to 0.3 when dimmed by selection.
+        const isInteractive = !!(s.onClick || s.href);
+        const popped = hovered || !!s.selected;
+        const isDimmed = (hoveredLabel != null && !hovered) || !!s.dimmed;
+        const dx = popped ? Math.cos(midAngle) * 3 : 0;
+        const dy = popped ? Math.sin(midAngle) * 3 : 0;
         return (
           <circle
             key={`${s.label}-${i}`}
@@ -82,18 +100,19 @@ export function SvgPie({
             r={r}
             fill="none"
             stroke={s.color}
-            strokeWidth={hovered ? 16 : 14}
+            strokeWidth={popped ? 16 : 14}
             strokeDasharray={dasharray}
             strokeDashoffset={dashoffset}
             strokeLinecap="butt"
             style={{
               transform: `translate(${dx}px, ${dy}px)`,
-              opacity: dimmed ? 0.35 : 1,
+              opacity: isDimmed ? 0.3 : 1,
               transition: "transform 150ms ease, opacity 150ms ease, stroke-width 150ms ease",
-              cursor: onHover ? "pointer" : undefined,
+              cursor: isInteractive ? "pointer" : undefined,
             }}
             onMouseEnter={() => onHover?.(s.label)}
             onMouseLeave={() => onHover?.(null)}
+            onClick={s.onClick}
           />
         );
       })}
@@ -149,7 +168,12 @@ export function PieGroup({
           const groupPct = (s.count / ringDenom) * 100;
           const corpusPct = total > 0 ? (s.count / total) * 100 : 0;
           const isHovered = hovered === s.label;
-          const isDimmed = hovered != null && !isHovered;
+          // Two sources of "dimmed": cursor on a sibling, or another
+          // slice in the group is selected as the active cross-filter.
+          const isHoverDimmed = hovered != null && !isHovered;
+          const isFilterDimmed = !!s.dimmed;
+          const isDimmed = isHoverDimmed || isFilterDimmed;
+          const isSelected = !!s.selected;
           const inner = (
             <div className="flex items-baseline justify-between gap-2">
               <span className="flex min-w-0 items-center gap-1.5">
@@ -157,13 +181,13 @@ export function PieGroup({
                   className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm transition-transform duration-150"
                   style={{
                     backgroundColor: s.color,
-                    transform: isHovered ? "scale(1.3)" : "scale(1)",
+                    transform: isHovered || isSelected ? "scale(1.3)" : "scale(1)",
                   }}
                 />
                 <span
                   className={cn(
                     "truncate transition-colors",
-                    isHovered
+                    isHovered || isSelected
                       ? "font-medium text-neutral-900 dark:text-neutral-100"
                       : "text-neutral-800 dark:text-neutral-300",
                   )}
@@ -183,9 +207,14 @@ export function PieGroup({
             </div>
           );
           const rowCls = cn(
-            "block rounded px-1 py-0.5 transition-all duration-150",
-            isDimmed && "opacity-50",
-            s.href && "hover:bg-sky-50 dark:hover:bg-sky-500/5",
+            "block w-full rounded px-1 py-0.5 text-left transition-all duration-150",
+            isHoverDimmed && "opacity-50",
+            isFilterDimmed && !isHoverDimmed && "opacity-40",
+            isSelected &&
+              "bg-sky-50 ring-1 ring-inset ring-sky-400/40 dark:bg-sky-500/10 dark:ring-sky-500/40",
+            (s.href || s.onClick) &&
+              !isSelected &&
+              "hover:bg-sky-50 dark:hover:bg-sky-500/5",
           );
           return (
             <li
@@ -193,7 +222,17 @@ export function PieGroup({
               onMouseEnter={() => setHovered(s.label)}
               onMouseLeave={() => setHovered(null)}
             >
-              {s.href ? (
+              {s.onClick ? (
+                <button
+                  type="button"
+                  onClick={s.onClick}
+                  className={rowCls}
+                  title={isSelected ? `${s.label} 필터 해제` : `${s.label} 필터 적용`}
+                  aria-pressed={isSelected}
+                >
+                  {inner}
+                </button>
+              ) : s.href ? (
                 <Link href={s.href} className={rowCls} title={`${s.label} 필터 적용`}>
                   {inner}
                 </Link>

@@ -1429,6 +1429,123 @@ ELAPSED: 0s   ← 이전 60s timeout → 즉시 응답
 
 ---
 
+### PR 10-BQ — KEV/EPSS 통합 + 패치 우선순위 매트릭스 + AI 분석 강화 + 샌드박스 제거 ✅
+
+세션 누적 대규모 정리 + 신기능. 사용자 참조 이미지의 *"AI 시대의 취약점,
+무엇부터 고칠 것인가 — 심각도가 아니라 실제 위협을 기준으로"* 컨셉을
+구현했습니다.
+
+**우선순위 신호 — KEV + EPSS**
+- 새 alembic 마이그레이션 `0019_kev_epss` — `Vulnerability` 에 `kev_listed`,
+  `kev_date_added`, `kev_due_date`, `epss_score`, `epss_percentile`,
+  `epss_updated_at` 컬럼 + 부분 인덱스 (kev_listed=true, epss_score NOT NULL).
+- `services/priority_signals.py` — CISA KEV catalog (JSON ~1MB) 시간 단위
+  pull, FIRST EPSS daily CSV (~5MB gzip) 일 단위 pull. EPSS 는 임시
+  staging table + 단일 `UPDATE ... FROM` 으로 set-based 갱신 (300k 행
+  ~2분). KEV 검증: 1602 건 전체 매칭. EPSS 검증: 334,567 건 매칭.
+- 새 admin endpoint `POST /admin/refresh-priority-signals` (수동 트리거).
+- scheduler 부팅 후 60s 에 KEV / 180s 에 EPSS 첫 실행.
+
+**패치 우선순위 4-tier 매트릭스**
+- `GET /dashboard/priorities` — KEV / EPSS상위 / CVSS중간+EPSS높음 /
+  CVSS높음+EPSS낮음 각 tier 별 top N CVE + 전체 카운트 반환. tier 간
+  중복 방지 (KEV 등재는 다른 tier 에서 제외).
+- `GET /search?priority=<key>` — Meili 우회 PG 직행으로 tier 전체 조회.
+- frontend `PriorityOverviewPanel` 위젯 — 3 pillar chip (CVSS / EPSS / KEV)
+  + 4-tier 랭킹 리스트. 행 클릭 시 `/cves?priority=<key>` 로 드릴다운.
+  숫자 1-4 배지는 tier 색 단색 배경 + 흰 숫자로 시인성 확보 (사용자 피드백).
+- `/cves` 페이지 헤더에 active tier chip + × 해제 버튼.
+
+**AI 분석 강화**
+- 새 라우터 `analysis.py` — `POST /analysis/ask` (follow-up Q&A, 이전 분석
+  컨텍스트 + history 함께 전달), `POST /analysis/compare` (2-5 CVE 공통
+  패턴 / 차이점 / 통합 완화 전략 비교).
+- `ai_analyzer.py` — `answer_followup_question()` + `compare_vulnerabilities()`
+  헬퍼 추가. 기존 `_USER_TEMPLATE` 을 strict 명세 다수 → 핵심 항목만 압축
+  (1/5 크기). CLI subprocess 에 `stdin=DEVNULL` 추가 — "Warning: no stdin
+  data received in 3s" 로 인한 3초 지연 제거. Sonnet 4.6 full prompt 응답
+  시간 측정: 압축 전 5분+ → 압축 후 약 2분 14초.
+- `AiAnalysisPanel` — useEffect 로 settled 감지 후 `clearRunning` 호출
+  (이전 queryFn finally 가 useQuery abort 에서도 발화돼 새로고침 시
+  마커가 즉시 지워지던 버그 수정). 진행 시간 카운터 + 모델별 안내 힌트
+  (Haiku 10-15s / Sonnet 1-2m / Opus 2-4m). 분석 카드 하단에 `FollowUpThread`
+  서브컴포넌트 — Q&A 누적, Markdown "리포트 다운로드" 액션.
+- 새 lib `analysis-qa.ts` (Q&A localStorage 영속), `analysis-report.ts`
+  (Markdown 빌더 + Blob download), `analysis-running.ts` (in-flight 영속).
+- `/analysis` 페이지에 "패턴 비교" 탭 신설 — 분석 기록에서 2-5 CVE 체크 →
+  비교 분석 호출 → 요약 / 공통 패턴 / 차이점 / 통합 완화 / per-CVE 메모 렌더.
+
+**페이지 분리 — `/` 와 `/cves`**
+- 메인 `/` 는 *시각화 전용* — 검색바·필터·리스트 전부 제거, 헤더 + 동기화
+  바 + 분포 패널 + 위젯 grid + 우선순위 매트릭스.
+- 새 `/cves` 페이지 — FilterPanel + SearchBar + 검색 결과 + 정렬 / 페이지
+  네이션 / 즐겨찾기 토글. `useUrlState` 라우터 하드코딩 (`/?...`) →
+  현재 pathname 유지로 수정 (분리 후 `/cves` 에서 필터 토글 시 메인으로
+  튕기던 버그 해결).
+- Header nav 4탭 → 5탭 ("취약점 조회" 추가).
+
+**대시보드 위젯 5종 + 통합**
+- 새 `widgets/` 디렉토리 — `WidgetCard` 공통 chrome + 5 위젯.
+- `TimelinePanel` — 7/30/90일 stacked-area, severity 색, hover tooltip.
+- `TopVendorsPanel` — 가로 막대 Top 10. 사용자 보고 ("Microsoft vs
+  microsoft, Oracle vs Oracle Corporation 같은 게 갈라짐") → 백엔드에서
+  벤더 정규화: `lower()` + 회사 접미사 (Corporation / Corp / Inc / Ltd /
+  Foundation / Systems …) 제거 + Title Case + 약어 보존 룩업 (IBM / HP /
+  VMware / GitHub). 결과: Microsoft 15,929 (8,343 + 7,398 합산), Linux
+  14,944, Oracle 9,028 (4,875 + 4,153 합산).
+- `CvssBucketsPanel` — 사용자 요청으로 4구간 → 10-bin 히스토그램 +
+  평균·중앙값·p90 마커. bin 클릭 시 severity 매핑 드릴다운. 백엔드
+  `func.width_bucket` 단일 GROUP BY + `percentile_cont` aggregates.
+- `RecentCriticalPanel` — 가장 최근 critical 5건 카드.
+- `PriorityOverviewPanel` — 위 우선순위 통합 위젯 (이전 PrioritySignals +
+  WhatToFixFirst 두 위젯을 한 카드로 사용자 피드백 반영).
+- 메인 페이지 grid 에 배치. 사용자 요청으로 우선순위 위젯은 페이지 맨
+  아래에 배치 (보조 정보 성격).
+
+**FloatingDock 통합 — `system/StatusBanner.tsx` + `system/AnalysisHistoryButton.tsx` → 단일 컴포넌트**
+- 두 floating pill 이 우측 하단에서 겹치던 문제 (PR 10-BP 에서 좌우 분리
+  시도 → 사용자 "어색하다") → 단일 통합 카드로 합침. 한 pill, 한 popover,
+  안에 시스템 상태 + AI 분석 두 섹션. 우선순위는 가장 심각한 신호 (경고 >
+  분석중 > 알림 > 정상) 색/아이콘.
+
+**카피 + UI 톤 일관성**
+- 도메인 / OS / vuln-type 필터 칩 영문 통일 (사용자 요청, "Kernel /
+  Browser / Web Server / Database / ..."). 한글 매핑 제거.
+- `CommentThread` + `TicketControl` — 다크 일변 → Card 컴포넌트 래핑 +
+  light/dark paired 색상. textarea 흰 배경, rounded pill 버튼.
+- SearchBar `rounded-full` + 내부 버튼도 pill.
+- 위젯 description / EmptyState / 에러 메시지 친근 톤 ("…했습니다" →
+  "…했어요") 일관성. ai_analyzer 에러 메시지도 동일.
+- VulnDistributionPanel — `placeholderData: keepPreviousData` 적용 +
+  isStale opacity-70 dimming. cross-filter 시 패널 사라지는 깜박임 해소
+  (사용자 보고).
+- `useUrlState` typedRoutes 호환을 위한 `as Route` cast 추가.
+
+**샌드박스 기능 제거**
+- 사용자 요청 "삭제 처리". UI 모두 제거: `CveDetail.SandboxPanel`,
+  설정 페이지 샌드박스 카테고리 3 카드, settings 컴포넌트 4 파일 삭제.
+- 백엔드 라우터 `sandbox.router` include 제거 (코드는 다른 마이그레이션과의
+  의존성 위해 disk 에 잔존, 라우터만 비활성). `/api/v1/sandbox/sessions`
+  → 404 확인.
+
+**README 재작성 — 709 → 118 줄**
+- 샌드박스 섹션 제거, KEV/EPSS/우선순위 핵심 가치로 끌어올림. 상용 서비스
+  landing 톤 (사용자 요청: "주절주절 보기 어렵다"). Hero + TL;DR + 4-tier
+  표 + 데이터 소스 표 + 화면 표 + AI 모델 표 + API 표 + 개발 명령 + Tech.
+  설치 6단계 / 환경변수 reference / 아키텍처 다이어그램 등 긴 섹션은 제거.
+
+**검증**
+- 백엔드 `pytest` 영향 없음 (기존 테스트는 샌드박스/통합 외 영역 유지).
+- frontend `tsc --noEmit` exit 0.
+- 단일 docker build (backend + frontend) 한 번에 완료.
+- 핵심 API 검증:
+  - `/dashboard/priorities` → KEV 1602 건 + EPSS/CVSS tier 카운트 정상.
+  - `/dashboard/insights` → CVSS 히스토그램 10 bin + mean 6.62 / median 6.7 / p90 9.1.
+  - `/search?priority=kev` → 1602 건 반환.
+  - `/cves/{id}/analyze` (Sonnet 4.6 full prompt) → 141 초 만에 정상 JSON.
+
+---
+
 ### PR 10-AR — API 키 카드 help 문구 제거 + 발급 링크 작은 버튼화 ✅
 
 사용자 요청: "NVD 에서 발급받은 API 키를 입력하면… / GitHub Advisory 데이터를

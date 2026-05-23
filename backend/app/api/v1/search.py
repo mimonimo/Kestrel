@@ -110,6 +110,9 @@ def _pg_order_by(sort: SortKey):
     return [Vulnerability.published_at.desc().nulls_last()]
 
 
+_PRIORITY_KEYS = {"kev", "epss_high", "cvss_mid_epss_high", "cvss_high_epss_low"}
+
+
 @router.get("", response_model=SearchResponse, response_model_by_alias=True)
 async def search(
     q: str = Query("", description="Full-text query"),
@@ -119,14 +122,40 @@ async def search(
     domain: list[str] = Query(default=[], alias="domain"),
     from_date: str | None = Query(default=None, alias="from"),
     to_date: str | None = Query(default=None, alias="to"),
+    priority: str | None = Query(
+        default=None,
+        description=(
+            "Priority tier filter — one of 'kev', 'epss_high', "
+            "'cvss_mid_epss_high', 'cvss_high_epss_low'. Falls through to "
+            "the PG path because Meilisearch doesn't index our KEV/EPSS "
+            "signals."
+        ),
+    ),
     sort: SortKey = Query("newest"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> SearchResponse:
-    """Full-text search via Meilisearch + Postgres fallback on failure."""
+    """Full-text search via Meilisearch + Postgres fallback on failure.
+
+    Priority-tier filter (``priority=...``) skips Meilisearch entirely
+    because the KEV / EPSS signals aren't indexed there — handled by
+    ``_pg_search`` which has direct column access."""
     offset = (page - 1) * page_size
     cve_pattern = _cve_id_ilike_pattern(q)
+
+    priority_norm = priority if priority in _PRIORITY_KEYS else None
+    if priority_norm:
+        rows, total = await _pg_search(
+            db, q, severity, os, type, domain, from_date, to_date, sort,
+            page_size, offset, cve_pattern, priority=priority_norm,
+        )
+        return SearchResponse(
+            items=[VulnerabilityListItem.model_validate(v) for v in rows],
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
 
     # Always do a fast cve_id lookup when the query is CVE-id-shaped — it's
     # cheap (unique index on cve_id), authoritative, and the result is
@@ -175,7 +204,7 @@ async def search(
     except Exception as exc:
         log.warning("search.meili_fallback", error=str(exc))
         rows, total = await _pg_search(
-            db, q, severity, os, type, domain, from_date, to_date, sort, page_size, offset, cve_pattern
+            db, q, severity, os, type, domain, from_date, to_date, sort, page_size, offset, cve_pattern, priority=None,
         )
         return SearchResponse(
             items=[VulnerabilityListItem.model_validate(v) for v in rows],
@@ -214,6 +243,7 @@ async def _pg_search(
     limit: int,
     offset: int,
     cve_pattern: str | None,
+    priority: str | None = None,
 ) -> tuple[list[Vulnerability], int]:
     from sqlalchemy import and_, func
 
@@ -269,6 +299,26 @@ async def _pg_search(
             )
         except ValueError:
             pass
+
+    # Priority-tier predicates mirror dashboard/_tier_filters so the
+    # "전체 보기" link from the PriorityOverviewPanel lands on the same
+    # row set the panel was summarizing.
+    if priority == "kev":
+        conds.append(Vulnerability.kev_listed.is_(True))
+    elif priority == "epss_high":
+        conds.append(Vulnerability.epss_score >= 0.5)
+        conds.append(Vulnerability.kev_listed.is_not(True))
+    elif priority == "cvss_mid_epss_high":
+        conds.append(Vulnerability.cvss_score >= 4.0)
+        conds.append(Vulnerability.cvss_score < 7.0)
+        conds.append(Vulnerability.epss_score >= 0.3)
+        conds.append(Vulnerability.kev_listed.is_not(True))
+    elif priority == "cvss_high_epss_low":
+        conds.append(Vulnerability.cvss_score >= 7.0)
+        conds.append(
+            or_(Vulnerability.epss_score < 0.3, Vulnerability.epss_score.is_(None))
+        )
+        conds.append(Vulnerability.kev_listed.is_not(True))
 
     if conds:
         stmt = stmt.where(and_(*conds))
@@ -334,18 +384,32 @@ async def search_facets(
     db: AsyncSession = Depends(get_db),
     from_: str | None = Query(default=None, alias="from"),
     to: str | None = Query(default=None),
+    severity: str | None = Query(default=None),
+    source: str | None = Query(default=None),
+    type: str | None = Query(default=None),
+    domain: str | None = Query(default=None),
 ) -> FacetsResponse:
-    """Facet aggregates, optionally narrowed by ``published_at`` window.
+    """Facet aggregates, optionally narrowed by ``published_at`` window and
+    by cross-filter selections.
 
-    Date params are ISO-8601 (YYYY-MM-DD or full ISO). Cache key includes
-    them so consecutive requests for the same window hit the cache while
-    different windows compute independently.
+    Date params are ISO-8601 (YYYY-MM-DD or full ISO). The filter params
+    (severity/source/type/domain) implement self-exclusive cross-filtering:
+    each facet's own dimension is excluded from filtering so the user can
+    switch the active selection without first clearing it. All other
+    facets apply every active filter.
+
+    Cache key includes every param so consecutive requests for the same
+    (window, filter) combination hit the cache while different
+    combinations compute independently.
     """
     import time as _time
     now = _time.monotonic()
     since = _parse_iso_date(from_)
     until = _parse_iso_date(to)
-    cache_key = f"v2|{from_ or ''}|{to or ''}"
+    cache_key = (
+        f"v3|{from_ or ''}|{to or ''}|"
+        f"{severity or ''}|{source or ''}|{type or ''}|{domain or ''}"
+    )
     cached = _FACETS_CACHE.get(cache_key)
     if cached and now - cached[0] < _FACETS_CACHE_TTL:
         return cached[1]
@@ -353,7 +417,15 @@ async def search_facets(
         cached = _FACETS_CACHE.get(cache_key)
         if cached and now - cached[0] < _FACETS_CACHE_TTL:
             return cached[1]
-        result = await _build_facets(db, since=since, until=until)
+        result = await _build_facets(
+            db,
+            since=since,
+            until=until,
+            severity=severity or None,
+            source=source or None,
+            type_=type or None,
+            domain=domain or None,
+        )
         _FACETS_CACHE[cache_key] = (now, result)
         return result
 
@@ -375,6 +447,10 @@ async def _build_facets(
     *,
     since: datetime | None = None,
     until: datetime | None = None,
+    severity: str | None = None,
+    source: str | None = None,
+    type_: str | None = None,
+    domain: str | None = None,
 ) -> FacetsResponse:
     """Filter facet counts derived from the parsed CVE corpus.
 
@@ -403,7 +479,40 @@ async def _build_facets(
             conds.append(col <= until)
         return conds
 
-    # types — JOIN map → types → vulnerabilities for date filter.
+    # Self-exclusive cross-filter: each facet excludes its own dimension
+    # so users can re-pick within a category without clearing first.
+    #
+    # ``vuln_filter_for(exclude=<dim>)`` returns the conjunctive WHERE
+    # clauses that should be applied to a query whose facet is over
+    # ``<dim>``. The date window is always applied; severity/source apply
+    # as direct column predicates; type/domain apply via EXISTS subqueries
+    # so they don't fan out the GROUP BY count.
+    def vuln_filter_for(exclude: str | None = None) -> list:
+        conds = list(_date_window(Vulnerability.published_at))
+        if severity and exclude != "severity":
+            conds.append(Vulnerability.severity == severity)
+        if source and exclude != "source":
+            conds.append(Vulnerability.source == source)
+        if type_ and exclude != "type":
+            conds.append(
+                select(1)
+                .select_from(vulnerability_type_map)
+                .join(
+                    VulnerabilityType,
+                    VulnerabilityType.id == vulnerability_type_map.c.type_id,
+                )
+                .where(
+                    vulnerability_type_map.c.vulnerability_id == Vulnerability.id,
+                    VulnerabilityType.name == type_,
+                )
+                .exists()
+            )
+        if domain and exclude != "domain":
+            conds.append(Vulnerability.domains.any(domain))
+        return conds
+
+    # types — JOIN map → types → vulnerabilities; exclude=type for self.
+    type_conds = vuln_filter_for(exclude="type")
     type_q = (
         select(
             VulnerabilityType.name,
@@ -413,82 +522,94 @@ async def _build_facets(
             vulnerability_type_map,
             vulnerability_type_map.c.type_id == VulnerabilityType.id,
         )
-    )
-    if since is not None or until is not None:
-        type_q = type_q.join(
+        .join(
             Vulnerability,
             Vulnerability.id == vulnerability_type_map.c.vulnerability_id,
-        ).where(*_date_window(Vulnerability.published_at))
+        )
+        .where(*type_conds)
+    )
     type_rows = (
         await db.execute(type_q.group_by(VulnerabilityType.name).order_by(func.count().desc()))
     ).all()
 
-    # os families — JOIN affected_products → vulnerabilities for date filter.
-    os_q = select(
-        AffectedProduct.os_family,
-        func.count(func.distinct(AffectedProduct.vulnerability_id)).label("c"),
-    )
-    if since is not None or until is not None:
-        os_q = os_q.join(
+    # os families — JOIN through Vulnerability so all filters apply.
+    os_conds = vuln_filter_for(exclude=None)
+    os_q = (
+        select(
+            AffectedProduct.os_family,
+            func.count(func.distinct(AffectedProduct.vulnerability_id)).label("c"),
+        )
+        .join(
             Vulnerability,
             Vulnerability.id == AffectedProduct.vulnerability_id,
-        ).where(*_date_window(Vulnerability.published_at))
+        )
+        .where(*os_conds)
+    )
     os_rows = (
         await db.execute(os_q.group_by(AffectedProduct.os_family).order_by(func.count().desc()))
     ).all()
 
-    # severities — direct on Vulnerability
+    # severities — exclude=severity for self.
+    sev_conds = vuln_filter_for(exclude="severity")
     sev_rows = (
         await db.execute(
             select(Vulnerability.severity, func.count())
             .where(
                 Vulnerability.severity.isnot(None),
-                *_date_window(Vulnerability.published_at),
+                *sev_conds,
             )
             .group_by(Vulnerability.severity)
             .order_by(func.count().desc())
         )
     ).all()
 
-    # sources
-    src_q = select(Vulnerability.source, func.count())
-    if since is not None or until is not None:
-        src_q = src_q.where(*_date_window(Vulnerability.published_at))
-    src_rows = (
-        await db.execute(src_q.group_by(Vulnerability.source).order_by(func.count().desc()))
-    ).all()
-
-    # domains — TEXT[] unnested
-    dom_q = select(
-        func.unnest(Vulnerability.domains).label("d"),
-        func.count(),
+    # sources — exclude=source for self.
+    src_conds = vuln_filter_for(exclude="source")
+    src_q = (
+        select(Vulnerability.source, func.count())
+        .where(*src_conds)
+        .group_by(Vulnerability.source)
+        .order_by(func.count().desc())
     )
-    if since is not None or until is not None:
-        dom_q = dom_q.where(*_date_window(Vulnerability.published_at))
-    dom_rows = (
-        await db.execute(dom_q.group_by("d").order_by(func.count().desc()))
-    ).all()
+    src_rows = (await db.execute(src_q)).all()
+
+    # domains — TEXT[] unnested; exclude=domain for self.
+    dom_conds = vuln_filter_for(exclude="domain")
+    dom_q = (
+        select(
+            func.unnest(Vulnerability.domains).label("d"),
+            func.count(),
+        )
+        .where(*dom_conds)
+        .group_by("d")
+        .order_by(func.count().desc())
+    )
+    dom_rows = (await db.execute(dom_q)).all()
 
     def _enum_value(v) -> str:
         return v.value if hasattr(v, "value") else str(v)
 
     # publishedAt boundaries — MIN/MAX over the (filtered) window so the
-    # header shows the actual span of the visible aggregation.
+    # header shows the actual span of the visible aggregation. Includes
+    # every active cross-filter so the displayed range matches the chart.
     bounds_q = select(
         func.min(Vulnerability.published_at),
         func.max(Vulnerability.published_at),
     ).where(
         Vulnerability.published_at.isnot(None),
-        *_date_window(Vulnerability.published_at),
+        *vuln_filter_for(exclude=None),
     )
     bounds = (await db.execute(bounds_q)).first()
     earliest = bounds[0] if bounds else None
     latest = bounds[1] if bounds else None
 
-    # Authoritative count — narrowed by window too so charts add up.
-    total_q = select(func.count()).select_from(Vulnerability)
-    if since is not None or until is not None:
-        total_q = total_q.where(*_date_window(Vulnerability.published_at))
+    # Authoritative total — applies every active cross-filter so the
+    # header total matches the union of facet rings exactly.
+    total_q = (
+        select(func.count())
+        .select_from(Vulnerability)
+        .where(*vuln_filter_for(exclude=None))
+    )
     total = (await db.execute(total_q)).scalar_one()
 
     return FacetsResponse(

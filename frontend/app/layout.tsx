@@ -3,8 +3,7 @@ import "./globals.css";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Providers } from "@/components/providers";
-import { StatusBanner } from "@/components/system/StatusBanner";
-import { AnalysisHistoryButton } from "@/components/system/AnalysisHistoryButton";
+import { FloatingDock } from "@/components/system/FloatingDock";
 
 export const metadata: Metadata = {
   title: "Kestrel — 실시간 CVE & 제로데이 모니터링",
@@ -40,9 +39,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen flex flex-col">
         <Providers>
           <Header />
-          <StatusBanner />
-          <AnalysisHistoryButton />
           <main className="flex-1">{children}</main>
+          <FloatingDock />
           <Footer />
         </Providers>
       </body>

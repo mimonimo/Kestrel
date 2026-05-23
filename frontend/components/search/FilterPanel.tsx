@@ -9,18 +9,12 @@ import { DOMAINS } from "@/lib/types";
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low"];
 const OS_FAMILIES: OsFamily[] = ["windows", "linux", "macos", "android", "ios", "other"];
 
-// Korean labels for the long English vuln-type names. Anything missing
-// from this map is rendered as-is. Generated dynamically from /search/facets
-// so chips that have 0 rows in DB simply don't appear (was a bug pre-PR
-// where 7 hardcoded chips never matched anything).
-const VULN_TYPE_LABELS: Partial<Record<string, string>> = {
-  "Path-Traversal": "경로순회",
-  Deserialization: "역직렬화",
-  "Open-Redirect": "오픈리다이렉트",
-  "Privilege-Escalation": "권한상승",
-  "Info-Disclosure": "정보노출",
-  "Memory-Corruption": "메모리손상",
-};
+// Filter-chip labels are kept in canonical English to match the rest
+// of the panel — mixing 경로순회 / RCE / SSRF in the same row felt
+// inconsistent and the standard CVE taxonomy is English anyway. An
+// empty map keeps the lookup site working as a no-op; if we ever want
+// localized aliases we can re-populate selectively.
+const VULN_TYPE_LABELS: Partial<Record<string, string>> = {};
 
 function _formatCount(n: number): string {
   if (n >= 10000) return `${(n / 1000).toFixed(0)}k`;
@@ -34,39 +28,48 @@ const OS_LABELS: Record<OsFamily, string> = {
   macos: "macOS",
   android: "Android",
   ios: "iOS",
-  other: "기타",
+  other: "Other",
 };
 
-// Korean labels for the domain chips. The chip itself shows the label,
-// the underlying value sent to the API is the canonical lowercase
-// English string from `DOMAINS`. Keeping label and key separate so we
-// can rename the UI without churning URL state or backend filter
-// vocab.
+// Canonical English labels for the domain chips. The underlying value
+// sent to the API is the lowercase string from `DOMAINS`; we keep
+// label and key separate so future renames don't touch URL state or
+// backend filter vocab.
 const DOMAIN_LABELS: Record<Domain, string> = {
-  kernel: "커널",
+  kernel: "Kernel",
   os: "OS",
-  browser: "브라우저",
-  "web-server": "웹서버",
-  "web-framework": "웹프레임워크",
-  database: "DB",
-  media: "미디어",
-  network: "네트워크",
-  mail: "메일",
-  auth: "인증",
-  crypto: "암호",
-  runtime: "런타임",
-  mobile: "모바일",
-  virtualization: "가상화",
-  office: "오피스",
-  enterprise: "엔터프라이즈",
+  browser: "Browser",
+  "web-server": "Web Server",
+  "web-framework": "Web Framework",
+  database: "Database",
+  media: "Media",
+  network: "Network",
+  mail: "Mail",
+  auth: "Auth",
+  crypto: "Crypto",
+  runtime: "Runtime",
+  mobile: "Mobile",
+  virtualization: "Virtualization",
+  office: "Office",
+  enterprise: "Enterprise",
   iot: "IoT",
-  messaging: "메신저",
+  messaging: "Messaging",
 };
 
 // Date filter (presets + custom inputs) lives inline next to the result
 // count via ``DateRangeControl``. The state is still part of FilterState
 // because the URL serializer + backend hook expect ``fromDate``/``toDate``
 // keys; the sidebar just no longer renders the controls.
+
+// Tier filter (KEV / EPSS상위 / CVSS·EPSS 조합) lives in URL state but
+// the FilterPanel sidebar doesn't render chips for it — entry is always
+// via the PriorityOverviewPanel drilldown, and the active tier is
+// surfaced inline next to the result count instead.
+export type PriorityTierKey =
+  | "kev"
+  | "epss_high"
+  | "cvss_mid_epss_high"
+  | "cvss_high_epss_low";
 
 export interface FilterState {
   severity: Severity[];
@@ -75,6 +78,7 @@ export interface FilterState {
   domains: Domain[];
   fromDate: string;
   toDate: string;
+  priority?: PriorityTierKey;
 }
 
 export const EMPTY_FILTERS: FilterState = {

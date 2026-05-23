@@ -4,14 +4,19 @@ import type { UrlObject } from "url";
 import {
   ChevronDown,
   ChevronUp,
+  Filter,
   Loader2,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { api, type FacetBucket } from "@/lib/api";
 import { PIE_PALETTE as SHARED_PIE_PALETTE, PieGroup, type PieSlice } from "@/components/ui/pie-chart";
 import { cn } from "@/lib/utils";
+
+type FacetDim = "severity" | "source" | "type" | "domain";
+type FacetSelection = Partial<Record<FacetDim, string>>;
 
 const SEV_ORDER = ["critical", "high", "medium", "low"] as const;
 const SEV_LABEL: Record<string, string> = {
@@ -87,6 +92,12 @@ interface Slice {
   count: number;
   color: string;
   href?: UrlObject;
+  onClick?: () => void;
+  selected?: boolean;
+  dimmed?: boolean;
+  // Underlying value (used to compare against the active selection so
+  // labels can be cosmetic).
+  rawValue?: string;
 }
 
 function buildSlices(
@@ -100,12 +111,57 @@ function buildSlices(
     count: b.count,
     color: paletteFor(b.value, i),
     href: hrefFor ? hrefFor(b.value) : undefined,
+    rawValue: b.value,
   }));
+}
+
+// Decorate a list of slices with cross-filter behavior — given the
+// active selection for this dimension, attach onClick + selected +
+// dimmed flags so PieGroup renders the highlight + click toggle.
+function withCrossFilter(
+  slices: Slice[],
+  dim: FacetDim,
+  active: string | undefined,
+  toggle: (dim: FacetDim, value: string) => void,
+): Slice[] {
+  return slices.map((s) => {
+    const raw = s.rawValue ?? s.label;
+    return {
+      ...s,
+      // Cross-filter replaces the navigate-to-list href — a click here
+      // narrows the chart, not the CVE list. Users still get the list
+      // filter via FilterPanel chips on the left.
+      href: undefined,
+      onClick: () => toggle(dim, raw),
+      selected: active === raw,
+      dimmed: active != null && active !== raw,
+    };
+  });
 }
 
 export function VulnDistributionPanel() {
   const [collapsed, setCollapsed] = useState(false);
   const [period, setPeriod] = useState<PeriodKey>("all");
+  // Cross-filter state — clicking a pie slice or legend row toggles
+  // that dimension's filter. The backend re-aggregates every other
+  // facet against the union of active filters so the entire panel
+  // re-tints to reflect the chosen slice. Clicking the same slice
+  // again clears just that dimension.
+  const [selection, setSelection] = useState<FacetSelection>({});
+
+  const toggleFilter = (dim: FacetDim, value: string) => {
+    setSelection((s) => {
+      const next: FacetSelection = { ...s };
+      if (s[dim] === value) {
+        delete next[dim];
+      } else {
+        next[dim] = value;
+      }
+      return next;
+    });
+  };
+  const clearFilters = () => setSelection({});
+  const activeFilterCount = Object.keys(selection).length;
 
   // Live polling is derived from period — "전체" (no window) auto-polls
   // every 30s so new ingestions surface in near real time. Bounded
@@ -118,11 +174,26 @@ export function VulnDistributionPanel() {
   const window_ = useMemo(() => periodToWindow(period), [period]);
 
   const facets = useQuery({
-    queryKey: ["search", "facets", window_.from ?? "", window_.to ?? ""],
-    queryFn: () => api.getSearchFacets(window_),
+    queryKey: [
+      "search",
+      "facets",
+      window_.from ?? "",
+      window_.to ?? "",
+      selection.severity ?? "",
+      selection.source ?? "",
+      selection.type ?? "",
+      selection.domain ?? "",
+    ],
+    queryFn: () => api.getSearchFacets(window_, selection),
     staleTime: live ? 0 : 60_000,
     refetchInterval: live ? 30_000 : false,
     refetchIntervalInBackground: false,
+    // Keep the previous facet payload on screen while a new query (with
+    // changed filters/period) is in flight — without this the panel
+    // collapses to the "집계 중…" loader and the layout jumps every
+    // time the user toggles a cross-filter, which the user flagged as
+    // 깜박임. The header spinner already signals an in-flight fetch.
+    placeholderData: keepPreviousData,
   });
 
   useEffect(() => {
@@ -144,7 +215,10 @@ export function VulnDistributionPanel() {
     if (typeof window !== "undefined") window.localStorage.setItem(PERIOD_KEY, p);
   };
 
-  if (facets.isLoading) {
+  // Only show the standalone loader on the very first load (no prior
+  // data has ever resolved). Subsequent re-fetches keep the old data
+  // visible via placeholderData so the panel never collapses.
+  if (facets.isLoading && !facets.data) {
     return (
       <section className="mb-8 rounded-xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-surface-1">
         <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-500">
@@ -157,36 +231,48 @@ export function VulnDistributionPanel() {
     return null;
   }
   const data = facets.data;
+  // When we're showing previous data while a new query is in flight,
+  // softly dim the charts so the user sees that the numbers are still
+  // catching up — no layout shift, just a subtle fade.
+  const isStale = facets.isPlaceholderData;
   // Authoritative total from backend SELECT COUNT(*); no more summing
   // severities (which excludes unrated rows) or sources (which would
   // double-count multi-source CVEs after PR 10-AF).
   const total = data.total ?? 0;
 
   const sevByValue = new Map(data.severities?.map((b) => [b.value, b.count]) ?? []);
-  const sevSlices: Slice[] = SEV_ORDER.map((k) => ({
+  const sevSlicesRaw: Slice[] = SEV_ORDER.map((k) => ({
     label: SEV_LABEL[k],
     count: sevByValue.get(k) ?? 0,
     color: SEV_HEX[k],
-    href: { pathname: "/", query: { severity: k } },
+    rawValue: k,
   })).filter((s) => s.count > 0);
+  const sevSlices = withCrossFilter(sevSlicesRaw, "severity", selection.severity, toggleFilter);
 
-  const sourceSlices = buildSlices(
-    topN(data.sources, 6),
-    (v) => SOURCE_HEX[v] ?? "#94a3b8",
-    undefined,
-    (v) => SOURCE_LABEL[v] ?? v,
+  const sourceSlices = withCrossFilter(
+    buildSlices(
+      topN(data.sources, 6),
+      (v) => SOURCE_HEX[v] ?? "#94a3b8",
+      undefined,
+      (v) => SOURCE_LABEL[v] ?? v,
+    ),
+    "source",
+    selection.source,
+    toggleFilter,
   );
 
-  const typeSlices = buildSlices(
-    topN(data.types, 8),
-    (_v, i) => PIE_PALETTE[i % PIE_PALETTE.length],
-    (v) => ({ pathname: "/", query: { type: v } }),
+  const typeSlices = withCrossFilter(
+    buildSlices(topN(data.types, 8), (_v, i) => PIE_PALETTE[i % PIE_PALETTE.length]),
+    "type",
+    selection.type,
+    toggleFilter,
   );
 
-  const domainSlices = buildSlices(
-    topN(data.domains, 8),
-    (_v, i) => PIE_PALETTE[(i + 3) % PIE_PALETTE.length],
-    (v) => ({ pathname: "/", query: { domain: v } }),
+  const domainSlices = withCrossFilter(
+    buildSlices(topN(data.domains, 8), (_v, i) => PIE_PALETTE[(i + 3) % PIE_PALETTE.length]),
+    "domain",
+    selection.domain,
+    toggleFilter,
   );
 
   const dayLo = formatDay(data.earliestPublishedAt);
@@ -236,6 +322,12 @@ export function VulnDistributionPanel() {
               LIVE
             </span>
           )}
+          {activeFilterCount > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 dark:text-sky-200">
+              <Filter className="h-2.5 w-2.5" />
+              필터 {activeFilterCount}
+            </span>
+          )}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-1.5">
           {/* Period selector — pill group */}
@@ -261,6 +353,17 @@ export function VulnDistributionPanel() {
               </button>
             ))}
           </div>
+          {activeFilterCount > 0 && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex items-center gap-1 rounded-full border border-sky-300 bg-sky-50 px-2 py-1 text-[11px] text-sky-800 hover:bg-sky-100 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:bg-sky-500/20"
+              title="모든 필터 해제"
+            >
+              <X className="h-3 w-3" />
+              필터 초기화
+            </button>
+          )}
           {facets.isFetching && (
             <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-600 dark:text-sky-400" />
           )}
@@ -278,7 +381,13 @@ export function VulnDistributionPanel() {
       </header>
 
       {!collapsed && (
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div
+          className={cn(
+            "grid gap-5 transition-opacity duration-200 sm:grid-cols-2 lg:grid-cols-4",
+            isStale && "opacity-70",
+          )}
+          aria-busy={isStale}
+        >
           {groups.map((g) => (
             <Group key={g.title} title={g.title}>
               {g.slices.length === 0 ? (

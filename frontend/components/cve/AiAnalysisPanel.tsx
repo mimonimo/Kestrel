@@ -1,11 +1,24 @@
 "use client";
 
-import { Check, Clock, Copy, Loader2, RotateCcw, Sparkles } from "lucide-react";
+import {
+  Check,
+  Clock,
+  Copy,
+  Download,
+  Loader2,
+  RotateCcw,
+  Send,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, api, type AiAnalysisResponse } from "@/lib/api";
 import { recordAnalysisHistory } from "@/lib/analysis-history";
+import { clearRunning, markRunning, readRunningAnalyses } from "@/lib/analysis-running";
+import { appendQaTurn, clearQaHistory, useQaHistory } from "@/lib/analysis-qa";
+import { downloadAnalysisMarkdown } from "@/lib/analysis-report";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ErrorBox, FeedbackBoxButton } from "@/components/ui/feedback-box";
@@ -169,11 +182,36 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
     });
   }, [analyze.data, cveId]);
 
+  // Clear the persisted "running" marker only when the analysis truly
+  // settles (success OR error). Doing this in queryFn's finally caused
+  // a race: TanStack Query aborts the queryFn on component unmount /
+  // refresh, which fired finally → cleared the marker → broke the
+  // refresh-persistence we'd just added.
+  useEffect(() => {
+    if (analyze.data || analyze.error) {
+      clearRunning(cveId);
+    }
+  }, [analyze.data, analyze.error, cveId]);
+
   const runAnalysis = () => {
-    // refetch() honors enabled:false by ignoring the flag — exactly
-    // what we want for a manual trigger.
+    // Synchronously mirror "running" BEFORE refetch so a refresh fired
+    // within the same tick still finds the marker on next load.
+    markRunning(cveId);
     analyze.refetch();
   };
+
+  // Auto-resume: if the user refreshed mid-analysis (so the in-memory
+  // query state was wiped but the persisted "running" entry survives)
+  // re-trigger the request on mount. Without this the FloatingDock pill
+  // would say "분석 중" forever until the 10-min prune kicks in.
+  useEffect(() => {
+    const stillRunning = readRunningAnalyses().some((e) => e.cveId === cveId);
+    if (stillRunning && !analyze.data && !analyze.isFetching && !analyze.error) {
+      analyze.refetch();
+    }
+    // intentionally only on cveId mount — repeated checks would loop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cveId]);
 
   // Display priority: live result first, then cached. So `data` is
   // non-null any time the user has either just analyzed OR analyzed
@@ -210,23 +248,40 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
           )}
         </div>
         {data && !isRunning && (
-          <button
-            type="button"
-            onClick={() => runAnalysis()}
-            className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
-          >
-            <RotateCcw className="h-3 w-3" />
-            다시 분석
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() =>
+                downloadAnalysisMarkdown({
+                  cveId,
+                  result: data,
+                  qa: [],
+                })
+              }
+              className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
+              title="분석 결과와 Q&A 를 Markdown 으로 내려받기"
+            >
+              <Download className="h-3 w-3" />
+              리포트 다운로드
+            </button>
+            <button
+              type="button"
+              onClick={() => runAnalysis()}
+              className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
+            >
+              <RotateCcw className="h-3 w-3" />
+              다시 분석
+            </button>
+          </div>
         )}
       </CardHeader>
       <CardContent className="space-y-4">
         {!data && !isRunning && !error && (
           <div className="flex flex-col items-start gap-3">
             <p className="text-sm text-neutral-700 dark:text-neutral-400">
-              공격 시나리오 · 재현 가능한 PoC 페이로드 · 즉시 적용 가능한 차단
-              패치를 한 번에. 보안 운영팀이 그대로 점검·티켓팅에 쓸 수 있는
-              형태로 정리됩니다.
+              공격 시나리오 · 재현 가능한 PoC 페이로드 · 즉시 적용 가능한 차단 패치를
+              한 번에 받아 보세요. 보안 운영팀이 그대로 점검·티켓팅에 쓸 수 있는
+              형태로 정리해 드립니다.
             </p>
             <Button
               type="button"
@@ -240,12 +295,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
           </div>
         )}
 
-        {isRunning && (
-          <div className="flex items-center gap-2 py-4 text-sm text-neutral-700 dark:text-neutral-400">
-            <Loader2 className="h-4 w-4 animate-spin text-violet-600 dark:text-violet-400" />
-            AI 가 취약점을 분석 중입니다…
-          </div>
-        )}
+        {isRunning && <RunningIndicator />}
 
         {error && (
           <ErrorBox
@@ -311,12 +361,167 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
               </ul>
             </section>
 
+            <FollowUpThread cveId={cveId} prior={data} />
+
             <p className="text-[11px] text-neutral-500">
-              ※ AI 생성 결과는 참고용이며, 실제 대응 전에는 반드시 전문가 검토가 필요합니다.
+              ※ AI 생성 결과는 참고용입니다. 실제 대응 전에 반드시 전문가 검토를 거치세요.
             </p>
           </div>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// ─────────────────────── Running indicator (elapsed) ─────────────────
+
+function RunningIndicator() {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const t0 = Date.now();
+    const id = window.setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  const hint =
+    elapsed < 30
+      ? "Haiku 모델이면 보통 10초 이내, Sonnet 은 1-3분 걸려요."
+      : elapsed < 90
+        ? "Sonnet 분석은 평균 1-2분입니다. 잠시만 더 기다려 주세요."
+        : "거의 다 됐어요. 토큰을 다 받아오는 중입니다.";
+  return (
+    <div className="rounded-lg border border-violet-200 bg-violet-50/50 p-4 dark:border-violet-500/30 dark:bg-violet-500/5">
+      <div className="flex items-center gap-2 text-sm font-medium text-violet-900 dark:text-violet-200">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        AI 가 취약점을 분석 중입니다
+        <span className="ml-1 tabular-nums text-[12px] text-violet-700 dark:text-violet-300">
+          ({elapsed}s)
+        </span>
+      </div>
+      <p className="mt-1.5 text-[11px] text-violet-800 dark:text-violet-300/80">{hint}</p>
+    </div>
+  );
+}
+
+// ─────────────────────── Follow-up Q&A thread ─────────────────────────
+
+function FollowUpThread({ cveId, prior }: { cveId: string; prior: AiAnalysisResponse }) {
+  const { turns } = useQaHistory(cveId);
+  const [question, setQuestion] = useState("");
+
+  const ask = useMutation({
+    mutationFn: async (q: string) => {
+      const res = await api.askFollowup({
+        cveId,
+        question: q,
+        prior,
+        history: turns.map((t) => ({ question: t.question, answer: t.answer })),
+      });
+      appendQaTurn(cveId, { question: q, answer: res.answer });
+      return res.answer;
+    },
+    onSuccess: () => setQuestion(""),
+  });
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = question.trim();
+    if (!q || ask.isPending) return;
+    ask.mutate(q);
+  };
+
+  return (
+    <section className="rounded-lg border border-neutral-200 bg-neutral-50/60 p-3 dark:border-neutral-800 dark:bg-surface-2/40">
+      <header className="mb-2 flex items-center justify-between">
+        <h3 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-violet-700 dark:text-violet-300">
+          <Sparkles className="h-3 w-3" />
+          추가 질문 ({turns.length})
+        </h3>
+        <div className="flex items-center gap-1">
+          {turns.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadAnalysisMarkdown({
+                    cveId,
+                    result: prior,
+                    qa: turns,
+                  })
+                }
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-100"
+                title="분석 결과 + 이 Q&A 를 Markdown 으로 다운로드"
+              >
+                <Download className="h-3 w-3" />
+                저장
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm("이 CVE 의 모든 추가 질문 기록을 지우시겠습니까?")) {
+                    clearQaHistory(cveId);
+                  }
+                }}
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] text-neutral-600 hover:bg-neutral-200 hover:text-rose-700 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-rose-300"
+                title="질문 기록 지우기"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </>
+          )}
+        </div>
+      </header>
+
+      {turns.length > 0 && (
+        <ul className="mb-3 space-y-3">
+          {turns.map((t, i) => (
+            <li key={i} className="space-y-1.5">
+              <div className="rounded-md bg-white px-3 py-2 text-[12px] text-neutral-900 shadow-sm dark:bg-surface-1 dark:text-neutral-100">
+                <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-500">
+                  Q{i + 1}
+                </div>
+                <p className="whitespace-pre-line">{t.question}</p>
+              </div>
+              <div className="rounded-md border border-violet-200 bg-violet-50/50 px-3 py-2 text-[12px] leading-relaxed text-neutral-800 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-neutral-200">
+                <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-violet-700 dark:text-violet-300">
+                  Answer
+                </div>
+                <p className="whitespace-pre-line">{t.answer}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {ask.error && (
+        <p className="mb-2 text-[11px] text-rose-700 dark:text-rose-300">
+          {(ask.error as Error).message || "질문 처리에 실패했어요."}
+        </p>
+      )}
+
+      <form onSubmit={onSubmit} className="flex items-start gap-2">
+        <textarea
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          rows={2}
+          maxLength={2000}
+          disabled={ask.isPending}
+          placeholder="예: 두 번째 페이로드의 WAF 우회 부분을 더 자세히 설명해 주세요"
+          className="flex-1 resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-[12px] text-neutral-900 placeholder:text-neutral-500 focus:border-violet-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-1 dark:text-neutral-100"
+        />
+        <Button
+          type="submit"
+          size="sm"
+          disabled={!question.trim() || ask.isPending}
+          className="shrink-0 rounded-full bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-violet-500 dark:hover:bg-violet-400"
+        >
+          {ask.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Send className="h-3.5 w-3.5" />
+          )}
+          질문
+        </Button>
+      </form>
+    </section>
   );
 }

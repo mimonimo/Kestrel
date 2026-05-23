@@ -32,19 +32,20 @@ export function SearchBar({ initialQuery = "", onSearch, size = "hero" }: Props)
         <Input
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="CVE-ID · 제품명 · 설명 · 취약점 유형 검색"
+          placeholder="CVE ID · 제품명 · 설명 · 취약점 유형으로 검색"
           className={
             hero
-              ? "h-11 rounded-lg border-neutral-300 bg-white pl-10 pr-24 text-sm dark:border-neutral-800 dark:bg-surface-1"
-              : "h-10 pl-9 pr-24"
+              ? "h-11 rounded-full border-neutral-300 bg-white pl-10 pr-24 text-sm dark:border-neutral-800 dark:bg-surface-1"
+              : "h-10 rounded-full pl-9 pr-24"
           }
         />
         <Button
           type="submit"
-          // Sky accent so the primary action pops off the white/dark input
-          // (the default neutral inversion blends in too much).
+          // Pill-shaped submit so it sits inside the rounded-full input
+          // without a visible corner clash; sky accent keeps the primary
+          // action distinct from the neutral field background.
           className={cn(
-            "absolute right-1.5 h-8 bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-white dark:hover:bg-sky-400",
+            "absolute right-1.5 h-8 rounded-full bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-white dark:hover:bg-sky-400",
           )}
           size="sm"
         >

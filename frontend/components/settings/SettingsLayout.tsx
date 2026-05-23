@@ -4,7 +4,6 @@ import Link from "next/link";
 import {
   ChevronRight,
   Database,
-  FlaskConical,
   Key,
   Server,
   Sparkles,
@@ -15,10 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiKeyField } from "@/components/settings/ApiKeyField";
 import { AssetsManager } from "@/components/settings/AssetsManager";
 import { ClaudeIntegrationPanel } from "@/components/settings/ClaudeIntegrationPanel";
-import { LabKindStatsPanel } from "@/components/settings/LabKindStatsPanel";
 import { MitreBackfillPanel } from "@/components/settings/MitreBackfillPanel";
-import { SandboxSessionsPanel } from "@/components/settings/SandboxSessionsPanel";
-import { SynthesizerCachePanel } from "@/components/settings/SynthesizerCachePanel";
 import { ThemeSwitcher } from "@/components/settings/ThemeSwitcher";
 import { VersionPanel } from "@/components/settings/VersionPanel";
 import { cn } from "@/lib/utils";
@@ -48,13 +44,13 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "theme",
         title: "화면 테마",
-        description: "다크 · 라이트 · 시스템 자동",
+        description: "라이트 / 다크 / 시스템 자동",
         render: () => <ThemeSwitcher />,
       },
       {
         id: "assets",
         title: "내 자산",
-        description: "벤더·제품 등록 시 영향 받는 CVE 만 노출",
+        description: "사용 중인 벤더·제품을 등록하면 영향받는 CVE 만 추려서 알려드립니다",
         render: () => <AssetsManager />,
       },
     ],
@@ -67,7 +63,7 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "external-keys",
         title: "외부 데이터 소스 API 키",
-        description: "선택 입력 · 수집 속도 향상",
+        description: "선택 입력 — 등록하면 수집 속도가 빨라집니다",
         render: () => (
           <div className="space-y-4">
             <ApiKeyField settingKey="nvdApiKey" />
@@ -78,7 +74,7 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "mitre-backfill",
         title: "MITRE 전체 백필",
-        description: "최초 1회 실행 · 평소엔 자동 델타",
+        description: "최초 1회 전체 백필 후 자동 델타 수집으로 전환",
         render: () => <MitreBackfillPanel />,
       },
     ],
@@ -91,33 +87,8 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "ai-analysis",
         title: "Claude 연동",
-        description: "AI 분석·합성에 사용되는 인증과 모델",
+        description: "AI 분석에 사용할 인증과 모델 선택",
         render: () => <ClaudeIntegrationPanel />,
-      },
-    ],
-  },
-  {
-    id: "sandbox",
-    title: "샌드박스",
-    icon: FlaskConical,
-    sections: [
-      {
-        id: "sandbox-sessions",
-        title: "실행 중인 샌드박스 세션",
-        description: "실습 컨테이너 · vulhub 동기화",
-        render: () => <SandboxSessionsPanel />,
-      },
-      {
-        id: "synth-cache",
-        title: "합성된 실습 환경 저장 공간",
-        description: "AI 합성 이미지 디스크 사용량",
-        render: () => <SynthesizerCachePanel />,
-      },
-      {
-        id: "lab-stats",
-        title: "실습 환경 출처별 분포",
-        description: "출처별·유형별 점유율",
-        render: () => <LabKindStatsPanel />,
       },
     ],
   },
@@ -128,44 +99,44 @@ const CATEGORIES: CategoryDef[] = [
     sections: [
       {
         id: "resources",
-        title: "내부 자원 관리",
-        description: "DB · Redis · 검색 인덱스 점검",
+        title: "내부 자원 점검",
+        description: "DB / Redis / Meilisearch 상태와 사용량 확인",
         render: () => (
           <Link
             href="/settings/resources"
-            className="group flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-surface-1 p-4 transition-colors hover:border-sky-500/40 hover:bg-surface-2"
+            className="group flex items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-white p-4 transition-colors hover:border-sky-400 hover:bg-sky-50/40 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-sky-500/40 dark:hover:bg-surface-2"
           >
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-500/15 text-sky-700 dark:text-sky-300 ring-1 ring-sky-500/30">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-500/15 text-sky-700 ring-1 ring-sky-500/30 dark:text-sky-300">
                 <Database className="h-4 w-4" />
               </div>
               <div>
-                <div className="text-sm font-medium text-neutral-100">
-                  내부 자원 관리 화면 열기
+                <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  자원 점검 화면 열기
                 </div>
-                <p className="mt-0.5 text-xs text-neutral-500">
-                  DB / Redis / Meilisearch 사용량 + 통계 갱신·캐시 비우기·인덱스 초기화
+                <p className="mt-0.5 text-xs text-neutral-600 dark:text-neutral-500">
+                  DB · Redis · Meilisearch 사용량과 통계 갱신·캐시 비우기·인덱스 초기화
                 </p>
               </div>
             </div>
-            <ChevronRight className="h-4 w-4 text-neutral-500 transition-transform group-hover:translate-x-0.5 group-hover:text-neutral-200" />
+            <ChevronRight className="h-4 w-4 text-neutral-500 transition-transform group-hover:translate-x-0.5 group-hover:text-neutral-700 dark:group-hover:text-neutral-200" />
           </Link>
         ),
       },
       {
         id: "version",
-        title: "버전 정보 / 업데이트",
-        description: "현재 빌드 · DB 마이그레이션 상태",
+        title: "버전 정보",
+        description: "현재 빌드와 DB 마이그레이션 상태",
         render: () => <VersionPanel />,
       },
       {
         id: "storage-notes",
         title: "설정 저장 위치",
-        description: "각 설정의 저장 범위",
+        description: "각 설정이 어디에 저장되는지 안내",
         render: () => (
           <ul className="list-disc space-y-1 pl-5 text-xs text-neutral-600 dark:text-neutral-500">
-            <li>화면 테마 · 외부 API 키 — 이 기기의 브라우저</li>
-            <li>AI 인증 · 등록 자산 — 서버 (모든 기기 공유)</li>
+            <li>화면 테마 · 외부 API 키 — 이 기기의 브라우저에만 저장</li>
+            <li>AI 인증 · 등록 자산 — 서버에 저장 (모든 기기에서 공유)</li>
           </ul>
         ),
       },

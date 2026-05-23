@@ -20,6 +20,7 @@ from app.models import AppSettings
 from app.services.ingestion import run_parser
 from app.services.parsers import ExploitDbParser, GithubAdvisoryParser, NvdParser
 from app.services.parsers.mitre import MitreParser
+from app.services.priority_signals import refresh_all as refresh_priority_signals
 
 log = get_logger(__name__)
 
@@ -99,6 +100,15 @@ async def refresh_ingestion(
             "exploit_db": edb_full,
         },
     }
+
+
+@router.post("/refresh-priority-signals")
+async def refresh_priority_signals_endpoint(background: BackgroundTasks) -> dict:
+    """Pull the current CISA KEV catalog + FIRST EPSS snapshot and update
+    matching CVE rows. Runs in the background — poll the same row from
+    /dashboard/insights to see counts move."""
+    background.add_task(refresh_priority_signals)
+    return {"queued": True}
 
 
 class _CamelOut(BaseModel):

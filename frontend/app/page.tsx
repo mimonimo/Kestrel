@@ -1,94 +1,48 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Star } from "lucide-react";
-import { SearchBar } from "@/components/search/SearchBar";
-import { FilterPanel, EMPTY_FILTERS } from "@/components/search/FilterPanel";
-import { CveListItem } from "@/components/cve/CveListItem";
-import { CveListSkeleton } from "@/components/cve/CveListSkeleton";
-import { EmptyState, ErrorState } from "@/components/cve/CveListStates";
-import { Pagination } from "@/components/search/Pagination";
+import { Suspense } from "react";
+import Link from "next/link";
+import type { Route } from "next";
+import { ListFilter } from "lucide-react";
+
 import { RefreshBar } from "@/components/dashboard/RefreshBar";
-import { SortSelect } from "@/components/dashboard/SortSelect";
 import { VulnDistributionPanel } from "@/components/dashboard/VulnDistributionPanel";
-import { DateRangeControl } from "@/components/dashboard/DateRangeControl";
-import { useCveSearch } from "@/hooks/useCveSearch";
-import { useDebounce } from "@/hooks/useDebounce";
-import { useUrlState } from "@/lib/url-state";
-import { useBookmarks } from "@/lib/bookmarks";
-import { api } from "@/lib/api";
-import { sortVulnerabilities } from "@/lib/sort";
-import { cn } from "@/lib/utils";
+import { CveListSkeleton } from "@/components/cve/CveListSkeleton";
+import { TimelinePanel } from "@/components/widgets/TimelinePanel";
+import { TopVendorsPanel } from "@/components/widgets/TopVendorsPanel";
+import { CvssBucketsPanel } from "@/components/widgets/CvssBucketsPanel";
+import { RecentCriticalPanel } from "@/components/widgets/RecentCriticalPanel";
+import { PriorityOverviewPanel } from "@/components/widgets/PriorityOverviewPanel";
 
-const PAGE_SIZE = 20;
-
+// 메인 대시보드 — 용도: 한눈에 보는 시각화 + 수집 상태.
+// 키워드 검색·세부 필터·CVE 리스트는 전부 `/cves` 탭으로 옮겨 책임이
+// 명확히 분리됩니다. 여기서는 우측 상단 "취약점 조회로 이동" 버튼이
+// 유일한 진입점.
 function Dashboard() {
-  const url = useUrlState();
-  const [queryInput, setQueryInput] = useState(url.query);
-  const debouncedQuery = useDebounce(queryInput, 300);
-  const [bookmarksOnly, setBookmarksOnly] = useState(false);
-  const bookmarks = useBookmarks();
-
-  useEffect(() => {
-    if (debouncedQuery !== url.query) {
-      url.set({ query: debouncedQuery, page: 1 });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedQuery]);
-
-  const search = useCveSearch(
-    {
-      query: url.query,
-      severity: url.filters.severity,
-      osFamily: url.filters.osFamily,
-      types: url.filters.types,
-      domains: url.filters.domains,
-      fromDate: url.filters.fromDate || undefined,
-      toDate: url.filters.toDate || undefined,
-    },
-    url.page,
-    PAGE_SIZE,
-    url.sort,
-  );
-
-  const bookmarkIds = [...bookmarks.set];
-  const bookmarksQuery = useQuery({
-    queryKey: ["bookmarks-batch", bookmarkIds.sort().join(",")],
-    queryFn: () => api.batchVulnerabilities(bookmarkIds),
-    enabled: bookmarksOnly && bookmarks.ready && bookmarkIds.length > 0,
-    staleTime: 30_000,
-  });
-
-  const activeData = bookmarksOnly
-    ? {
-        items: bookmarksQuery.data ?? [],
-        total: bookmarksQuery.data?.length ?? bookmarkIds.length,
-      }
-    : { items: search.data?.items ?? [], total: search.data?.total ?? 0 };
-
-  useEffect(() => {
-    if (bookmarksOnly || !search.data || search.data.total === 0) return;
-    const totalPages = Math.max(1, Math.ceil(search.data.total / PAGE_SIZE));
-    if (url.page > totalPages) {
-      url.set({ page: totalPages });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search.data?.total, url.page, bookmarksOnly]);
-
-  const isPending = bookmarksOnly
-    ? bookmarksQuery.isLoading && bookmarkIds.length > 0
-    : search.isPending;
-  const isError = bookmarksOnly ? bookmarksQuery.isError : search.isError;
-  const error = bookmarksOnly ? (bookmarksQuery.error as Error | undefined) : (search.error as Error | undefined);
-
   return (
     <div className="mx-auto max-w-7xl px-6">
-      {/* Dashboard header — compact, work-focused (was a hero-style landing).
-          Keeps the search bar accessible at the top of the page but doesn't
-          dominate the screen with branding the user has already arrived at. */}
-      <section className="pt-8 pb-6">
-        <SearchBar initialQuery={queryInput} onSearch={(q) => setQueryInput(q)} />
+      <section className="pt-8 pb-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+              대시보드
+            </h1>
+            <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-500">
+              수집 현황과 위협 추세를 한눈에. 키워드·세부 필터로 좁혀 보려면 상단의
+              <span className="font-medium text-neutral-800 dark:text-neutral-300">
+                {" "}취약점 조회{" "}
+              </span>
+              탭을 이용해 주세요.
+            </p>
+          </div>
+          <Link
+            href={"/cves" as Route}
+            className="inline-flex items-center gap-1.5 rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-sky-400 hover:text-sky-700 dark:border-neutral-700 dark:bg-surface-1 dark:text-neutral-300 dark:hover:border-sky-500/60 dark:hover:text-sky-200"
+          >
+            <ListFilter className="h-3.5 w-3.5" />
+            취약점 조회로 이동
+          </Link>
+        </div>
       </section>
 
       <div className="mb-6">
@@ -97,92 +51,24 @@ function Dashboard() {
 
       <VulnDistributionPanel />
 
-      <section className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6 pb-12">
-        <FilterPanel
-          value={url.filters}
-          onChange={(filters) => url.set({ filters, page: 1 })}
-        />
-
-        <div className="space-y-4">
-          <div className="flex items-baseline justify-between gap-3 border-b border-neutral-800 pb-3">
-            <h2 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-neutral-400">
-              <span>
-                총{" "}
-                <span className="text-neutral-100 font-semibold">{activeData.total ?? "—"}</span>
-                건
-              </span>
-              <DateRangeControl
-                fromDate={url.filters.fromDate}
-                toDate={url.filters.toDate}
-                onChange={({ fromDate, toDate }) =>
-                  url.set({ filters: { ...url.filters, fromDate, toDate }, page: 1 })
-                }
-              />
-              {bookmarksOnly && <span>· 즐겨찾기</span>}
-              {url.query && !bookmarksOnly && (
-                <span>
-                  · "<span className="text-neutral-200">{url.query}</span>" 검색 결과
-                </span>
-              )}
-            </h2>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setBookmarksOnly((v) => !v)}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-                  bookmarksOnly
-                    ? "border-amber-400/60 bg-amber-400/20 text-amber-800 dark:bg-amber-400/15 dark:text-amber-200"
-                    : "border-neutral-300 text-neutral-700 hover:border-neutral-500 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-500 dark:hover:text-neutral-100",
-                )}
-                aria-pressed={bookmarksOnly}
-              >
-                <Star className={cn("h-3.5 w-3.5", bookmarksOnly && "fill-amber-300")} />
-                즐겨찾기만 ({bookmarks.count})
-              </button>
-              <SortSelect value={url.sort} onChange={(next) => url.set({ sort: next, page: 1 })} />
-            </div>
-          </div>
-
-          {isError ? (
-            <ErrorState error={error as Error} onRetry={() => (bookmarksOnly ? bookmarksQuery.refetch() : search.refetch())} />
-          ) : isPending ? (
-            <CveListSkeleton count={6} />
-          ) : activeData.items.length === 0 ? (
-            bookmarksOnly ? (
-              <div className="rounded-lg border border-dashed border-neutral-300 bg-white/50 py-12 text-center text-sm text-neutral-600 dark:border-neutral-800 dark:bg-surface-1/50 dark:text-neutral-500">
-                아직 즐겨찾기한 CVE가 없습니다. 목록에서 별 아이콘을 눌러 추가하세요.
-              </div>
-            ) : (
-              <EmptyState />
-            )
-          ) : (
-            <>
-              <div
-                className={`grid grid-cols-1 md:grid-cols-2 gap-3 transition-opacity ${
-                  !bookmarksOnly && search.isPlaceholderData ? "opacity-60" : ""
-                }`}
-              >
-                {/* Search results are server-sorted; bookmarks come from a
-                    batch fetch in arbitrary order so we still client-sort
-                    them. */}
-                {(bookmarksOnly ? sortVulnerabilities(activeData.items, url.sort) : activeData.items).map((v) => (
-                  <CveListItem key={v.cveId} vuln={v} />
-                ))}
-              </div>
-              {!bookmarksOnly && (
-                <Pagination
-                  page={url.page}
-                  pageSize={PAGE_SIZE}
-                  total={search.data?.total ?? 0}
-                  onChange={(page) => url.set({ page })}
-                />
-              )}
-            </>
-          )}
-
-          {url.filters !== EMPTY_FILTERS && activeData.items.length === 0 && null}
+      {/* Supporting visualizations — each widget is self-contained
+          (own data fetch, own loader). The layout is just a CSS grid so
+          adding a new widget later is "drop a component into the grid";
+          nothing higher-level needs to know about it. */}
+      <section className="mb-8 grid gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-3">
+          <TimelinePanel />
         </div>
+        <TopVendorsPanel />
+        <CvssBucketsPanel />
+        <RecentCriticalPanel />
+      </section>
+
+      {/* Compact "어디부터 고칠 것인가" — CVSS/EPSS/KEV chips + a
+          ranked 4-tier list. Sits at the bottom so the at-a-glance
+          numbers above stay visible without scrolling. */}
+      <section className="mb-10">
+        <PriorityOverviewPanel />
       </section>
     </div>
   );
@@ -190,7 +76,13 @@ function Dashboard() {
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<div className="mx-auto max-w-7xl px-6 py-16"><CveListSkeleton /></div>}>
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-7xl px-6 py-16">
+          <CveListSkeleton />
+        </div>
+      }
+    >
       <Dashboard />
     </Suspense>
   );

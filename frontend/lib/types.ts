@@ -106,6 +106,12 @@ export interface Vulnerability {
   references: Reference[];
 }
 
+export type PriorityTier =
+  | "kev"
+  | "epss_high"
+  | "cvss_mid_epss_high"
+  | "cvss_high_epss_low";
+
 export interface SearchFilters {
   query?: string;
   severity?: Severity[];
@@ -114,6 +120,7 @@ export interface SearchFilters {
   domains?: Domain[];
   fromDate?: string;
   toDate?: string;
+  priority?: PriorityTier;
 }
 
 export interface VulnerabilityListItem {

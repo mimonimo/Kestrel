@@ -16,6 +16,7 @@ from app.models import AppSettings
 from app.services.ingestion import run_parser
 from app.services.parsers import ExploitDbParser, GithubAdvisoryParser, NvdParser
 from app.services.parsers.mitre import MitreParser
+from app.services.priority_signals import refresh_epss, refresh_kev
 
 log = get_logger(__name__)
 
@@ -73,7 +74,38 @@ def build_scheduler() -> AsyncIOScheduler:
         scheduler.add_job(_run, args=[parser_cls], id=f"ingest-{parser_cls.source.value}-boot",
                           next_run_time=_now_plus(first_delay), max_instances=1)
 
+    # Priority signals — KEV refreshes hourly (catalog rarely changes
+    # but is tiny, so cheap to poll), EPSS refreshes once a day (FIRST
+    # publishes daily and the file is ~5MB compressed).
+    scheduler.add_job(
+        _safe_refresh, args=[refresh_kev, "kev"],
+        trigger=IntervalTrigger(hours=1),
+        id="priority-kev", max_instances=1, coalesce=True, misfire_grace_time=600,
+    )
+    scheduler.add_job(
+        _safe_refresh, args=[refresh_kev, "kev"],
+        id="priority-kev-boot",
+        next_run_time=_now_plus(60), max_instances=1,
+    )
+    scheduler.add_job(
+        _safe_refresh, args=[refresh_epss, "epss"],
+        trigger=IntervalTrigger(hours=24),
+        id="priority-epss", max_instances=1, coalesce=True, misfire_grace_time=3600,
+    )
+    scheduler.add_job(
+        _safe_refresh, args=[refresh_epss, "epss"],
+        id="priority-epss-boot",
+        next_run_time=_now_plus(180), max_instances=1,
+    )
+
     return scheduler
+
+
+async def _safe_refresh(fn, label: str) -> None:
+    try:
+        await fn()
+    except Exception:
+        log.exception("priority_signals.refresh_failed", which=label)
 
 
 async def _run(parser_cls):

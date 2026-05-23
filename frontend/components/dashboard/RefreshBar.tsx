@@ -56,7 +56,7 @@ export function RefreshBar() {
     } catch (e) {
       setMsg({
         tone: "err",
-        text: e instanceof Error ? e.message : "요청에 실패했습니다.",
+        text: e instanceof Error ? e.message : "요청에 실패했어요.",
       });
     } finally {
       setSubmitting(false);
@@ -113,7 +113,7 @@ export function RefreshBar() {
           ) : (
             <RefreshCw className="h-3.5 w-3.5" />
           )}
-          {submitting ? "수집 요청 중" : "수동 새로고침"}
+          {submitting ? "수집 요청 중…" : "지금 동기화"}
         </button>
       </div>
     </div>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import type { Route } from "next";
 import { useCallback, useMemo } from "react";
 import type { Domain, OsFamily, Severity, VulnType } from "./types";
 import { DOMAINS } from "./types";
@@ -36,6 +37,8 @@ const TYPE: VulnType[] = [
   "Other",
 ];
 const SORT: SortKey[] = ["newest", "oldest", "severity", "cvss"];
+const PRIORITY_KEYS = ["kev", "epss_high", "cvss_mid_epss_high", "cvss_high_epss_low"] as const;
+type PriorityKey = (typeof PRIORITY_KEYS)[number];
 
 function intersect<T extends string>(input: string[], allowed: readonly T[]): T[] {
   const set = new Set<T>(allowed);
@@ -51,6 +54,10 @@ export function useUrlState(): UrlState & {
 } {
   const router = useRouter();
   const params = useSearchParams();
+  // Stay on whatever route the caller is on. Previously hard-coded `/`,
+  // which silently teleported users away from `/cves` whenever they
+  // toggled a filter — split-page navigation broke that assumption.
+  const pathname = usePathname() ?? "/";
 
   const state = useMemo<UrlState>(
     () => ({
@@ -62,6 +69,9 @@ export function useUrlState(): UrlState & {
         domains: intersect<Domain>(params.getAll("domain"), DOMAINS),
         fromDate: params.get("from") ?? "",
         toDate: params.get("to") ?? "",
+        priority: (PRIORITY_KEYS as readonly string[]).includes(params.get("priority") ?? "")
+          ? (params.get("priority") as PriorityKey)
+          : undefined,
       },
       page: Math.max(1, Number.parseInt(params.get("page") ?? "1", 10) || 1),
       sort: parseSort(params.get("sort")),
@@ -86,13 +96,15 @@ export function useUrlState(): UrlState & {
       next.filters.domains.forEach((d) => sp.append("domain", d));
       if (next.filters.fromDate) sp.set("from", next.filters.fromDate);
       if (next.filters.toDate) sp.set("to", next.filters.toDate);
+      if (next.filters.priority) sp.set("priority", next.filters.priority);
       if (next.page > 1) sp.set("page", String(next.page));
       if (next.sort && next.sort !== "newest") sp.set("sort", next.sort);
 
       const qs = sp.toString();
-      router.replace(qs ? `/?${qs}` : "/", { scroll: false });
+      const target = qs ? `${pathname}?${qs}` : pathname;
+      router.replace(target as Route, { scroll: false });
     },
-    [state, router],
+    [state, router, pathname],
   );
 
   return { ...state, set };

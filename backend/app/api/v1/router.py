@@ -2,14 +2,15 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     admin,
+    analysis,
     assets,
     bookmarks,
     claude_auth,
     community,
     cves,
+    dashboard,
     health,
     resources,
-    sandbox,
     search,
     settings,
     tickets,
@@ -25,6 +26,7 @@ api_router.include_router(assets.router)
 api_router.include_router(bookmarks.router)
 api_router.include_router(tickets.router)
 api_router.include_router(settings.router)
-api_router.include_router(sandbox.router)
 api_router.include_router(resources.router)
 api_router.include_router(claude_auth.router)
+api_router.include_router(dashboard.router)
+api_router.include_router(analysis.router)
