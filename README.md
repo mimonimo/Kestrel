@@ -4,9 +4,7 @@
 
 # **`Kestrel`**
 
-### 어디서부터 패치할지, AI 가 답합니다
-
-<sub>**`CVSS`** 이론&nbsp;&nbsp;·&nbsp;&nbsp;**`EPSS`** 예측&nbsp;&nbsp;·&nbsp;&nbsp;**`KEV`** 실측 — 세 신호로 본 진짜 우선순위</sub>
+<sub>**`CVSS`** 이론&nbsp;&nbsp;·&nbsp;&nbsp;**`EPSS`** 예측&nbsp;&nbsp;·&nbsp;&nbsp;**`KEV`** 실측 </sub>
 
 <br/>
 
@@ -26,9 +24,6 @@
 </div>
 
 ---
-
-> **모든 것을 동시에 막을 수는 없습니다.**
-> 심각도가 아니라 _실제 위협_을 기준으로.
 
 <br/>
 
@@ -98,13 +93,13 @@ sequenceDiagram
 <tr>
 <td width="50%" align="center">
 
-#### `/cves` 취약점 조회
+#### 취약점 조회 페이지
 <img src="docs/screenshots/cves.png" alt="취약점 조회" width="100%"/>
 
 </td>
 <td width="50%" align="center">
 
-#### `/cve/{id}` 상세 + AI 분석
+#### 상세 + AI 분석 페이지
 <img src="docs/screenshots/cve-detail.png" alt="CVE 상세" width="100%"/>
 
 </td>
@@ -112,13 +107,13 @@ sequenceDiagram
 <tr>
 <td width="50%" align="center">
 
-#### `/analysis` AI 작업 공간
+#### AI 분석 페이지
 <img src="docs/screenshots/analysis.png" alt="AI 작업 공간" width="100%"/>
 
 </td>
 <td width="50%" align="center">
 
-#### `/settings` 설정
+#### 설정 페이지
 <img src="docs/screenshots/settings.png" alt="설정" width="100%"/>
 
 </td>
