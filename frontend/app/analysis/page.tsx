@@ -78,7 +78,24 @@ function formatFull(epochMs: number): string {
 }
 
 export default function AnalysisPage() {
-  const [tab, setTab] = useState<TabKey>("analysis");
+  // 진행 중인 비교 분석이 있으면 비교 탭으로 자동 전환 — 비교 탭이
+  // 마운트돼야 안에서 자동 재요청이 발화되기 때문. 새로고침 후 사용자가
+  // AI 분석 탭에 있어 비교 진행이 멈춘 채로 잊혀지던 문제를 해결.
+  const [tab, setTab] = useState<TabKey>(() => {
+    if (typeof window === "undefined") return "analysis";
+    try {
+      const raw = window.localStorage.getItem("kestrel:compare-running");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.cveIds) && parsed.cveIds.length >= 2) {
+          return "compare";
+        }
+      }
+    } catch {
+      /* noop */
+    }
+    return "analysis";
+  });
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
@@ -649,7 +666,7 @@ function CompareTab() {
                     className={cn(
                       "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
                       checked
-                        ? "bg-violet-50 ring-1 ring-violet-300 dark:bg-violet-500/10 dark:ring-violet-500/40"
+                        ? "bg-violet-50 ring-1 ring-inset ring-violet-300 dark:bg-violet-500/10 dark:ring-violet-500/40"
                         : "hover:bg-neutral-50 dark:hover:bg-surface-2",
                       disabled && "cursor-not-allowed opacity-40",
                     )}
