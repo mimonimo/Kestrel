@@ -18,6 +18,7 @@ import { ApiError, api, type AiAnalysisResponse } from "@/lib/api";
 import { recordAnalysisHistory } from "@/lib/analysis-history";
 import { clearRunning, markRunning, readRunningAnalyses } from "@/lib/analysis-running";
 import { appendQaTurn, clearQaHistory, useQaHistory } from "@/lib/analysis-qa";
+import { clearRunningQa, markRunningQa, readRunningQa } from "@/lib/qa-running";
 import { downloadAnalysisMarkdown } from "@/lib/analysis-report";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -422,20 +423,58 @@ function RunningIndicator({ cveId }: { cveId: string }) {
 function FollowUpThread({ cveId, prior }: { cveId: string; prior: AiAnalysisResponse }) {
   const { turns } = useQaHistory(cveId);
   const [question, setQuestion] = useState("");
+  // 진행 중인 질문 텍스트 — 새로고침 / 컴포넌트 unmount 후에도 입력란
+  // placeholder 위쪽 카드로 시각 표시. 마운트 시 self-mutate 으로 재호출.
+  const [inFlightQuestion, setInFlightQuestion] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
 
   const ask = useMutation({
     mutationFn: async (q: string) => {
-      const res = await api.askFollowup({
-        cveId,
-        question: q,
-        prior,
-        history: turns.map((t) => ({ question: t.question, answer: t.answer })),
-      });
-      appendQaTurn(cveId, { question: q, answer: res.answer });
-      return res.answer;
+      setInFlightQuestion(q);
+      markRunningQa(cveId, q);
+      try {
+        const res = await api.askFollowup({
+          cveId,
+          question: q,
+          prior,
+          history: turns.map((t) => ({ question: t.question, answer: t.answer })),
+        });
+        appendQaTurn(cveId, { question: q, answer: res.answer });
+        return res.answer;
+      } finally {
+        clearRunningQa(cveId);
+        setInFlightQuestion(null);
+      }
     },
     onSuccess: () => setQuestion(""),
   });
+
+  // 마운트 시 진행 중인 질문이 있으면 자동으로 다시 요청 — 새로고침해도
+  // "분석 하던게 사라졌다" 느낌이 나지 않게.
+  useEffect(() => {
+    const r = readRunningQa(cveId);
+    if (r && !ask.isPending && !inFlightQuestion) {
+      ask.mutate(r.question);
+    }
+    // mount-only for this cveId
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cveId]);
+
+  // elapsed 카운터 — startedAt 기반이라 새로고침해도 시간 유지.
+  useEffect(() => {
+    if (!ask.isPending) {
+      setElapsed(0);
+      return;
+    }
+    const r = readRunningQa(cveId);
+    const t0 = r?.startedAt ?? Date.now();
+    setElapsed(Math.floor((Date.now() - t0) / 1000));
+    const id = window.setInterval(
+      () => setElapsed(Math.floor((Date.now() - t0) / 1000)),
+      1000,
+    );
+    return () => window.clearInterval(id);
+  }, [ask.isPending, cveId]);
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -505,6 +544,27 @@ function FollowUpThread({ cveId, prior }: { cveId: string; prior: AiAnalysisResp
             </li>
           ))}
         </ul>
+      )}
+
+      {/* 진행 중 — 새로고침에도 유지, 자동 재호출 */}
+      {ask.isPending && inFlightQuestion && (
+        <div className="mb-3 space-y-1.5">
+          <div className="rounded-md bg-white px-3 py-2 text-[12px] text-neutral-900 shadow-sm dark:bg-surface-1 dark:text-neutral-100">
+            <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-500">
+              Q{turns.length + 1}
+            </div>
+            <p className="whitespace-pre-line">{inFlightQuestion}</p>
+          </div>
+          <div className="rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-[12px] text-violet-900 dark:border-violet-500/40 dark:bg-violet-500/15 dark:text-violet-200">
+            <div className="flex items-center gap-1.5 text-[11px] font-medium">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              답변 생성 중…
+              <span className="ml-1 tabular-nums text-violet-700 dark:text-violet-300">
+                ({elapsed}s)
+              </span>
+            </div>
+          </div>
+        </div>
       )}
 
       {ask.error && (
