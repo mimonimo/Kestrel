@@ -78,24 +78,30 @@ function formatFull(epochMs: number): string {
 }
 
 export default function AnalysisPage() {
+  const [tab, setTab] = useState<TabKey>("analysis");
+
   // 진행 중인 비교 분석이 있으면 비교 탭으로 자동 전환 — 비교 탭이
-  // 마운트돼야 안에서 자동 재요청이 발화되기 때문. 새로고침 후 사용자가
-  // AI 분석 탭에 있어 비교 진행이 멈춘 채로 잊혀지던 문제를 해결.
-  const [tab, setTab] = useState<TabKey>(() => {
-    if (typeof window === "undefined") return "analysis";
+  // 마운트돼야 안에서 자동 재요청이 발화되기 때문. useState initializer
+  // 는 SSR 단계에서 잠겨 client localStorage 가 반영 안 됐어서 useEffect
+  // 로 mount 후 한 번 강제 전환.
+  useEffect(() => {
     try {
       const raw = window.localStorage.getItem("kestrel:compare-running");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && Array.isArray(parsed.cveIds) && parsed.cveIds.length >= 2) {
-          return "compare";
-        }
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (
+        parsed &&
+        Array.isArray(parsed.cveIds) &&
+        parsed.cveIds.length >= 2 &&
+        typeof parsed.startedAt === "number" &&
+        Date.now() - parsed.startedAt < 10 * 60 * 1000
+      ) {
+        setTab("compare");
       }
     } catch {
       /* noop */
     }
-    return "analysis";
-  });
+  }, []);
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
