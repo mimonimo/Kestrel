@@ -123,14 +123,16 @@ function CodeBlock({ source }: { source: string }) {
         </span>
         <CopyButton text={source} />
       </div>
-      <pre className="overflow-x-auto px-0 py-3 text-xs leading-relaxed text-neutral-800 dark:text-neutral-100">
+      <pre className="px-0 py-3 text-xs leading-relaxed text-neutral-800 dark:text-neutral-100">
         <code className="block font-mono">
           {lines.map((line, i) => (
-            <div key={i} className="flex">
-              <span className="sticky left-0 select-none bg-neutral-50 pl-3 pr-3 text-right font-mono text-[10px] text-neutral-500 dark:bg-surface-2 dark:text-neutral-600">
+            <div key={i} className="flex items-start">
+              <span className="sticky left-0 shrink-0 select-none bg-neutral-50 pl-3 pr-3 pt-0.5 text-right font-mono text-[10px] text-neutral-500 dark:bg-surface-2 dark:text-neutral-600">
                 {String(i + 1).padStart(2, " ")}
               </span>
-              <span className="whitespace-pre pr-4">{line || " "}</span>
+              <span className="min-w-0 flex-1 whitespace-pre-wrap break-all pr-4">
+                {line || " "}
+              </span>
             </div>
           ))}
         </code>
@@ -239,7 +241,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
           </h2>
           {isFromCache && cached && (
             <span
-              className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-700 dark:bg-surface-2 dark:text-neutral-400"
+              className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-200"
               title={`마지막 분석: ${new Date(cached.timestamp).toLocaleString("ko-KR")}`}
             >
               <Clock className="h-3 w-3" />
@@ -295,7 +297,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
           </div>
         )}
 
-        {isRunning && <RunningIndicator />}
+        {isRunning && <RunningIndicator cveId={cveId} />}
 
         {error && (
           <ErrorBox
@@ -355,7 +357,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
                     <span className="mr-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-[11px] font-semibold text-violet-700 dark:text-violet-300">
                       {i + 1}
                     </span>
-                    <span className="whitespace-pre-line align-middle">{item}</span>
+                    <span className="whitespace-pre-line break-words align-middle">{item}</span>
                   </li>
                 ))}
               </ul>
@@ -375,19 +377,32 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
 
 // ─────────────────────── Running indicator (elapsed) ─────────────────
 
-function RunningIndicator() {
+function RunningIndicator({ cveId }: { cveId: string }) {
+  // 분석 시작 시각을 localStorage 의 markRunning entry 에서 읽어 새로고침해도
+  // elapsed 가 0 으로 리셋되지 않게. entry 없으면 fallback 으로 현재 시각.
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
-    const t0 = Date.now();
-    const id = window.setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
+    const computeT0 = () => {
+      const entry = readRunningAnalyses().find((e) => e.cveId === cveId);
+      return entry?.startedAt ?? Date.now();
+    };
+    let t0 = computeT0();
+    setElapsed(Math.floor((Date.now() - t0) / 1000));
+    const id = window.setInterval(() => {
+      if (t0 === Date.now()) {
+        // 첫 mark 가 막 도착했으면 다시 읽음
+        t0 = computeT0();
+      }
+      setElapsed(Math.floor((Date.now() - t0) / 1000));
+    }, 1000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [cveId]);
   const hint =
-    elapsed < 30
-      ? "Haiku 모델이면 보통 10초 이내, Sonnet 은 1-3분 걸려요."
-      : elapsed < 90
-        ? "Sonnet 분석은 평균 1-2분입니다. 잠시만 더 기다려 주세요."
-        : "거의 다 됐어요. 토큰을 다 받아오는 중입니다.";
+    elapsed < 60
+      ? "잠시만 기다려 주세요…"
+      : elapsed < 120
+        ? "거의 다 됐어요. 응답을 받아오는 중입니다."
+        : "응답이 길어지고 있어요. 토큰을 마지막까지 받아오는 중입니다.";
   return (
     <div className="rounded-lg border border-violet-200 bg-violet-50/50 p-4 dark:border-violet-500/30 dark:bg-violet-500/5">
       <div className="flex items-center gap-2 text-sm font-medium text-violet-900 dark:text-violet-200">

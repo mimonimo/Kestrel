@@ -24,8 +24,6 @@ import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { useStatus } from "@/hooks/useStatus";
 import { useUserSetting } from "@/lib/user-settings";
 import {
-  clearAnalysisHistory,
-  deleteAnalysisHistoryEntry,
   readAnalysisHistory,
   type AnalysisHistoryEntry,
 } from "@/lib/analysis-history";
@@ -453,16 +451,16 @@ export function FloatingDock() {
                   </div>
                 )}
                 {entries.length > 0 ? (
+                  // Read-only — 삭제는 /analysis 탭에서. dock 안에서 X 누르면
+                  // 분석 기록 자체가 지워져 사용자가 의도하지 않은 데이터 손실이
+                  // 발생했어요. 이제 dock 은 빠른 진입만 제공합니다.
                   <ul className="divide-y divide-neutral-200 px-2 pb-2 dark:divide-neutral-800">
                     {recentExcerpt.map((e) => (
-                      <li
-                        key={e.cveId}
-                        className="group flex items-start gap-2 rounded-lg px-2 py-2 hover:bg-neutral-50 dark:hover:bg-surface-2"
-                      >
+                      <li key={e.cveId}>
                         <Link
                           href={`/cve/${encodeURIComponent(e.cveId)}` as never}
                           onClick={close}
-                          className="min-w-0 flex-1"
+                          className="block rounded-lg px-2 py-2 transition-colors hover:bg-neutral-50 dark:hover:bg-surface-2"
                         >
                           <div className="flex items-baseline justify-between gap-2">
                             <span className="font-mono text-[12px] font-semibold text-neutral-900 dark:text-neutral-100">
@@ -481,17 +479,6 @@ export function FloatingDock() {
                             <span>대응 {e.mitigationCount}</span>
                           </div>
                         </Link>
-                        <button
-                          type="button"
-                          onClick={(ev) => {
-                            ev.stopPropagation();
-                            deleteAnalysisHistoryEntry(e.cveId);
-                          }}
-                          title="기록에서 제거"
-                          className="invisible h-6 w-6 shrink-0 rounded-full text-neutral-500 hover:bg-neutral-200 hover:text-rose-700 group-hover:visible dark:text-neutral-500 dark:hover:bg-surface-3 dark:hover:text-rose-300"
-                        >
-                          <X className="mx-auto h-3 w-3" />
-                        </button>
                       </li>
                     ))}
                   </ul>
@@ -500,22 +487,9 @@ export function FloatingDock() {
                     아직 실행한 AI 분석이 없습니다.
                   </p>
                 ) : null}
-                {entries.length > 0 && (
-                  <div className="border-t border-neutral-200 px-4 py-2 dark:border-neutral-800">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (confirm("모든 분석 기록을 지우시겠습니까?")) {
-                          clearAnalysisHistory();
-                        }
-                      }}
-                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-100"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                      기록 전체 지우기
-                    </button>
-                  </div>
-                )}
+                {/* 활동 센터에서는 분석 기록 일괄 삭제를 노출하지 않습니다.
+                    "알림 숨기기" 와 헷갈려 분석 기록까지 한꺼번에 지우는
+                    실수가 있었어요. 일괄 삭제는 /analysis 페이지에서. */}
               </section>
             )}
           </div>

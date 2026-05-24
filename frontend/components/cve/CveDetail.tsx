@@ -22,7 +22,7 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
       <Link
         href="/"
         aria-label="상세 닫기"
-        className="absolute right-0 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full border border-neutral-800 bg-surface-1 text-neutral-400 hover:border-neutral-600 hover:text-neutral-100"
+        className="absolute right-0 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full border border-neutral-300 bg-white text-neutral-600 hover:border-neutral-500 hover:text-neutral-900 dark:border-neutral-800 dark:bg-surface-1 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:text-neutral-100"
       >
         <X className="h-4 w-4" />
       </Link>
