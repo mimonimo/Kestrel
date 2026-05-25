@@ -28,6 +28,7 @@ import {
   type AnalysisHistoryEntry,
 } from "@/lib/analysis-history";
 import { useRunningAnalyses } from "@/lib/analysis-running";
+import { markAnalysisSeen, useAnalysisSeen } from "@/lib/analysis-seen";
 import type { IngestionSnapshot, Source, StatusReport } from "@/lib/types";
 import { cn, timeAgo } from "@/lib/utils";
 
@@ -122,6 +123,7 @@ export function FloatingDock() {
   const [open, setOpen] = useState(false);
   const [dismissedSig, setDismissedSig] = useState<string | null>(null);
   const [entries, setEntries] = useState<AnalysisHistoryEntry[]>([]);
+  const seenSet = useAnalysisSeen();
 
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
@@ -195,8 +197,13 @@ export function FloatingDock() {
 
   const runningCount = runningCveIds.length;
   const isRunning = runningCount > 0;
-  const historyCount = entries.length;
-  const recentExcerpt = useMemo(() => entries.slice(0, 8), [entries]);
+  // unseen 만 활동 센터에 노출. 분석 기록 자체는 /analysis 탭에 유지.
+  const unseenEntries = useMemo(
+    () => entries.filter((e) => !seenSet.has(e.cveId)),
+    [entries, seenSet],
+  );
+  const historyCount = unseenEntries.length;
+  const recentExcerpt = useMemo(() => unseenEntries.slice(0, 8), [unseenEntries]);
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -450,16 +457,19 @@ export function FloatingDock() {
                     </ul>
                   </div>
                 )}
-                {entries.length > 0 ? (
-                  // Read-only — 삭제는 /analysis 탭에서. dock 안에서 X 누르면
-                  // 분석 기록 자체가 지워져 사용자가 의도하지 않은 데이터 손실이
-                  // 발생했어요. 이제 dock 은 빠른 진입만 제공합니다.
+                {unseenEntries.length > 0 ? (
+                  // unseen 항목만 노출. 카드 클릭 = "확인했음" — 활동 센터
+                  // 알림에서는 사라지지만 /analysis 탭의 분석 기록은 그대로
+                  // 유지됩니다.
                   <ul className="divide-y divide-neutral-200 px-2 pb-2 dark:divide-neutral-800">
                     {recentExcerpt.map((e) => (
                       <li key={e.cveId}>
                         <Link
                           href={`/cve/${encodeURIComponent(e.cveId)}` as never}
-                          onClick={close}
+                          onClick={() => {
+                            markAnalysisSeen(e.cveId);
+                            close();
+                          }}
                           className="block rounded-lg px-2 py-2 transition-colors hover:bg-neutral-50 dark:hover:bg-surface-2"
                         >
                           <div className="flex items-baseline justify-between gap-2">
@@ -484,7 +494,9 @@ export function FloatingDock() {
                   </ul>
                 ) : runningCveIds.length === 0 ? (
                   <p className="px-4 pb-3 text-[11px] text-neutral-600 dark:text-neutral-500">
-                    아직 실행한 AI 분석이 없습니다.
+                    {entries.length === 0
+                      ? "아직 실행한 AI 분석이 없습니다."
+                      : "새로 도착한 분석 알림이 없어요. 전체 기록은 /analysis 탭에서 확인할 수 있습니다."}
                   </p>
                 ) : null}
                 {/* 활동 센터에서는 분석 기록 일괄 삭제를 노출하지 않습니다.
