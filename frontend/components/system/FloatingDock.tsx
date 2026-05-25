@@ -28,7 +28,7 @@ import {
   type AnalysisHistoryEntry,
 } from "@/lib/analysis-history";
 import { useRunningAnalyses } from "@/lib/analysis-running";
-import { markAnalysisSeen, useAnalysisSeen } from "@/lib/analysis-seen";
+import { markAllAnalysisSeen, markAnalysisSeen, useAnalysisSeen } from "@/lib/analysis-seen";
 import type { IngestionSnapshot, Source, StatusReport } from "@/lib/types";
 import { cn, timeAgo } from "@/lib/utils";
 
@@ -424,17 +424,34 @@ export function FloatingDock() {
                     AI 분석
                     {(isRunning || historyCount > 0) && (
                       <span className="ml-1 rounded-full bg-violet-500/20 px-1.5 py-0.5 text-[9px] tabular-nums text-violet-800 dark:text-violet-100">
-                        {isRunning ? `진행 ${runningCount}` : `기록 ${historyCount}`}
+                        {isRunning ? `진행 ${runningCount}` : `새 알림 ${historyCount}`}
                       </span>
                     )}
                   </h3>
-                  <Link
-                    href={"/analysis" as never}
-                    onClick={close}
-                    className="text-[10px] font-medium text-violet-700 hover:text-violet-900 dark:text-violet-300 dark:hover:text-violet-200"
-                  >
-                    전체 보기 →
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    {unseenEntries.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => markAllAnalysisSeen(unseenEntries.map((e) => e.cveId))}
+                        className="text-[10px] font-medium text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
+                        title="이 알림 목록을 모두 확인 처리"
+                      >
+                        모두 읽음
+                      </button>
+                    )}
+                    <Link
+                      href={"/analysis" as never}
+                      onClick={() => {
+                        // 전체 보기로 이동 = 사용자가 어차피 분석 탭에서 다 보게 됨
+                        // → unseen 모두 확인 처리.
+                        markAllAnalysisSeen(unseenEntries.map((e) => e.cveId));
+                        close();
+                      }}
+                      className="text-[10px] font-medium text-violet-700 hover:text-violet-900 dark:text-violet-300 dark:hover:text-violet-200"
+                    >
+                      전체 보기 →
+                    </Link>
+                  </div>
                 </div>
                 {runningCveIds.length > 0 && (
                   <div className="px-4 pb-2">
