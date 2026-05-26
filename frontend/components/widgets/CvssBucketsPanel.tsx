@@ -167,15 +167,15 @@ function Histogram({ dist }: { dist: DashboardCvssDistribution }) {
           );
         })}
 
-        {/* Mean / median / p90 markers */}
+        {/* Mean / median / p90 markers (선만 그림 — 라벨은 StatRow) */}
         {dist.median != null && (
-          <Marker x={xForScore(dist.median)} y0={PAD_T} y1={VIEW_H - PAD_B} label={`중앙값 ${dist.median.toFixed(1)}`} tint="text-sky-700 dark:text-sky-300" />
+          <Marker x={xForScore(dist.median)} y0={PAD_T} y1={VIEW_H - PAD_B} tint="text-sky-700 dark:text-sky-300" />
         )}
         {dist.mean != null && (
-          <Marker x={xForScore(dist.mean)} y0={PAD_T} y1={VIEW_H - PAD_B} label={`평균 ${dist.mean.toFixed(1)}`} tint="text-violet-700 dark:text-violet-300" dashed />
+          <Marker x={xForScore(dist.mean)} y0={PAD_T} y1={VIEW_H - PAD_B} tint="text-violet-700 dark:text-violet-300" dashed />
         )}
         {dist.p90 != null && (
-          <Marker x={xForScore(dist.p90)} y0={PAD_T} y1={VIEW_H - PAD_B} label={`상위 10% ${dist.p90.toFixed(1)}`} tint="text-rose-700 dark:text-rose-300" dotted />
+          <Marker x={xForScore(dist.p90)} y0={PAD_T} y1={VIEW_H - PAD_B} tint="text-rose-700 dark:text-rose-300" dotted />
         )}
       </svg>
 
@@ -204,7 +204,6 @@ function Marker({
   x,
   y0,
   y1,
-  label,
   tint,
   dashed,
   dotted,
@@ -212,11 +211,12 @@ function Marker({
   x: number;
   y0: number;
   y1: number;
-  label: string;
   tint: string;
   dashed?: boolean;
   dotted?: boolean;
 }) {
+  // 차트 안에는 세로선만. 평균/중앙값/p90 이 가까이 붙어 있을 때
+  // 라벨이 서로 겹치던 문제를 차트 하단 StatRow 의 컬러 값으로 분리.
   const dash = dashed ? "4 3" : dotted ? "1 2" : undefined;
   return (
     <g className={tint}>
@@ -226,18 +226,10 @@ function Marker({
         y1={y0}
         y2={y1}
         stroke="currentColor"
-        strokeWidth={1}
+        strokeWidth={1.2}
         strokeDasharray={dash}
-        opacity={0.6}
+        opacity={0.7}
       />
-      <text
-        x={x + 3}
-        y={y0 + 8}
-        className="fill-current"
-        style={{ fontSize: 9 }}
-      >
-        {label}
-      </text>
     </g>
   );
 }

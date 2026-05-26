@@ -200,7 +200,26 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
     // Synchronously mirror "running" BEFORE refetch so a refresh fired
     // within the same tick still finds the marker on next load.
     markRunning(cveId);
-    analyze.refetch();
+    // 명시적 then/finally 로 결과 처리 — useEffect 기반은 컴포넌트
+    // unmount(다른 페이지 이동) 후에는 발화하지 않아 "활동 센터 진입 전엔
+    // 영원히 분석 중" 버그가 있었음. refetch promise 의 then 은 unmount
+    // 와 무관하게 실행되므로 record + clearRunning 이 보장됩니다.
+    analyze
+      .refetch()
+      .then((res) => {
+        if (res.data) {
+          writeCachedAnalysis(cveId, res.data);
+          recordAnalysisHistory({
+            cveId,
+            attackMethod: res.data.attackMethod,
+            payloadCount: res.data.payloadExamples.length,
+            mitigationCount: res.data.mitigations.length,
+          });
+        }
+      })
+      .finally(() => {
+        clearRunning(cveId);
+      });
   };
 
   // Auto-resume: if the user refreshed mid-analysis (so the in-memory

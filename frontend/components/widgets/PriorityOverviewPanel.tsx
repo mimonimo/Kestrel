@@ -111,7 +111,7 @@ export function PriorityOverviewPanel() {
   return (
     <WidgetCard
       title="패치 우선순위"
-      description="CVSS(이론) · EPSS(예측) · KEV(실측) 세 신호를 합쳐 본 조치 순서 — 행 클릭 시 해당 묶음 전체 보기"
+      description="CVSS(이론) · EPSS(예측) · KEV(실측) 세 신호를 합쳐 본 조치 순서"
       isLoading={isLoading}
       error={error}
     >
@@ -173,16 +173,11 @@ export function PriorityOverviewPanel() {
                   />
                 </div>
                 {top && (
-                  <div className="mt-1 flex items-baseline justify-between gap-2 text-[10px] text-neutral-600 dark:text-neutral-500">
-                    <span className="flex min-w-0 items-baseline gap-1.5">
-                      <span className="font-mono text-neutral-800 dark:text-neutral-300">
-                        {top.cveId}
-                      </span>
-                      <span className="truncate">{top.title}</span>
+                  <div className="mt-1 flex items-baseline gap-1.5 text-[10px] text-neutral-600 dark:text-neutral-500">
+                    <span className="font-mono text-neutral-800 dark:text-neutral-300">
+                      {top.cveId}
                     </span>
-                    {b.count > 1 && (
-                      <span className="shrink-0">외 {(b.count - 1).toLocaleString("ko-KR")}건</span>
-                    )}
+                    <span className="truncate">{top.title}</span>
                   </div>
                 )}
               </div>
