@@ -475,19 +475,22 @@ export function FloatingDock() {
                   </div>
                 )}
                 {unseenEntries.length > 0 ? (
-                  // unseen 항목만 노출. 카드 클릭 = "확인했음" — 활동 센터
-                  // 알림에서는 사라지지만 /analysis 탭의 분석 기록은 그대로
-                  // 유지됩니다.
+                  // unseen 항목만 노출. 카드 클릭 = navigate + "확인했음".
+                  // hover 시 우측 ✕ 버튼은 navigate 없이 그 항목만 읽음 처리.
+                  // 분석 기록 자체는 /analysis 탭에 그대로 유지됩니다.
                   <ul className="divide-y divide-neutral-200 px-2 pb-2 dark:divide-neutral-800">
                     {recentExcerpt.map((e) => (
-                      <li key={e.cveId}>
+                      <li
+                        key={e.cveId}
+                        className="group relative rounded-lg transition-colors hover:bg-neutral-50 dark:hover:bg-surface-2"
+                      >
                         <Link
                           href={`/cve/${encodeURIComponent(e.cveId)}` as never}
                           onClick={() => {
                             markAnalysisSeen(e.cveId);
                             close();
                           }}
-                          className="block rounded-lg px-2 py-2 transition-colors hover:bg-neutral-50 dark:hover:bg-surface-2"
+                          className="block rounded-lg px-2 py-2 pr-7"
                         >
                           <div className="flex items-baseline justify-between gap-2">
                             <span className="font-mono text-[12px] font-semibold text-neutral-900 dark:text-neutral-100">
@@ -506,6 +509,19 @@ export function FloatingDock() {
                             <span>대응 {e.mitigationCount}</span>
                           </div>
                         </Link>
+                        <button
+                          type="button"
+                          onClick={(ev) => {
+                            ev.preventDefault();
+                            ev.stopPropagation();
+                            markAnalysisSeen(e.cveId);
+                          }}
+                          title="알림에서만 숨기기 (분석 기록은 유지)"
+                          aria-label="이 알림 읽음 처리"
+                          className="invisible absolute right-1 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 group-hover:visible dark:hover:bg-surface-3 dark:hover:text-neutral-100"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
                       </li>
                     ))}
                   </ul>
