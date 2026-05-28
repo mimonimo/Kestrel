@@ -221,7 +221,7 @@ export function SettingsLayout() {
   );
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-12">
+    <div className="mx-auto max-w-7xl px-6 py-12">
       <header className="mb-8">
         <h1 className="text-2xl font-bold text-neutral-100">설정</h1>
       </header>

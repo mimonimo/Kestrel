@@ -37,9 +37,15 @@ import {
   clearAnalysisHistory,
   deleteAnalysisHistoryEntry,
   readAnalysisHistory,
+  recordAnalysisHistory,
   type AnalysisHistoryEntry,
 } from "@/lib/analysis-history";
-import { useRunningAnalyses, type RunningEntry } from "@/lib/analysis-running";
+import {
+  clearRunning,
+  markRunning,
+  useRunningAnalyses,
+  type RunningEntry,
+} from "@/lib/analysis-running";
 import { useBookmarks } from "@/lib/bookmarks";
 import { useCommentHistory } from "@/lib/comment-history";
 import { cn } from "@/lib/utils";
@@ -104,7 +110,7 @@ export default function AnalysisPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10">
+    <div className="mx-auto max-w-7xl px-6 py-10">
       <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">AI 분석</h1>

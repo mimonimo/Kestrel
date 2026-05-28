@@ -18,7 +18,7 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
       : "—";
 
   return (
-    <article className="relative mx-auto max-w-4xl space-y-6 py-8">
+    <article className="relative mx-auto max-w-7xl space-y-6 px-6 py-8">
       <Link
         href="/"
         aria-label="상세 닫기"

@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function ResourcesPage() {
   return (
-    <div className="mx-auto max-w-5xl px-6 py-12">
+    <div className="mx-auto max-w-7xl px-6 py-12">
       <header className="mb-8">
         <Link
           href="/settings"
