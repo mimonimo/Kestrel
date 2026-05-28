@@ -26,7 +26,7 @@ export default function CommunityPage() {
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-10">
+    <div className="mx-auto min-h-[calc(100vh-3.5rem)] max-w-7xl px-6 py-10">
       <header className="mb-6 flex items-end justify-between border-b border-neutral-200 pb-4 dark:border-neutral-800">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">커뮤니티</h1>

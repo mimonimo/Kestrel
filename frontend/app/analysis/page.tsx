@@ -110,7 +110,7 @@ export default function AnalysisPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-10">
+    <div className="mx-auto min-h-[calc(100vh-3.5rem)] max-w-7xl px-6 py-10">
       <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">AI 분석</h1>

@@ -33,7 +33,7 @@ export default function PostDetailPage() {
   });
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-10">
+    <div className="mx-auto min-h-[calc(100vh-3.5rem)] max-w-7xl px-6 py-10">
       <Link
         href="/community"
         className="mb-4 inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-100"
