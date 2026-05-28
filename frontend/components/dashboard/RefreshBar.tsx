@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStatus } from "@/hooks/useStatus";
@@ -8,6 +8,11 @@ import { api } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
 import { useUserSetting } from "@/lib/user-settings";
 import type { IngestionSnapshot, Source } from "@/lib/types";
+import {
+  clearRefreshRunning,
+  markRefreshRunning,
+  useRefreshRunning,
+} from "@/lib/refresh-running";
 
 const SOURCE_LABEL: Record<Source, string> = {
   nvd: "NVD",
@@ -30,13 +35,32 @@ export function RefreshBar() {
   const queryClient = useQueryClient();
   const { value: nvdApiKey } = useUserSetting("nvdApiKey");
   const { value: githubToken } = useUserSetting("githubToken");
-  const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+
+  // 진행 중 상태는 localStorage 영속화. 메인 페이지를 떠났다가 다시 와도
+  // 동기화 진행 상황이 그대로 보이고, 모든 ingestion finished_at 이
+  // startedAt 이후로 업데이트되면 자동으로 완료 처리됩니다.
+  const running = useRefreshRunning();
+  const submitting = running !== null;
 
   const lastSync = useMemo(() => latestFinishedAt(data?.ingestions), [data?.ingestions]);
 
+  // 완료 자동 감지: 모든 ingestion 의 finished_at 이 startedAt 보다 늦으면
+  // 백엔드 background 작업이 한 바퀴 돈 것으로 간주.
+  useEffect(() => {
+    if (!running || !data?.ingestions) return;
+    const allDoneAfterStart = data.ingestions.every((ing) => {
+      if (!ing.finishedAt) return false;
+      return new Date(ing.finishedAt).getTime() >= running.startedAt;
+    });
+    if (allDoneAfterStart) {
+      clearRefreshRunning();
+      setMsg({ tone: "ok", text: "재수집이 완료됐어요." });
+    }
+  }, [data?.ingestions, running]);
+
   const onRefresh = async () => {
-    setSubmitting(true);
+    markRefreshRunning();
     setMsg(null);
     try {
       const res = await api.refreshIngestion({
@@ -48,18 +72,18 @@ export function RefreshBar() {
       if (res.usedKeys.github) used.push("GitHub token");
       setMsg({
         tone: "ok",
-        text: `재수집 요청됨${used.length ? ` (${used.join(", ")} 사용)` : ""}. 곧 결과가 반영됩니다.`,
+        text: `재수집을 요청했어요${used.length ? ` (${used.join(", ")} 사용)` : ""}. 백그라운드에서 처리되며 완료되면 자동 반영됩니다.`,
       });
       await queryClient.invalidateQueries({ queryKey: ["status"] });
       await queryClient.invalidateQueries({ queryKey: ["cve-search"] });
       await refetch();
     } catch (e) {
+      // 요청 자체가 실패한 케이스 — running 마커도 해제.
+      clearRefreshRunning();
       setMsg({
         tone: "err",
         text: e instanceof Error ? e.message : "요청에 실패했어요.",
       });
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -113,7 +137,7 @@ export function RefreshBar() {
           ) : (
             <RefreshCw className="h-3.5 w-3.5" />
           )}
-          {submitting ? "수집 요청 중…" : "지금 동기화"}
+          {submitting ? "수집 진행 중…" : "지금 동기화"}
         </button>
       </div>
     </div>
