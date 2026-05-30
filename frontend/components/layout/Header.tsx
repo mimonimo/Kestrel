@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 
 import { NotificationBell } from "./NotificationBell";
 import { UserMenu } from "./UserMenu";
-import { VisitorBadge } from "./VisitorBadge";
 
 // Top-level nav routes. Active-state derived from pathname so user knows
 // where they are without needing to remember the title — a Linear/Vercel
@@ -67,7 +66,6 @@ export function Header() {
               비로그인은 설정에 접근할 수 없으니 헤더에 별도 아이콘을 둘
               이유가 없음. */}
           <UserMenu />
-          <VisitorBadge />
         </nav>
       </div>
     </header>
