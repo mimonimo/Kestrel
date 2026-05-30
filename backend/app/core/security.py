@@ -11,12 +11,16 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.core.config import get_settings
 
-_pwd = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+# bcrypt 는 native 로 72 바이트만 처리하므로 인코딩 후 잘라 안전하게 통과시킨다.
+# (사용자에게는 길이 제한 노출하지 않음 — UX 단순화)
+_BCRYPT_MAX = 72
+# 운영 권장 cost — 12. 노트북에서 ~250ms/hash.
+_BCRYPT_ROUNDS = 12
 
 # JWT 알고리즘 — HS256 (대칭키, 단일 서버).
 # 멀티 서버/Lambda 분리 시 RS256 (비대칭) 로 전환 권장.
@@ -27,12 +31,13 @@ ACCESS_TOKEN_TTL = timedelta(hours=12)
 
 
 def hash_password(plain: str) -> str:
-    return _pwd.hash(plain)
+    encoded = plain.encode("utf-8")[:_BCRYPT_MAX]
+    return bcrypt.hashpw(encoded, bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     try:
-        return _pwd.verify(plain, hashed)
+        return bcrypt.checkpw(plain.encode("utf-8")[:_BCRYPT_MAX], hashed.encode("utf-8"))
     except Exception:  # noqa: BLE001 — bcrypt 가 던지는 모든 예외를 false 로 흡수
         return False
 

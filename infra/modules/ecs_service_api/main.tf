@@ -19,6 +19,13 @@ resource "aws_ecs_task_definition" "api" {
     name      = "api"
     image     = var.image
     essential = true
+    # entrypoint 에서 alembic 자동 실행. 첫 배포 후 task 가 multiple-replicate 되면
+    # alembic 의 advisory lock 으로 동시 실행 방지 — 첫 컨테이너만 마이그레이션 적용,
+    # 이후 컨테이너는 lock 대기 후 noop.
+    command = [
+      "sh", "-c",
+      "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ]
     portMappings = [{
       name          = "api"
       containerPort = 8000

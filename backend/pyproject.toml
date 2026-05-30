@@ -21,8 +21,9 @@ dependencies = [
     "orjson>=3.10.0",
     "docker>=7.1.0",
     "pyyaml>=6.0",
-    # Auth (PR 10-CN)
-    "passlib[bcrypt]>=1.7.4",
+    # Auth (PR 10-CN). passlib 은 bcrypt 4.x 와 호환 문제가 있어 bcrypt 를
+    # 직접 사용한다 ('error reading bcrypt version' + 72-byte ValueError 회피).
+    "bcrypt>=4.1.0",
     "python-jose[cryptography]>=3.3.0",
     "email-validator>=2.2.0",
 ]

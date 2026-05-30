@@ -35,16 +35,22 @@ async def lifespan(app: FastAPI):
     except Exception:
         log.exception("seed.failed_startup")
 
-    # Scheduler
-    scheduler = build_scheduler()
-    scheduler.start()
-    app.state.scheduler = scheduler
+    # Scheduler — multi-container 환경에서는 한 곳에서만 돌려야 중복 실행 방지.
+    # KESTREL_RUN_SCHEDULER=false 인 컨테이너 (ECS api task) 는 APScheduler 스킵.
+    scheduler = None
+    if settings.kestrel_run_scheduler:
+        scheduler = build_scheduler()
+        scheduler.start()
+        app.state.scheduler = scheduler
+    else:
+        log.info("scheduler.skipped", reason="KESTREL_RUN_SCHEDULER=false")
 
     try:
         yield
     finally:
         log.info("app.shutting_down")
-        scheduler.shutdown(wait=False)
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
         await close_redis()
 
 

@@ -35,6 +35,12 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
+    # 멀티 컨테이너 분리 (PR 10-CN, AWS ECS).
+    # ``true`` 일 때만 lifespan 에서 APScheduler 가 가동.
+    # ECS 구성: api 태스크(다수, Spot) = false, scheduler 태스크(1개, On-Demand) = true.
+    # 로컬 docker-compose 는 단일 backend 컨테이너라 기본 true.
+    kestrel_run_scheduler: bool = True
+
     # Scheduler cadence (seconds)
     nvd_interval_seconds: int = 3600
     exploit_db_interval_seconds: int = 21600
