@@ -22,8 +22,9 @@ from pydantic import Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import get_current_user
 from app.core.database import get_db
-from app.models import Vulnerability
+from app.models import User, Vulnerability
 from app.schemas.vulnerability import CamelModel
 from app.services.ai_analyzer import (
     AiAnalysis,
@@ -31,7 +32,8 @@ from app.services.ai_analyzer import (
     compare_vulnerabilities,
 )
 
-router = APIRouter(prefix="/analysis", tags=["analysis"])
+# 로그인 필수 — 모든 라우트에 의존성 주입. 비용 발생 (Claude 호출) 이라 비로그인 차단.
+router = APIRouter(prefix="/analysis", tags=["analysis"], dependencies=[Depends(get_current_user)])
 
 
 # ─────────────────────── Follow-up Q&A ───────────────────────────────

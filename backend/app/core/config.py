@@ -24,6 +24,15 @@ class Settings(BaseSettings):
     nvd_api_key: str | None = None
     github_token: str | None = None
 
+    # ─── Auth / 세션 ─────────────────────────────────────
+    # JWT_SECRET 은 반드시 환경변수에서. 코드/리포에 절대 하드코딩 X.
+    # 길이 32+ 권장 (HS256). 운영은 AWS Secrets Manager 에서 주입.
+    jwt_secret: str = "dev-only-change-me-in-production-please-32chars-min"
+    jwt_exp_hours: int = 12
+    # 가입 시 이 이메일이면 자동으로 role=ADMIN 부여 (콤마 분리).
+    # 예: "owner@example.com,ops@example.com"
+    initial_admin_emails: str = ""
+
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
     # Scheduler cadence (seconds)

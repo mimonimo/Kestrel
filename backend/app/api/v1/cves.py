@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import get_current_user
 from app.core.database import get_db
-from app.models import Vulnerability
+from app.models import AnalysisResult, User, Vulnerability
 from app.schemas.vulnerability import CamelModel, VulnerabilityDetail, VulnerabilityListItem
 from app.services.ai_analyzer import analyze_vulnerability
 
@@ -61,6 +62,16 @@ class AiAnalysisResponse(CamelModel):
     attack_method: str
     payload_examples: list[str]
     mitigations: list[str]
+    # 저장된 분석 레코드 id (PR 10-CN). 프런트엔드는 이걸로 디테일/삭제 가능.
+    analysis_id: str | None = None
+
+
+class AnalyzeRequest(CamelModel):
+    """선택적 메타 — 카테고리·공개여부. 미지정 시 general/public."""
+
+    category: str | None = None
+    title: str | None = None
+    visibility: str | None = None  # "public" | "private"
 
 
 @router.post(
@@ -68,17 +79,53 @@ class AiAnalysisResponse(CamelModel):
     response_model=AiAnalysisResponse,
     response_model_by_alias=True,
 )
-async def analyze_cve(cve_id: str, db: AsyncSession = Depends(get_db)) -> AiAnalysisResponse:
-    """Run the configured LLM over a CVE and return structured analysis.
+async def analyze_cve(
+    cve_id: str,
+    body: AnalyzeRequest | None = Body(default=None),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AiAnalysisResponse:
+    """LLM 으로 CVE 분석을 실행하고 결과를 DB 에 영구 저장 (로그인 필수).
 
-    Returns 400 when the settings row has no API key / provider / model
-    configured (raised from the service layer)."""
+    400 — settings 의 AI 자격증명/모델 미구성.
+    401 — 비로그인.
+    404 — 존재하지 않는 CVE.
+    """
     vuln = await db.scalar(select(Vulnerability).where(Vulnerability.cve_id == cve_id))
     if vuln is None:
         raise HTTPException(status_code=404, detail=f"{cve_id} not found")
     result = await analyze_vulnerability(db, vuln)
+
+    # 분석 본문을 마크다운으로 직렬화 후 영구 저장.
+    md_lines = [
+        "## 공격 방법",
+        result.attack_method,
+        "",
+        "## 페이로드 예시",
+        *[f"- ```{p}```" for p in result.payload_examples],
+        "",
+        "## 완화 방안",
+        *[f"- {m}" for m in result.mitigations],
+    ]
+    visibility = (body.visibility if body else None) or "public"
+    if visibility not in {"public", "private"}:
+        visibility = "public"
+    record = AnalysisResult(
+        cve_id=cve_id,
+        user_id=user.id,
+        category=(body.category if body else None) or "general",
+        title=(body.title if body else None) or f"{cve_id} — 기본 분석",
+        prompt_md=None,
+        result_md="\n".join(md_lines),
+        visibility=visibility,
+    )
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
+
     return AiAnalysisResponse(
         attack_method=result.attack_method,
         payload_examples=result.payload_examples,
         mitigations=result.mitigations,
+        analysis_id=str(record.id),
     )

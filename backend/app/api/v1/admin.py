@@ -14,6 +14,7 @@ from pydantic.alias_generators import to_camel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import require_admin
 from app.core.database import SessionLocal, get_db
 from app.core.logging import get_logger
 from app.models import AppSettings
@@ -24,7 +25,9 @@ from app.services.priority_signals import refresh_all as refresh_priority_signal
 
 log = get_logger(__name__)
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+# 전체 router 에 admin 가드 — refresh / priority-signals / mitre-backfill
+# 등 운영 명령은 모두 관리자만 호출. 일반 유저는 401/403.
+router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
 
 @router.post("/refresh")

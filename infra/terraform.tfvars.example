@@ -1,0 +1,14 @@
+# 이 파일을 terraform.tfvars 로 복사한 뒤 값을 채우세요.
+# terraform.tfvars 는 .gitignore 에 등록돼 커밋되지 않습니다.
+
+env             = "prod"
+aws_region      = "ap-northeast-2"
+
+# 도메인이 아직 없으면 비워두세요 — CloudFront 기본 URL 로 동작합니다.
+# domain_name     = "kestrel.example.com"
+# route53_zone_id = "Z0123456789ABCDEFGHIJ"
+
+# 이미지 태그 — CI 가 ECR 푸시 후 갱신.
+# image_tag_api       = "abc1234"
+# image_tag_frontend  = "abc1234"
+# image_tag_scheduler = "abc1234"

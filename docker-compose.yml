@@ -50,6 +50,13 @@ services:
       - SANDBOX_RUNTIME=${SANDBOX_RUNTIME:-}
       - SANDBOX_SECCOMP_PATH=${SANDBOX_SECCOMP_PATH:-}
       - SANDBOX_OVERRIDE_DIR=${SANDBOX_OVERRIDE_DIR:-}
+      # ─── Auth (PR 10-CN) ────────────────────────────────────
+      # 운영에서는 반드시 외부 시크릿(.env / vault) 으로 64자 무작위 문자열 주입.
+      # 개발 기본값(dev-only-...) 은 서버 시작은 가능하지만 절대 운영에 사용 금지.
+      - JWT_SECRET=${JWT_SECRET:-dev-only-change-me-in-production-please-32chars-min}
+      - JWT_EXP_HOURS=${JWT_EXP_HOURS:-12}
+      # 가입 시 자동으로 admin 권한이 부여될 이메일 (콤마 분리). 첫 운영자 부트스트랩용.
+      - INITIAL_ADMIN_EMAILS=${INITIAL_ADMIN_EMAILS:-}
     volumes:
       # Sandbox feature spawns sibling containers via the host docker daemon.
       # Mounting the socket grants root-equivalent control of docker — the

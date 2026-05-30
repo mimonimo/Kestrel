@@ -38,6 +38,10 @@ class User(Base, TimestampMixin):
     username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(_pg_enum(UserRole, "user_role_enum"), default=UserRole.USER)
+    # 표시명 (nickname) + 소개글 (bio) — 프로필 편집 (PR 10-CN).
+    # username 은 시스템 식별자 (변경 불가), nickname 은 표시명 (변경 가능).
+    nickname: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Post(Base, TimestampMixin):

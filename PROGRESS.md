@@ -1546,6 +1546,89 @@ ELAPSED: 0s   ← 이전 60s timeout → 즉시 응답
 
 ---
 
+### PR 10-CN — 회원가입/로그인 + 분석기록 DB + 즐겨찾기 user-scoped + admin 가드 + AWS IaC 일괄 push ✅
+
+사용자 요청 (3개 turn 누적):
+> "회원가입 기능 추가하고 / 각자의 Claude 연동 / 분석 기록은 DB 저장 후 모든 이용자
+> 가 볼 수 있도록 / 댓글 작성·분석·즐겨찾기는 로그인 해야 / NVD·GitHub 토큰은
+> 관리자 계정만 입력 가능 / 일반 유저 설정은 개인설정·AI 분석 탭만 / 대시보드
+> 동기화는 관리자만 / 분석 기록에 사용자 태그 + 같은 CVE 여러 명 분석 시 히스토리
+> 별도로 볼 수 있도록 / 다른 사람 분석은 커뮤니티 탭"
+
+> 보안 명시: "**중요 토큰은 유출되지 않도록 주의하고**"
+
+**Phase 1 (이번 PR) — 백엔드 + IaC.** Frontend (Login/Signup UI, Settings
+탭 분기, 분석 히스토리 모달, admin 게이트) 는 PR 10-CO 로 이어 진행.
+
+신규/변경 백엔드:
+- `app/core/security.py` — bcrypt(cost 12) + JWT (HS256, ``JWT_SECRET`` 환경변수).
+  토큰 디코드 실패는 호출 측에 노출 X (None 반환). ``is_admin_email()`` 로
+  ``INITIAL_ADMIN_EMAILS`` 매칭 시 자동 admin.
+- `app/api/v1/deps.py` — ``get_optional_user`` / ``get_current_user`` /
+  ``require_admin``. 쿠키 ``access_token`` 만 source-of-truth.
+- `app/api/v1/auth.py` — POST signup/login/logout, GET me. 쿠키는
+  HttpOnly + (운영) Secure + SameSite=Lax + Path=/. 로그인 실패는 이메일
+  존재 여부 노출 안 하도록 동일 메시지.
+- `app/api/v1/profile.py` — GET/PATCH ``/me/profile`` (nickname/bio).
+- `app/api/v1/analysis_records.py` — `/me/analyses` (내것), `/community/analyses`
+  (남이 한 공개 분석, 본인 자동 제외), `/cves/{id}/analyses` (해당 CVE 의
+  분석 히스토리), `/analyses/{id}` GET/PATCH(visibility·title)/DELETE.
+  응답에는 author = {username, nickname} 만 — 이메일/role 절대 노출 X.
+- `app/api/v1/cves.py` — `/cves/{id}/analyze` 에 로그인 필수 +
+  결과 자동 ``AnalysisResult`` 저장 (markdown 본문 + category/visibility).
+- `app/api/v1/analysis.py` — router-level ``Depends(get_current_user)`` 로
+  ``/analysis/ask`` ``/analysis/compare`` 비로그인 차단.
+- `app/api/v1/bookmarks.py` — 익명 ``X-Client-Id`` 헤더 → ``get_current_user``
+  로 전환. 신규 즐겨찾기는 ``user_id`` 만 사용. HEAD ``/bookmarks/{cve_id}``
+  로 단건 확인.
+- `app/api/v1/admin.py` / `resources.py` / `settings.py` — router-level
+  ``Depends(require_admin)`` — refresh / refresh-priority-signals /
+  mitre-backfill / 자원 점검 / NVD·GitHub·credential 입력 전부 관리자만.
+- `app/models/community.py::User` — ``nickname``, ``bio`` 컬럼 추가.
+- `app/models/bookmark.py` — ``user_id`` FK + ``uq_bookmark_user_cve``.
+  ``client_id`` 는 nullable 로 backward compat.
+- `app/models/analysis_result.py` — 신규. ``visibility`` (public/private),
+  ``cve_id`` / ``user_id`` 인덱스 3종으로 me/커뮤니티/CVE 별 정렬 빠르게.
+- `alembic/versions/0020_auth_profile_analysis.py` — users.nickname/bio +
+  bookmarks.user_id FK + analysis_results 테이블 + 인덱스.
+- `pyproject.toml` — passlib[bcrypt], python-jose[cryptography],
+  email-validator 추가.
+- `app/core/config.py` — ``jwt_secret`` / ``jwt_exp_hours`` /
+  ``initial_admin_emails``.
+
+신규/변경 인프라:
+- `infra/modules/secrets/main.tf` — ``random_password "jwt_secret"`` (64자).
+  Secrets Manager 의 ``app/runtime`` 에 ``JWT_SECRET`` /
+  ``INITIAL_ADMIN_EMAILS`` 키 추가. ``lifecycle ignore_changes`` 로
+  콘솔에서 admin 이메일을 채워도 terraform 이 되돌리지 않음.
+- `infra/modules/ecs_service_api/main.tf` — task definition 의 secrets 배열에
+  JWT_SECRET / INITIAL_ADMIN_EMAILS 두 줄 추가 (``valueFrom = "${arn}:KEY::"``).
+- `docker-compose.yml` — JWT_SECRET / JWT_EXP_HOURS / INITIAL_ADMIN_EMAILS
+  env. dev 기본값은 ``dev-only-...`` prefix 로 운영 사용 금지 명시.
+
+토큰 유출 방지 점검:
+- DB 의 ``password_hash`` 는 응답 모델 어디에도 포함되지 않음 (스키마는
+  명시 직렬화만 사용).
+- ``/auth/me`` / 프로필 / 분석 응답에 ``role`` 은 들어가지만 ``email`` 은
+  본인 응답에만 (``/community/analyses`` 등 타인 노출 응답은 ``author`` =
+  {username, nickname} 으로 제한).
+- JWT 는 HttpOnly 쿠키만 — JS 에서 토큰 자체 접근 불가.
+- ``JWT_SECRET`` 은 운영 시 Secrets Manager → ECS task secrets 로 주입,
+  태스크 환경변수에만 일시 존재. 코드/리포에는 dev 기본값만 남음.
+- Claude OAuth credentials (`/home/app/.claude`) 는 네임드 볼륨 그대로 유지
+  — Phase 2 (per-user credential) 에서 ``ai_credentials.user_id`` FK 도입.
+
+후속 (PR 10-CO 예정):
+- frontend AuthContext + login/signup 페이지
+- Settings 탭 일반 사용자/관리자 분기 (일반 = 개인설정/AI분석, 관리자
+  = 전체)
+- 메인 대시보드 동기화 버튼 admin 게이트
+- 즐겨찾기/AI 분석 버튼 로그인 가드 (401 → 로그인 페이지 리다이렉트)
+- 분석 카드에 작성자 닉네임 + 같은 CVE 분석 히스토리 모달
+- 프로필 편집 (닉네임/소개글)
+
+---
+
 ### PR 10-AR — API 키 카드 help 문구 제거 + 발급 링크 작은 버튼화 ✅
 
 사용자 요청: "NVD 에서 발급받은 API 키를 입력하면… / GitHub Advisory 데이터를

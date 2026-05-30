@@ -1,19 +1,20 @@
-"""Bookmarks API — anonymous, scoped by `X-Client-Id` header.
+"""Bookmarks API — 로그인 사용자 전용 (PR 10-CN).
 
-The browser generates a UUID once and stores it in localStorage; subsequent
-requests echo it back via the `X-Client-Id` header. There's no auth, so this
-key is the only ownership signal — it's deliberately opaque.
+기존 ``X-Client-Id`` 헤더 기반 익명 즐겨찾기는 deprecated. 마이그레이션 0020 으로
+``user_id`` 컬럼이 추가되어, 신규 로우는 모두 로그인 사용자에게 귀속된다.
+GET/POST/DELETE 모두 ``get_current_user`` 의존성으로 401 가드.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import Field
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import get_current_user
 from app.core.database import get_db
-from app.models import Bookmark
+from app.models import Bookmark, User
 from app.schemas.vulnerability import CamelModel
 
 router = APIRouter(prefix="/bookmarks", tags=["bookmarks"])
@@ -32,25 +33,15 @@ class BookmarkListResponse(CamelModel):
     total: int
 
 
-def _require_client(x_client_id: str | None) -> str:
-    if not x_client_id or len(x_client_id) > 64:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="X-Client-Id header is required",
-        )
-    return x_client_id
-
-
 @router.get("", response_model=BookmarkListResponse, response_model_by_alias=True)
 async def list_bookmarks(
-    x_client_id: str | None = Header(default=None, alias="X-Client-Id"),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> BookmarkListResponse:
-    cid = _require_client(x_client_id)
     rows = (
         await db.execute(
             select(Bookmark.cve_id)
-            .where(Bookmark.client_id == cid)
+            .where(Bookmark.user_id == user.id)
             .order_by(Bookmark.created_at.desc())
         )
     ).all()
@@ -61,27 +52,41 @@ async def list_bookmarks(
 @router.post("", response_model=BookmarkOut, response_model_by_alias=True, status_code=201)
 async def add_bookmark(
     body: BookmarkCreate,
-    x_client_id: str | None = Header(default=None, alias="X-Client-Id"),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> BookmarkOut:
-    cid = _require_client(x_client_id)
-    bm = Bookmark(client_id=cid, cve_id=body.cve_id)
+    bm = Bookmark(user_id=user.id, cve_id=body.cve_id)
     db.add(bm)
     try:
         await db.commit()
     except IntegrityError:
-        await db.rollback()  # already bookmarked — idempotent
+        await db.rollback()  # 중복 — idempotent
     return BookmarkOut(cve_id=body.cve_id)
 
 
 @router.delete("/{cve_id}", status_code=204)
 async def remove_bookmark(
     cve_id: str,
-    x_client_id: str | None = Header(default=None, alias="X-Client-Id"),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    cid = _require_client(x_client_id)
     await db.execute(
-        delete(Bookmark).where(Bookmark.client_id == cid, Bookmark.cve_id == cve_id)
+        delete(Bookmark).where(Bookmark.user_id == user.id, Bookmark.cve_id == cve_id)
     )
     await db.commit()
+
+
+@router.head("/{cve_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def check_bookmark(
+    cve_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """현재 사용자가 이 CVE 를 즐겨찾기 했는지 — 204 (있음) / 404 (없음)."""
+    row = await db.scalar(
+        select(Bookmark.id).where(
+            Bookmark.user_id == user.id, Bookmark.cve_id == cve_id
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=404)

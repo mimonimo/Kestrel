@@ -1,0 +1,17 @@
+variable "name_prefix"             { type = string }
+variable "cluster_arn"             { type = string }
+variable "private_subnet_ids"      { type = list(string) }
+variable "ecs_tasks_sg_id"         { type = string }
+variable "task_exec_role_arn"      { type = string }
+variable "task_role_arn"           { type = string }
+variable "image"                   { type = string }
+variable "cpu"                     { type = number }
+variable "memory"                  { type = number }
+variable "desired_count"           { type = number }
+variable "alb_target_group_arn"    { type = string }
+variable "alb_listener_arn"        { type = string }
+variable "database_url_secret_arn" { type = string }
+variable "app_secret_arn"          { type = string }
+variable "redis_url"               { type = string }
+variable "meili_host"              { type = string }
+variable "cors_origins_json"       { type = string }

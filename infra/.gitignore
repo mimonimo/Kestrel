@@ -1,0 +1,24 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+crash.*.log
+
+# Variables — 실제 값은 절대 커밋 금지
+*.tfvars
+!terraform.tfvars.example
+!*.auto.tfvars.example
+
+# 로컬 빌드 산출물
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# OS / 에디터
+.DS_Store
+.idea/
+.vscode/

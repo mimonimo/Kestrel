@@ -1,0 +1,10 @@
+variable "name_prefix"        { type = string }
+variable "cluster_arn"        { type = string }
+variable "private_subnet_ids" { type = list(string) }
+variable "meili_sg_id"        { type = string }
+variable "efs_sg_id"          { type = string }
+variable "task_exec_role_arn" { type = string }
+variable "task_role_arn"      { type = string }
+variable "app_secret_arn"     { type = string }
+variable "cpu"                { type = number }
+variable "memory"             { type = number }

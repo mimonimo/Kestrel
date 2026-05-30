@@ -19,13 +19,15 @@ from pydantic.alias_generators import to_camel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import require_admin
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.logging import get_logger
 from app.core.redis_client import get_redis
 from app.services.search_service import _client as meili_client
 
-router = APIRouter(prefix="/resources", tags=["resources"])
+# 모든 자원 점검/조작 라우트는 admin only (DB ANALYZE, Redis FLUSH, Meili reset 등).
+router = APIRouter(prefix="/resources", tags=["resources"], dependencies=[Depends(require_admin)])
 log = get_logger(__name__)
 
 

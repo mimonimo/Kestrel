@@ -17,11 +17,15 @@ from pydantic import Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import require_admin
 from app.core.database import get_db
 from app.models import AiCredential, AppSettings
 from app.schemas.vulnerability import CamelModel
 
-router = APIRouter(prefix="/settings", tags=["settings"])
+# AI credential 관리 라우트 전반은 admin only — Phase 2 에서 user-scoped 로 분리 예정.
+# 그동안은 모든 사용자가 동일한 active credential 을 공유하는데, 분석 실행 자체에는
+# 로그인이 필요해서 credential 자체 유출은 없다. credential 등록·수정은 운영자만.
+router = APIRouter(prefix="/settings", tags=["settings"], dependencies=[Depends(require_admin)])
 
 
 class CredentialOut(CamelModel):
