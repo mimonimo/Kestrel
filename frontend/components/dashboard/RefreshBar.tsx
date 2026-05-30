@@ -5,6 +5,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStatus } from "@/hooks/useStatus";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { cn, timeAgo } from "@/lib/utils";
 import { useUserSetting } from "@/lib/user-settings";
 import type { IngestionSnapshot, Source } from "@/lib/types";
@@ -31,6 +32,9 @@ function latestFinishedAt(ingestions: IngestionSnapshot[] | undefined): string |
 }
 
 export function RefreshBar() {
+  // 수동 동기화는 admin 만 실행 가능 — 일반 사용자/비로그인에는 컴포넌트 자체를
+  // 렌더링하지 않는다 (대시보드 상단 헤더 줄 자체를 차지하지 않아 깔끔).
+  const { user } = useAuth();
   const { data, refetch } = useStatus();
   const queryClient = useQueryClient();
   const { value: nvdApiKey } = useUserSetting("nvdApiKey");
@@ -86,6 +90,10 @@ export function RefreshBar() {
       });
     }
   };
+
+  // 비-admin (게스트·일반 사용자) 에는 동기화 바 자체 표시 X.
+  // 마지막 동기화 시각 같은 메타도 운영 정보라 노출 안 함.
+  if (!user?.isAdmin) return null;
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-xs text-neutral-700 dark:border-neutral-800 dark:bg-surface-1 dark:text-neutral-400">

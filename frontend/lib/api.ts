@@ -21,6 +21,9 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
+    // 쿠키 (access_token) 를 모든 요청에 자동 전송 — auth 의존성 라우트가
+    // 401 안 받도록. CORS 는 backend 쪽 allow_credentials=True 로 매칭.
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...init?.headers },
     cache: "no-store",
   });
@@ -61,6 +64,7 @@ async function streamSse<E>(
 ): Promise<void> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
     body: JSON.stringify(body),
     signal,
@@ -132,6 +136,63 @@ export interface AssetCatalogEntry {
 
 export interface AssetCatalogResponse {
   items: AssetCatalogEntry[];
+}
+
+// ─── Auth / Profile (PR 10-CN) ───────────────────────────────────────
+export interface AuthUser {
+  id: string;
+  email: string;
+  username: string;
+  role: "user" | "expert" | "admin";
+  isAdmin: boolean;
+}
+
+export interface Profile extends AuthUser {
+  nickname: string | null;
+  bio: string | null;
+}
+
+export interface SignupRequest {
+  email: string;
+  username: string;
+  password: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface ProfileUpdate {
+  nickname?: string | null;
+  bio?: string | null;
+}
+
+// ─── Analysis records (PR 10-CN) ─────────────────────────────────────
+export interface AnalysisAuthor {
+  username: string;
+  nickname: string | null;
+}
+
+export interface AnalysisSummary {
+  id: string;
+  cveId: string;
+  category: string;
+  title: string | null;
+  visibility: "public" | "private";
+  createdAt: string;
+  author: AnalysisAuthor;
+  excerpt: string;
+}
+
+export interface AnalysisDetail extends AnalysisSummary {
+  resultMd: string;
+  promptMd: string | null;
+}
+
+export interface AnalysisList {
+  items: AnalysisSummary[];
+  total: number;
 }
 
 export const api = {
@@ -350,10 +411,58 @@ export const api = {
       method: "POST",
     }),
 
-  analyzeCve: (cveId: string) =>
+  analyzeCve: (
+    cveId: string,
+    opts?: { category?: string; title?: string; visibility?: "public" | "private" },
+  ) =>
     request<AiAnalysisResponse>(`/cves/${encodeURIComponent(cveId)}/analyze`, {
       method: "POST",
+      body: JSON.stringify(opts ?? {}),
     }),
+
+  // ─── Auth ─────────────────────────────────────────────────────
+  signup: (body: SignupRequest) =>
+    request<AuthUser>(`/auth/signup`, { method: "POST", body: JSON.stringify(body) }),
+  login: (body: LoginRequest) =>
+    request<AuthUser>(`/auth/login`, { method: "POST", body: JSON.stringify(body) }),
+  logout: () => request<void>(`/auth/logout`, { method: "POST" }),
+  getAuthMe: () => request<AuthUser>(`/auth/me`),
+
+  // ─── Profile ─────────────────────────────────────────────────
+  getProfile: () => request<Profile>(`/me/profile`),
+  updateProfile: (body: ProfileUpdate) =>
+    request<Profile>(`/me/profile`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  // ─── Analysis records ────────────────────────────────────────
+  listMyAnalyses: (opts?: { limit?: number; offset?: number }) => {
+    const p = new URLSearchParams();
+    if (opts?.limit != null) p.set("limit", String(opts.limit));
+    if (opts?.offset != null) p.set("offset", String(opts.offset));
+    const qs = p.toString();
+    return request<AnalysisList>(`/me/analyses${qs ? `?${qs}` : ""}`);
+  },
+  listCommunityAnalyses: (opts?: { limit?: number; offset?: number; cveId?: string }) => {
+    const p = new URLSearchParams();
+    if (opts?.limit != null) p.set("limit", String(opts.limit));
+    if (opts?.offset != null) p.set("offset", String(opts.offset));
+    if (opts?.cveId) p.set("cve_id", opts.cveId);
+    const qs = p.toString();
+    return request<AnalysisList>(`/community/analyses${qs ? `?${qs}` : ""}`);
+  },
+  listCveAnalyses: (cveId: string) =>
+    request<AnalysisList>(`/cves/${encodeURIComponent(cveId)}/analyses`),
+  getAnalysisRecord: (id: string) =>
+    request<AnalysisDetail>(`/analyses/${encodeURIComponent(id)}`),
+  updateAnalysisRecord: (
+    id: string,
+    body: { visibility?: "public" | "private"; title?: string },
+  ) =>
+    request<AnalysisDetail>(`/analyses/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteAnalysisRecord: (id: string) =>
+    request<void>(`/analyses/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   askFollowup: (body: AskFollowupRequest) =>
     request<AskFollowupResponse>(`/analysis/ask`, {
@@ -573,6 +682,8 @@ export interface AiAnalysisResponse {
   attackMethod: string;
   payloadExamples: string[];
   mitigations: string[];
+  // 분석 저장 후 DB row id — 작성자만 이걸로 visibility 변경/삭제 가능 (PR 10-CN).
+  analysisId?: string | null;
 }
 
 export interface QaTurn {

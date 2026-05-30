@@ -8,6 +8,7 @@ import { Bird, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { NotificationBell } from "./NotificationBell";
+import { UserMenu } from "./UserMenu";
 
 // Top-level nav routes. Active-state derived from pathname so user knows
 // where they are without needing to remember the title — a Linear/Vercel
@@ -73,6 +74,8 @@ export function Header() {
             <Settings className="h-4 w-4" />
             <span className="hidden sm:inline">설정</span>
           </Link>
+          <span className="mx-1 h-5 w-px bg-neutral-200 dark:bg-neutral-800" />
+          <UserMenu />
         </nav>
       </div>
     </header>

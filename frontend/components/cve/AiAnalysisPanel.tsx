@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, api, type AiAnalysisResponse } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { recordAnalysisHistory } from "@/lib/analysis-history";
 import { clearRunning, markRunning, readRunningAnalyses } from "@/lib/analysis-running";
 import { appendQaTurn, clearQaHistory, useQaHistory } from "@/lib/analysis-qa";
@@ -144,6 +145,7 @@ function CodeBlock({ source }: { source: string }) {
 
 export function AiAnalysisPanel({ cveId }: { cveId: string }) {
   const qc = useQueryClient();
+  const { user, loading: authLoading } = useAuth();
   // Cached analysis for this CVE. Auto-rendered when the user revisits
   // the CVE — no extra click required (the "N분 전 분석" chip in the
   // header is the cue that it's a cached, not freshly-run, result).
@@ -197,6 +199,15 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
   }, [analyze.data, analyze.error, cveId]);
 
   const runAnalysis = () => {
+    // 로그인 필수 — 비로그인이면 /login 으로 보내고 분석 후 돌아오기.
+    if (authLoading) return;
+    if (!user) {
+      if (typeof window !== "undefined") {
+        const next = window.location.pathname + window.location.search;
+        window.location.href = `/login?next=${encodeURIComponent(next)}`;
+      }
+      return;
+    }
     // Synchronously mirror "running" BEFORE refetch so a refresh fired
     // within the same tick still finds the marker on next load.
     markRunning(cveId);
