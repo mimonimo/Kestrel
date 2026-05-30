@@ -1,0 +1,30 @@
+# 이 파일을 terraform.tfvars 로 복사한 뒤 값을 채우세요.
+# terraform.tfvars 는 .gitignore 에 등록돼 커밋되지 않습니다.
+
+env        = "prod"
+aws_region = "ap-northeast-2"
+
+# 인스턴스 사양 — 기본 t4g.small (2 vCPU 2 GB). 트래픽 증가 시 t4g.medium 로.
+# instance_type = "t4g.small"
+
+# 데이터 EBS — 모든 영속 데이터 (Postgres / docker volume / mitre repo) 저장.
+# 초기 30 GB. CVE 누적이 늘면 늘릴 수 있음 (Terraform 으로 size 변경 → 자동 grow).
+# data_volume_size_gb = 30
+
+# SSH 운영자 IP — 비워두면 SSH 포트 자체를 안 열고 SSM Session Manager 만 사용.
+# 자기 공인 IP 만 허용하려면 "1.2.3.4/32" 같이 입력.
+# ssh_allowed_cidr = ""
+
+# 도메인 — 비우면 EIP 의 nip.io subdomain 사용 (예: "1.2.3.4.nip.io" 자동 TLS).
+# 본인 도메인이면 Route53 또는 다른 DNS 에서 A 레코드를 EIP 로 향하게 한 뒤 여기에 채움.
+# domain_name = "kestrel.example.com"
+
+# Caddy ACME 등록 이메일 (인증서 만료 알림 받음).
+# tls_email = "you@example.com"
+
+# 가입 즉시 admin 부여될 이메일 (콤마 분리).
+# initial_admin_emails = "you@example.com"
+
+# Git repo — 첫 부팅 시 user_data 가 clone. 본인 fork 사용 시 변경.
+# git_repo_url = "https://github.com/mimonimo/Kestrel.git"
+# git_branch   = "main"
