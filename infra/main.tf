@@ -99,6 +99,8 @@ module "ecs_service_api" {
   redis_url             = module.cache.redis_url
   meili_host            = module.search.meili_host
   cors_origins_json     = "[\"https://${module.cdn.frontend_url}\"]"
+  efs_sg_id             = module.security.efs_sg_id
+  vpc_id                = module.network.vpc_id
 }
 
 module "ecs_service_scheduler" {

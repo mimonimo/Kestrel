@@ -39,7 +39,8 @@ resource "aws_ecs_task_definition" "scheduler" {
       { name = "MEILI_MASTER_KEY",     valueFrom = "${var.app_secret_arn}:MEILI_MASTER_KEY::" },
       { name = "SENTRY_DSN",           valueFrom = "${var.app_secret_arn}:SENTRY_DSN::" },
       # scheduler 가 auth 라우트 안 쓰지만 config 로드 일관성 유지 위해 같이 주입.
-      { name = "JWT_SECRET",           valueFrom = "${var.app_secret_arn}:JWT_SECRET::" }
+      { name = "JWT_SECRET",           valueFrom = "${var.app_secret_arn}:JWT_SECRET::" },
+      { name = "INITIAL_ADMIN_EMAILS", valueFrom = "${var.app_secret_arn}:INITIAL_ADMIN_EMAILS::" }
     ]
     logConfiguration = {
       logDriver = "awslogs"

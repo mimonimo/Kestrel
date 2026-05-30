@@ -6,6 +6,43 @@ resource "aws_cloudwatch_log_group" "api" {
   retention_in_days = 14
 }
 
+# ── EFS — 사용자별 Claude 자격증명 영속화 ─────────────────────
+# /home/app/.claude/users/<user_id>/.credentials.json (PR 10-CP2) 가 task
+# 재시작에도 살아남아야 한다. cache 모듈의 redis-efs 와 분리해 lifecycle 독립.
+resource "aws_efs_file_system" "claude" {
+  creation_token   = "${var.name_prefix}-claude-efs"
+  encrypted        = true
+  performance_mode = "generalPurpose"
+  throughput_mode  = "bursting"
+  tags             = { Name = "${var.name_prefix}-claude-efs" }
+  lifecycle_policy {
+    transition_to_ia = "AFTER_30_DAYS"
+  }
+}
+
+resource "aws_efs_mount_target" "claude" {
+  for_each        = toset(var.private_subnet_ids)
+  file_system_id  = aws_efs_file_system.claude.id
+  subnet_id       = each.value
+  security_groups = [var.efs_sg_id]
+}
+
+resource "aws_efs_access_point" "claude" {
+  file_system_id = aws_efs_file_system.claude.id
+  posix_user {
+    gid = 1001
+    uid = 1001
+  }
+  root_directory {
+    path = "/claude"
+    creation_info {
+      owner_gid   = 1001
+      owner_uid   = 1001
+      permissions = "0700"
+    }
+  }
+}
+
 resource "aws_ecs_task_definition" "api" {
   family                   = "${var.name_prefix}-api"
   cpu                      = var.cpu
@@ -41,13 +78,20 @@ resource "aws_ecs_task_definition" "api" {
       { name = "CLAUDE_HOME",              value = "/home/app" }
     ]
     secrets = [
-      { name = "DATABASE_URL",       valueFrom = var.database_url_secret_arn },
-      { name = "NVD_API_KEY",        valueFrom = "${var.app_secret_arn}:NVD_API_KEY::" },
-      { name = "GITHUB_TOKEN",       valueFrom = "${var.app_secret_arn}:GITHUB_TOKEN::" },
-      { name = "ANTHROPIC_API_KEY",  valueFrom = "${var.app_secret_arn}:ANTHROPIC_API_KEY::" },
-      { name = "MEILI_MASTER_KEY",   valueFrom = "${var.app_secret_arn}:MEILI_MASTER_KEY::" },
-      { name = "SENTRY_DSN",         valueFrom = "${var.app_secret_arn}:SENTRY_DSN::" }
+      { name = "DATABASE_URL",          valueFrom = var.database_url_secret_arn },
+      { name = "NVD_API_KEY",           valueFrom = "${var.app_secret_arn}:NVD_API_KEY::" },
+      { name = "GITHUB_TOKEN",          valueFrom = "${var.app_secret_arn}:GITHUB_TOKEN::" },
+      { name = "ANTHROPIC_API_KEY",     valueFrom = "${var.app_secret_arn}:ANTHROPIC_API_KEY::" },
+      { name = "MEILI_MASTER_KEY",      valueFrom = "${var.app_secret_arn}:MEILI_MASTER_KEY::" },
+      { name = "SENTRY_DSN",            valueFrom = "${var.app_secret_arn}:SENTRY_DSN::" },
+      { name = "JWT_SECRET",            valueFrom = "${var.app_secret_arn}:JWT_SECRET::" },
+      { name = "INITIAL_ADMIN_EMAILS",  valueFrom = "${var.app_secret_arn}:INITIAL_ADMIN_EMAILS::" }
     ]
+    mountPoints = [{
+      sourceVolume  = "claude-creds"
+      containerPath = "/home/app/.claude"
+      readOnly      = false
+    }]
     logConfiguration = {
       logDriver = "awslogs"
       options = {
@@ -64,6 +108,20 @@ resource "aws_ecs_task_definition" "api" {
       startPeriod = 60
     }
   }])
+
+  volume {
+    name = "claude-creds"
+    efs_volume_configuration {
+      file_system_id     = aws_efs_file_system.claude.id
+      transit_encryption = "ENABLED"
+      authorization_config {
+        access_point_id = aws_efs_access_point.claude.id
+        iam             = "DISABLED"
+      }
+    }
+  }
+
+  depends_on = [aws_efs_mount_target.claude]
 }
 
 # Namespace 는 cache 모듈이 생성. 여기서는 조회만.
