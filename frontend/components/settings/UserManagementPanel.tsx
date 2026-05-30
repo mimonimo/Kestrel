@@ -92,7 +92,6 @@ export function UserManagementPanel() {
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-neutral-600 dark:text-neutral-500">
           가입한 사용자의 활동(분석·글·댓글·즐겨찾기 수)과 마지막 활동 시각을 추적합니다.
-          어드민 1인 운영이 기본이며 role 변경은 보통 사용하지 않습니다.
         </p>
         <span className="text-[11px] tabular-nums text-neutral-500 dark:text-neutral-500">
           {list.data ? `${list.data.total}명` : "—"}
