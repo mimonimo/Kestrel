@@ -306,6 +306,23 @@ export const api = {
       method: "DELETE",
       headers: clientHeaders(),
     }),
+  // ─── 외부 데이터 소스 키 (PR 10-CQ) ───────────────────────────
+  // GET 은 마스킹된 값만 (`****1234`). PUT 으로 저장·삭제.
+  getExternalKeys: () =>
+    request<{
+      nvdApiKey: string | null;
+      githubToken: string | null;
+      nvdSet: boolean;
+      githubSet: boolean;
+    }>(`/admin/external-keys`),
+  putExternalKeys: (body: { nvdApiKey?: string; githubToken?: string }) =>
+    request<{
+      nvdApiKey: string | null;
+      githubToken: string | null;
+      nvdSet: boolean;
+      githubSet: boolean;
+    }>(`/admin/external-keys`, { method: "PUT", body: JSON.stringify(body) }),
+
   refreshIngestion: (
     keys: { nvdApiKey?: string; githubToken?: string },
     fullResync?: Array<"ghsa" | "nvd" | "exploit_db" | "all">,

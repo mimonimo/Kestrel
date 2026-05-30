@@ -14,6 +14,9 @@ from pydantic.alias_generators import to_camel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pydantic import BaseModel as _PydBaseModel
+from pydantic import ConfigDict as _PydConfigDict
+
 from app.api.v1.deps import require_admin
 from app.core.database import SessionLocal, get_db
 from app.core.logging import get_logger
@@ -28,6 +31,91 @@ log = get_logger(__name__)
 # 전체 router 에 admin 가드 — refresh / priority-signals / mitre-backfill
 # 등 운영 명령은 모두 관리자만 호출. 일반 유저는 401/403.
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+
+
+# ─── 외부 데이터 소스 키 관리 (PR 10-CQ) ─────────────────────────────
+# 응답에는 마스킹된 값만 (`****1234`) 노출. PUT 으로 저장.
+# admin 본인이 웹 UI 에서 한 곳에서 관리 — 어디서 접속해도 같은 상태.
+
+
+def _mask(value: str | None) -> str | None:
+    if not value:
+        return None
+    tail = value[-4:] if len(value) >= 4 else value
+    return f"****{tail}"
+
+
+class _ExternalKeysCamel(_PydBaseModel):
+    model_config = _PydConfigDict(alias_generator=lambda s: "".join(
+        [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
+    ), populate_by_name=True)
+
+
+class ExternalKeysOut(_ExternalKeysCamel):
+    nvd_api_key: str | None = None
+    github_token: str | None = None
+    nvd_set: bool = False
+    github_set: bool = False
+
+
+class ExternalKeysUpdate(_ExternalKeysCamel):
+    # ``None`` = 변경 안 함. 빈 문자열 = 삭제. 비-공백 문자열 = 새 값.
+    nvd_api_key: str | None = None
+    github_token: str | None = None
+
+
+@router.get(
+    "/external-keys",
+    response_model=ExternalKeysOut,
+    response_model_by_alias=True,
+)
+async def get_external_keys(db: AsyncSession = Depends(get_db)) -> ExternalKeysOut:
+    row = await db.scalar(select(AppSettings).where(AppSettings.id == 1))
+    nvd = row.nvd_api_key if row else None
+    gh = row.github_token if row else None
+    return ExternalKeysOut(
+        nvd_api_key=_mask(nvd),
+        github_token=_mask(gh),
+        nvd_set=bool(nvd),
+        github_set=bool(gh),
+    )
+
+
+@router.put(
+    "/external-keys",
+    response_model=ExternalKeysOut,
+    response_model_by_alias=True,
+)
+async def put_external_keys(
+    body: ExternalKeysUpdate, db: AsyncSession = Depends(get_db)
+) -> ExternalKeysOut:
+    row = await db.scalar(select(AppSettings).where(AppSettings.id == 1))
+    if row is None:
+        row = AppSettings(id=1)
+        db.add(row)
+    fields = body.model_fields_set
+    actions: list[str] = []
+    if "nvd_api_key" in fields or "nvdApiKey" in fields:
+        new_val = (body.nvd_api_key or "").strip()
+        if new_val:
+            row.nvd_api_key = new_val
+            actions.append("nvd_set")
+        else:
+            row.nvd_api_key = None
+            actions.append("nvd_cleared")
+    if "github_token" in fields or "githubToken" in fields:
+        new_val = (body.github_token or "").strip()
+        if new_val:
+            row.github_token = new_val
+            actions.append("gh_set")
+        else:
+            row.github_token = None
+            actions.append("gh_cleared")
+    await db.commit()
+    # 토큰 자체는 로깅 X — 누가 어떤 액션을 했는지만.
+    if actions:
+        log.info("admin.external_keys_updated", actions=actions)
+    return await get_external_keys(db)
 
 
 @router.post("/refresh")
