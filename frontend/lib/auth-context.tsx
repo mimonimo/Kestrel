@@ -15,13 +15,43 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 
 import { ApiError, api, type AuthUser } from "./api";
 
-// 사용자 분리 캐시 (PR 10-CP1):
-// 분석 히스토리·캐시된 AI 분석·QA·즐겨찾기·티켓 메모 등은 localStorage 에
-// 영속화되어 있어 사용자가 바뀌어도 이전 사용자의 데이터가 그대로 보였다.
-// 로그인 / 로그아웃 / 사용자 전환 시점에 user-specific 캐시를 모두 비운다.
-// 보존 키 (theme 등 사용자 무관) 는 명시적으로 keep-list 에 둔다.
+// 사용자 분리 캐시 (PR 10-CP1 / 보강 PR 10-CP1.2).
+//
+// 1차 (PR 10-CP1) 에선 사용자 전환 시 ``kestrel:*`` 전체를 일괄 클리어해
+// 다른 사용자의 흔적을 제거했는데, 본인 분석 기록까지 함께 사라진다는
+// 보고 ("분석 기록은 유지 되어야지 왜 지워지니") 가 들어왔다.
+//
+// 분석 기록 / 즐겨찾기 / Q&A / 비교 히스토리·캐시된 분석 결과는 backend
+// 가 user-scoped 로 영구 저장한다 (DB AnalysisResult / bookmarks.user_id /
+// /me/analyses 등). 사용자 분리는 backend 응답 자체로 보장되므로 로컬
+// 캐시까지 강제로 비울 필요가 없다.
+//
+// 반면 ``-running`` 마커 (refresh-running / analysis-running / qa-running /
+// compare-running) 같은 트랜잭션 상태는 사용자 전환 시 반드시 비워야 한다 —
+// 다른 사용자의 진행 중 작업이 새 사용자에게 자동 재시도되면 401 으로 깨진다.
 const LAST_USER_KEY = "kestrel:last-user-id";
-const KEEP_KEYS = new Set<string>(["kestrel:theme", LAST_USER_KEY]);
+// 사용자 전환 시 *유지* 할 키 / prefix.
+const KEEP_EXACT = new Set<string>([
+  "kestrel:theme",
+  LAST_USER_KEY,
+]);
+const KEEP_PREFIX = [
+  "kestrel:analysis-history",   // 분석 히스토리
+  "kestrel:compare-history",    // 비교 히스토리
+  "kestrel:comment-history",    // 내 댓글 히스토리
+  "kestrel:ai-analysis",        // 캐시된 분석 결과 (CVE 별)
+  "kestrel:qa:",                // Q&A 히스토리 (CVE 별)
+  "kestrel:bookmarks",          // 즐겨찾기 캐시 (backend 가 user-scoped 라 자동 갱신)
+  "kestrel:analysis-seen",      // 알림 읽음 표시
+] as const;
+
+function shouldKeep(k: string): boolean {
+  if (KEEP_EXACT.has(k)) return true;
+  for (const p of KEEP_PREFIX) {
+    if (k === p || k.startsWith(p + ":") || k.startsWith(p)) return true;
+  }
+  return false;
+}
 
 function clearUserScopedLocal(): void {
   if (typeof window === "undefined") return;
@@ -29,10 +59,12 @@ function clearUserScopedLocal(): void {
     const toRemove: string[] = [];
     for (let i = 0; i < window.localStorage.length; i++) {
       const k = window.localStorage.key(i);
-      if (k && k.startsWith("kestrel:") && !KEEP_KEYS.has(k)) toRemove.push(k);
+      if (k && k.startsWith("kestrel:") && !shouldKeep(k)) toRemove.push(k);
     }
     for (const k of toRemove) window.localStorage.removeItem(k);
-    // 캐시 클리어 후 화면이 즉시 새 상태를 반영하도록 동기화 이벤트 발행.
+    // 즐겨찾기는 KEEP 이지만 로그아웃 직후엔 다음 사용자가 backend 동기화 전까지
+    // 이전 사용자 목록을 잠시 보지 않도록 비워 둔다 — useBookmarks 가 즉시 다시 채움.
+    window.localStorage.removeItem("kestrel:bookmarks");
     window.dispatchEvent(new Event("kestrel:bookmarks"));
     window.dispatchEvent(new Event("kestrel:analysis-history-changed"));
   } catch {
