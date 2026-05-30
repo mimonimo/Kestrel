@@ -107,9 +107,11 @@ async def analyze_cve(
         "## 완화 방안",
         *[f"- {m}" for m in result.mitigations],
     ]
-    visibility = (body.visibility if body else None) or "public"
+    # 기본 비공개 — 사용자가 명시적으로 "공유" 액션을 취해야 커뮤니티 피드에 노출.
+    # 운영자 의도: 분석은 본인 자료고, 공개는 분석 피드의 별도 모달에서 선택.
+    visibility = (body.visibility if body else None) or "private"
     if visibility not in {"public", "private"}:
-        visibility = "public"
+        visibility = "private"
     record = AnalysisResult(
         cve_id=cve_id,
         user_id=user.id,

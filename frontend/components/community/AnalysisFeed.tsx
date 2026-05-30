@@ -10,58 +10,92 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, Loader2, Sparkles, User as UserIcon, X } from "lucide-react";
+import { ExternalLink, Loader2, Share2, Sparkles, User as UserIcon, X } from "lucide-react";
 
 import { api, type AnalysisSummary } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { ErrorBox } from "@/components/ui/feedback-box";
+import { ShareMyAnalysesModal } from "@/components/community/ShareMyAnalysesModal";
 import { formatRelativeKo } from "@/lib/format";
 
 export function AnalysisFeed() {
+  const { user } = useAuth();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   const list = useQuery({
     queryKey: ["community-analyses"],
     queryFn: () => api.listCommunityAnalyses({ limit: 50 }),
     staleTime: 30_000,
   });
 
+  // 헤더 — 로그인 사용자에겐 "내 분석 공유하기" 버튼 노출. 비로그인은 그대로 읽기만.
+  const header = (
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-600 dark:text-neutral-500">
+      <span>공개된 분석은 시간 역순으로 정렬됩니다.</span>
+      {user && (
+        <button
+          type="button"
+          onClick={() => setShareOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-500 dark:bg-violet-500 dark:hover:bg-violet-400"
+        >
+          <Share2 className="h-3.5 w-3.5" />내 분석 공유하기
+        </button>
+      )}
+    </div>
+  );
+
   if (list.isPending) {
     return (
-      <div className="space-y-3">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div
-            key={i}
-            className="h-24 animate-pulse rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-1/50"
-          />
-        ))}
-      </div>
+      <>
+        {header}
+        <div className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-24 animate-pulse rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-1/50"
+            />
+          ))}
+        </div>
+        <ShareMyAnalysesModal open={shareOpen} onClose={() => setShareOpen(false)} />
+      </>
     );
   }
   if (list.isError) {
     return (
-      <ErrorBox
-        title="분석 피드를 불러오지 못했습니다"
-        message="잠시 후 다시 시도해 주세요."
-      />
+      <>
+        {header}
+        <ErrorBox
+          title="분석 피드를 불러오지 못했습니다"
+          message="잠시 후 다시 시도해 주세요."
+        />
+        <ShareMyAnalysesModal open={shareOpen} onClose={() => setShareOpen(false)} />
+      </>
     );
   }
   if (!list.data || list.data.items.length === 0) {
     return (
-      <div className="rounded-xl border border-neutral-200 bg-white px-6 py-12 text-center dark:border-neutral-800 dark:bg-surface-1">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/15 ring-1 ring-violet-400/30">
-          <Sparkles className="h-6 w-6 text-violet-700 dark:text-violet-300" />
+      <>
+        {header}
+        <div className="rounded-xl border border-neutral-200 bg-white px-6 py-12 text-center dark:border-neutral-800 dark:bg-surface-1">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/15 ring-1 ring-violet-400/30">
+            <Sparkles className="h-6 w-6 text-violet-700 dark:text-violet-300" />
+          </div>
+          <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+            아직 공유된 분석이 없어요
+          </h3>
+          <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
+            CVE 상세에서 AI 심층 분석을 실행한 뒤,{" "}
+            {user ? "위의 \"내 분석 공유하기\" 버튼" : "로그인 후 공유 버튼"}으로 골라 공개할 수 있어요.
+          </p>
         </div>
-        <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-          아직 공유된 분석이 없어요
-        </h3>
-        <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
-          CVE 상세에서 AI 심층 분석을 실행하고 공개하면 여기에 보입니다.
-        </p>
-      </div>
+        <ShareMyAnalysesModal open={shareOpen} onClose={() => setShareOpen(false)} />
+      </>
     );
   }
 
   return (
     <>
+      {header}
       <ul className="space-y-3">
         {list.data.items.map((a) => (
           <li key={a.id}>
@@ -108,6 +142,7 @@ export function AnalysisFeed() {
         summary={list.data.items.find((a) => a.id === openId) ?? null}
         onClose={() => setOpenId(null)}
       />
+      <ShareMyAnalysesModal open={shareOpen} onClose={() => setShareOpen(false)} />
     </>
   );
 }
