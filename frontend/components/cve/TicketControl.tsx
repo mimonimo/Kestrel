@@ -1,32 +1,35 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ClipboardList, Loader2, Trash2 } from "lucide-react";
+import { ClipboardList, Loader2, LogIn, Trash2 } from "lucide-react";
 import { api, ApiError, type Ticket, type TicketStatus } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-// Status chip tinting — paired light/dark variants for every status so
-// the active pill is legible in either theme without falling back to
-// the dark-only neutral-800 background that flattened in light mode.
+// 상태별 활성 칩 톤. 라이트/다크 양쪽에서 충분한 채도·대비를 보장 — 이전엔
+// open(미확인) 이 거의 무채색이라 비활성 칩과 시각 차이가 약했고, 다크 톤이
+// 너무 짙어서 라이트 모드 캔버스 위에서 까맣게 떠 보이는 회귀 보고가 있었음
+// (PR 10-CO 후속). border + ring + 충분한 saturation 으로 active 임을 명확히.
 export const STATUS_META: Record<TicketStatus, { label: string; cls: string }> = {
   open: {
     label: "미확인",
-    cls: "border-neutral-300 bg-neutral-100 text-neutral-800 dark:border-neutral-700 dark:bg-neutral-800/60 dark:text-neutral-200",
+    cls: "border-rose-400 bg-rose-50 text-rose-700 ring-1 ring-rose-300/60 dark:border-rose-400/60 dark:bg-rose-500/15 dark:text-rose-200 dark:ring-rose-400/30",
   },
   in_progress: {
     label: "조치 중",
-    cls: "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-400/40 dark:bg-amber-400/10 dark:text-amber-200",
+    cls: "border-amber-400 bg-amber-50 text-amber-800 ring-1 ring-amber-300/60 dark:border-amber-400/60 dark:bg-amber-400/15 dark:text-amber-200 dark:ring-amber-400/30",
   },
   resolved: {
     label: "조치 완료",
-    cls: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-400/40 dark:bg-emerald-400/10 dark:text-emerald-200",
+    cls: "border-emerald-400 bg-emerald-50 text-emerald-800 ring-1 ring-emerald-300/60 dark:border-emerald-400/60 dark:bg-emerald-400/15 dark:text-emerald-200 dark:ring-emerald-400/30",
   },
   ignored: {
     label: "무시",
-    cls: "border-neutral-300 bg-neutral-50 text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800/40 dark:text-neutral-500",
+    cls: "border-neutral-400 bg-neutral-100 text-neutral-700 ring-1 ring-neutral-300/60 dark:border-neutral-500/60 dark:bg-neutral-500/15 dark:text-neutral-300 dark:ring-neutral-400/30",
   },
 };
 
@@ -38,11 +41,13 @@ interface Props {
 
 export function TicketControl({ cveId }: Props) {
   const qc = useQueryClient();
+  const { user, loading: authLoading } = useAuth();
 
   const { data, isPending } = useQuery({
     queryKey: ["tickets"],
     queryFn: () => api.listTickets(),
     staleTime: 10_000,
+    enabled: !!user, // 비로그인은 fetch 자체 안 함 (헤더 없는 400 회피)
   });
   const ticket = data?.items.find((t) => t.cveId === cveId);
 
@@ -111,7 +116,9 @@ export function TicketControl({ cveId }: Props) {
         )}
       </CardHeader>
       <CardContent className="space-y-3">
-        {isPending ? (
+        {!authLoading && !user ? (
+          <LoginGate cveId={cveId} />
+        ) : isPending ? (
           <div className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-500">
             <Loader2 className="h-3 w-3 animate-spin" /> 불러오는 중…
           </div>
@@ -168,5 +175,26 @@ export function TicketControl({ cveId }: Props) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function LoginGate({ cveId }: { cveId: string }) {
+  const next = encodeURIComponent(`/cves/${cveId}`);
+  return (
+    <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-neutral-300 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-surface-2">
+      <p className="text-sm text-neutral-800 dark:text-neutral-200">
+        대응 상태와 메모는 <span className="font-medium">로그인</span> 후에 저장할 수 있어요.
+      </p>
+      <p className="text-xs text-neutral-600 dark:text-neutral-400">
+        조치 진행 상황을 본인의 계정에 안전하게 보관합니다.
+      </p>
+      <Link
+        href={`/login?next=${next}` as never}
+        className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-500 dark:bg-sky-500 dark:hover:bg-sky-400"
+      >
+        <LogIn className="h-3 w-3" />
+        로그인하기
+      </Link>
+    </div>
   );
 }
