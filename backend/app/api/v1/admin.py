@@ -81,6 +81,208 @@ async def get_external_keys(db: AsyncSession = Depends(get_db)) -> ExternalKeysO
     )
 
 
+# ─── 사용자 관리 (PR 10-CR) ────────────────────────────────────────
+# admin 이 모든 사용자 목록을 보고 role 을 변경하거나 계정을 삭제.
+# 안전 가드:
+#   - 자기 자신의 role 변경 / 삭제 불가 (lock-out 방지)
+#   - INITIAL_ADMIN_EMAILS 매칭되는 계정은 강등해도 다음 로그인/가입 시 자동 admin 회복
+
+from datetime import datetime as _dt
+
+from app.core.security import is_admin_email
+from app.models import User as _User
+from app.models import UserRole as _UserRole
+
+
+class _UserStats(_PydBaseModel):
+    """사용자별 활동 카운트 — 추적용 메타. 모두 count(*) 라 인덱스로 빠름."""
+
+    model_config = _PydConfigDict(populate_by_name=True, alias_generator=lambda s: "".join(
+        [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
+    ))
+    analyses: int = 0
+    posts: int = 0
+    comments: int = 0
+    bookmarks: int = 0
+    last_activity_at: _dt | None = None
+
+
+class _UserOut(_PydBaseModel):
+    model_config = _PydConfigDict(populate_by_name=True, alias_generator=lambda s: "".join(
+        [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
+    ))
+    id: str
+    email: str
+    username: str
+    nickname: str | None = None
+    role: str
+    is_admin: bool
+    created_at: _dt
+    updated_at: _dt
+    stats: _UserStats = _UserStats()
+
+
+class _UsersList(_PydBaseModel):
+    items: list[_UserOut]
+    total: int
+
+
+class _RoleUpdate(_PydBaseModel):
+    role: str  # "user" | "expert" | "admin"
+
+
+def _to_user_out(u: _User, stats: _UserStats | None = None) -> _UserOut:
+    role_val = u.role.value if hasattr(u.role, "value") else str(u.role)
+    return _UserOut(
+        id=str(u.id),
+        email=u.email,
+        username=u.username,
+        nickname=u.nickname,
+        role=role_val,
+        is_admin=u.role == _UserRole.ADMIN,
+        created_at=u.created_at,
+        updated_at=u.updated_at,
+        stats=stats or _UserStats(),
+    )
+
+
+@router.get("/users", response_model=_UsersList, response_model_by_alias=True)
+async def list_users(
+    q: str | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> _UsersList:
+    """전체 사용자 목록 + 활동 통계. ``q`` 로 email/username/nickname 부분 검색."""
+    from sqlalchemy import func as _func, or_ as _or
+
+    from app.models import AnalysisResult, Bookmark, Comment, Post
+
+    stmt = select(_User).order_by(_User.created_at.desc())
+    if q:
+        like = f"%{q.lower()}%"
+        stmt = stmt.where(
+            _or(
+                _User.email.ilike(like),
+                _User.username.ilike(like),
+                _User.nickname.ilike(like),
+            )
+        )
+    users = (await db.execute(stmt.limit(500))).scalars().all()
+    if not users:
+        return _UsersList(items=[], total=0)
+
+    uids = [u.id for u in users]
+
+    async def _count_by_user(model, label: str) -> dict:
+        rows = (
+            await db.execute(
+                select(model.user_id, _func.count(model.id))
+                .where(model.user_id.in_(uids))
+                .group_by(model.user_id)
+            )
+        ).all()
+        return {uid: cnt for uid, cnt in rows}
+
+    async def _max_created_by_user(model) -> dict:
+        rows = (
+            await db.execute(
+                select(model.user_id, _func.max(model.created_at))
+                .where(model.user_id.in_(uids))
+                .group_by(model.user_id)
+            )
+        ).all()
+        return {uid: ts for uid, ts in rows}
+
+    analyses_by = await _count_by_user(AnalysisResult, "analyses")
+    posts_by = await _count_by_user(Post, "posts")
+    comments_by = await _count_by_user(Comment, "comments")
+    bookmarks_by = await _count_by_user(Bookmark, "bookmarks")
+
+    last_analysis = await _max_created_by_user(AnalysisResult)
+    last_post = await _max_created_by_user(Post)
+    last_comment = await _max_created_by_user(Comment)
+    last_bookmark = await _max_created_by_user(Bookmark)
+
+    items: list[_UserOut] = []
+    for u in users:
+        candidates = [
+            last_analysis.get(u.id),
+            last_post.get(u.id),
+            last_comment.get(u.id),
+            last_bookmark.get(u.id),
+            u.updated_at,  # 프로필 변경 등도 활동으로 간주
+        ]
+        last = max([c for c in candidates if c is not None], default=None)
+        stats = _UserStats(
+            analyses=int(analyses_by.get(u.id, 0)),
+            posts=int(posts_by.get(u.id, 0)),
+            comments=int(comments_by.get(u.id, 0)),
+            bookmarks=int(bookmarks_by.get(u.id, 0)),
+            last_activity_at=last,
+        )
+        items.append(_to_user_out(u, stats))
+    return _UsersList(items=items, total=len(items))
+
+
+@router.patch("/users/{user_id}/role", response_model=_UserOut, response_model_by_alias=True)
+async def update_user_role(
+    user_id: str,
+    body: _RoleUpdate,
+    me=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> _UserOut:
+    """USER ↔ EXPERT ↔ ADMIN 변경. 자기 자신 변경 차단."""
+    import uuid as _uuid
+    try:
+        uid = _uuid.UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(404, detail="사용자를 찾을 수 없습니다.") from None
+    if uid == me.id:
+        raise HTTPException(400, detail="자기 자신의 권한은 변경할 수 없습니다.")
+    target = await db.scalar(select(_User).where(_User.id == uid))
+    if target is None:
+        raise HTTPException(404, detail="사용자를 찾을 수 없습니다.")
+    try:
+        new_role = _UserRole(body.role)
+    except ValueError:
+        raise HTTPException(400, detail="허용되지 않은 role 입니다.") from None
+    target.role = new_role
+    await db.commit()
+    await db.refresh(target)
+    log.info("admin.user_role_changed", target_id=str(target.id), new_role=new_role.value)
+    return _to_user_out(target)
+
+
+@router.delete("/users/{user_id}", status_code=204)
+async def delete_user(
+    user_id: str,
+    me=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """사용자 삭제. 자기 자신 삭제 차단 + INITIAL_ADMIN_EMAILS 매칭 사용자 차단
+    (실수로 부트스트랩 admin 을 지워 락아웃 되는 것 방지)."""
+    import uuid as _uuid
+    try:
+        uid = _uuid.UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(404, detail="사용자를 찾을 수 없습니다.") from None
+    if uid == me.id:
+        raise HTTPException(400, detail="자기 자신은 삭제할 수 없습니다.")
+    target = await db.scalar(select(_User).where(_User.id == uid))
+    if target is None:
+        raise HTTPException(404, detail="사용자를 찾을 수 없습니다.")
+    if is_admin_email(target.email):
+        raise HTTPException(
+            400,
+            detail=(
+                "INITIAL_ADMIN_EMAILS 에 등록된 부트스트랩 관리자입니다 — "
+                "환경변수에서 먼저 제외한 뒤 삭제하세요."
+            ),
+        )
+    await db.delete(target)
+    await db.commit()
+    log.info("admin.user_deleted", target_id=str(target.id))
+
+
 @router.put(
     "/external-keys",
     response_model=ExternalKeysOut,

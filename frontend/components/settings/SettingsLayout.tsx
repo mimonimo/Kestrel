@@ -17,6 +17,7 @@ import { AssetsManager } from "@/components/settings/AssetsManager";
 import { ClaudeIntegrationPanel } from "@/components/settings/ClaudeIntegrationPanel";
 import { MitreBackfillPanel } from "@/components/settings/MitreBackfillPanel";
 import { ThemeSwitcher } from "@/components/settings/ThemeSwitcher";
+import { UserManagementPanel } from "@/components/settings/UserManagementPanel";
 import { VersionPanel } from "@/components/settings/VersionPanel";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
@@ -107,6 +108,12 @@ const CATEGORIES: CategoryDef[] = [
     icon: Server,
     audience: "admin",
     sections: [
+      {
+        id: "users",
+        title: "사용자 추적",
+        description: "가입한 사용자의 활동 통계와 마지막 활동 시각",
+        render: () => <UserManagementPanel />,
+      },
       {
         id: "resources",
         title: "내부 자원 점검",
