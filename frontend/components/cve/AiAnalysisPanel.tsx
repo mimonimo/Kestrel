@@ -451,6 +451,7 @@ function RunningIndicator({ cveId }: { cveId: string }) {
 // ─────────────────────── Follow-up Q&A thread ─────────────────────────
 
 function FollowUpThread({ cveId, prior }: { cveId: string; prior: AiAnalysisResponse }) {
+  const { user } = useAuth();
   const { turns } = useQaHistory(cveId);
   const [question, setQuestion] = useState("");
   // 진행 중인 질문 텍스트 — 새로고침 / 컴포넌트 unmount 후에도 입력란
@@ -603,30 +604,55 @@ function FollowUpThread({ cveId, prior }: { cveId: string; prior: AiAnalysisResp
         </p>
       )}
 
-      <form onSubmit={onSubmit} className="flex items-start gap-2">
-        <textarea
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          rows={2}
-          maxLength={2000}
-          disabled={ask.isPending}
-          placeholder="예: 두 번째 페이로드의 WAF 우회 부분을 더 자세히 설명해 주세요"
-          className="flex-1 resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-[12px] text-neutral-900 placeholder:text-neutral-500 focus:border-violet-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-1 dark:text-neutral-100"
-        />
-        <Button
-          type="submit"
-          size="sm"
-          disabled={!question.trim() || ask.isPending}
-          className="shrink-0 rounded-full bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-violet-500 dark:hover:bg-violet-400"
-        >
-          {ask.isPending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Send className="h-3.5 w-3.5" />
-          )}
-          질문
-        </Button>
-      </form>
+      {user ? (
+        <form onSubmit={onSubmit} className="flex items-start gap-2">
+          <textarea
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            rows={2}
+            maxLength={2000}
+            disabled={ask.isPending}
+            placeholder="예: 두 번째 페이로드의 WAF 우회 부분을 더 자세히 설명해 주세요"
+            className="flex-1 resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-[12px] text-neutral-900 placeholder:text-neutral-500 focus:border-violet-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-1 dark:text-neutral-100"
+          />
+          <Button
+            type="submit"
+            size="sm"
+            disabled={!question.trim() || ask.isPending}
+            className="shrink-0 rounded-full bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-violet-500 dark:hover:bg-violet-400"
+          >
+            {ask.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Send className="h-3.5 w-3.5" />
+            )}
+            질문
+          </Button>
+        </form>
+      ) : (
+        <InlineLoginGate label="추가 질문" />
+      )}
     </section>
+  );
+}
+
+// 작은 인라인 게이트 — Q&A / 댓글 등 비로그인 사용자가 마주칠 작성 영역에서 공통 사용.
+function InlineLoginGate({ label }: { label: string }) {
+  const next =
+    typeof window !== "undefined"
+      ? `?next=${encodeURIComponent(window.location.pathname + window.location.search)}`
+      : "";
+  return (
+    <div className="flex flex-col items-start gap-1.5 rounded-md border border-dashed border-neutral-300 bg-neutral-50 p-3 text-[11px] dark:border-neutral-700 dark:bg-surface-1">
+      <span className="text-neutral-700 dark:text-neutral-300">
+        <span className="font-medium">{label}</span> 은 로그인 후 이용할 수 있어요.
+      </span>
+      <a
+        href={`/login${next}`}
+        className="inline-flex items-center gap-1 rounded-full bg-violet-600 px-2.5 py-1 font-medium text-white transition-colors hover:bg-violet-500 dark:bg-violet-500 dark:hover:bg-violet-400"
+      >
+        로그인하기
+      </a>
+    </div>
   );
 }

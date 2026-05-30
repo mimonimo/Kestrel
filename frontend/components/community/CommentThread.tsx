@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MessageSquare, Trash2 } from "lucide-react";
+import { LogIn, MessageSquare, Trash2 } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { recordCommentHistory } from "@/lib/comment-history";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -18,6 +20,7 @@ interface Props {
 
 export function CommentThread({ postId, vulnerabilityId }: Props) {
   const qc = useQueryClient();
+  const { user } = useAuth();
   const queryKey = ["community-comments", { postId, vulnerabilityId }];
 
   const list = useQuery({
@@ -72,41 +75,48 @@ export function CommentThread({ postId, vulnerabilityId }: Props) {
         </h2>
       </CardHeader>
       <CardContent className="space-y-5">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!content.trim()) return;
-            create.mutate();
-          }}
-          className="space-y-2"
-        >
-          <Input
-            placeholder="이름 (선택)"
-            value={authorName}
-            onChange={(e) => setAuthorName(e.target.value)}
-            maxLength={64}
+        {user ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!content.trim()) return;
+              create.mutate();
+            }}
+            className="space-y-2"
+          >
+            <Input
+              placeholder="이름 (선택)"
+              value={authorName}
+              onChange={(e) => setAuthorName(e.target.value)}
+              maxLength={64}
+            />
+            <textarea
+              className="block min-h-[80px] w-full rounded-lg border border-neutral-300 bg-white p-3 text-sm text-neutral-900 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100"
+              placeholder="의견을 남겨 주세요"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              maxLength={4000}
+            />
+            {error && (
+              <p className="text-xs text-rose-700 dark:text-rose-300">{error}</p>
+            )}
+            <div className="flex justify-end">
+              <Button
+                type="submit"
+                size="sm"
+                disabled={create.isPending || !content.trim()}
+                className="rounded-full bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50 dark:bg-sky-500 dark:hover:bg-sky-400"
+              >
+                {create.isPending ? "등록 중…" : "댓글 등록"}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <LoginGate
+            label="댓글 작성"
+            description="다른 사용자의 댓글은 자유롭게 읽을 수 있어요."
           />
-          <textarea
-            className="block min-h-[80px] w-full rounded-lg border border-neutral-300 bg-white p-3 text-sm text-neutral-900 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100"
-            placeholder="의견을 남겨 주세요"
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            maxLength={4000}
-          />
-          {error && (
-            <p className="text-xs text-rose-700 dark:text-rose-300">{error}</p>
-          )}
-          <div className="flex justify-end">
-            <Button
-              type="submit"
-              size="sm"
-              disabled={create.isPending || !content.trim()}
-              className="rounded-full bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50 dark:bg-sky-500 dark:hover:bg-sky-400"
-            >
-              {create.isPending ? "등록 중…" : "댓글 등록"}
-            </Button>
-          </div>
-        </form>
+        )}
 
         {list.isPending ? (
           <p className="text-xs text-neutral-600 dark:text-neutral-500">
@@ -153,5 +163,27 @@ export function CommentThread({ postId, vulnerabilityId }: Props) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function LoginGate({ label, description }: { label: string; description: string }) {
+  const next =
+    typeof window !== "undefined"
+      ? `?next=${encodeURIComponent(window.location.pathname + window.location.search)}`
+      : "";
+  return (
+    <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-neutral-300 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-surface-2">
+      <p className="text-sm text-neutral-800 dark:text-neutral-200">
+        <span className="font-medium">{label}</span> 은 로그인 후 이용할 수 있어요.
+      </p>
+      <p className="text-xs text-neutral-600 dark:text-neutral-400">{description}</p>
+      <Link
+        href={`/login${next}` as never}
+        className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-500 dark:bg-sky-500 dark:hover:bg-sky-400"
+      >
+        <LogIn className="h-3 w-3" />
+        로그인하기
+      </Link>
+    </div>
   );
 }

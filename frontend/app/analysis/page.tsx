@@ -46,6 +46,7 @@ import {
   useRunningAnalyses,
   type RunningEntry,
 } from "@/lib/analysis-running";
+import { useAuth } from "@/lib/auth-context";
 import { useBookmarks } from "@/lib/bookmarks";
 import { useCommentHistory } from "@/lib/comment-history";
 import { cn } from "@/lib/utils";
@@ -451,6 +452,7 @@ function RunningCard({ cveId, startedAt }: { cveId: string; startedAt: number })
 // ──────────────────────────────────────────────────────────────────────
 
 function CompareTab() {
+  const { user } = useAuth();
   const [entries, setEntries] = useState<AnalysisHistoryEntry[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [result, setResult] = useState<CompareResponse | null>(null);
@@ -533,6 +535,15 @@ function CompareTab() {
 
   const runCompareWith = async (cveIds: string[]) => {
     if (cveIds.length < 2 || cveIds.length > 5) return;
+    // 로그인 필수 — 비로그인이면 /login 으로 우회하고 자동 재호출 entry 도 정리.
+    if (!user) {
+      clearRunningCompare();
+      if (typeof window !== "undefined") {
+        const next = window.location.pathname + window.location.search;
+        window.location.href = `/login?next=${encodeURIComponent(next)}`;
+      }
+      return;
+    }
     setSelected(cveIds);
     setPending(true);
     setError(null);
@@ -554,15 +565,20 @@ function CompareTab() {
 
   // 새로고침/탭 전환 등으로 fetch 가 끊겼더라도 마운트 시 진행 중이던
   // cveIds 를 localStorage 에서 복원해 자동으로 다시 호출 — 사용자는
-  // "분석 하던게 사라졌다" 느끼지 않습니다.
+  // "분석 하던게 사라졌다" 느끼지 않습니다. 비로그인 사용자는 자동 호출 X
+  // (401 → 무한 reload 방지).
   useEffect(() => {
+    if (!user) {
+      clearRunningCompare();
+      return;
+    }
     const r = readRunningCompare();
     if (r && r.cveIds.length >= 2) {
       runCompareWith(r.cveIds);
     }
     // intentionally mount-only
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user]);
 
   const restoreFromHistory = (entry: CompareHistoryEntry) => {
     setSelected(entry.cveIds);
@@ -592,13 +608,14 @@ function CompareTab() {
               disabled={selected.length < 2 || pending}
               onClick={runCompare}
               className="rounded-full bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-violet-500 dark:hover:bg-violet-400"
+              title={user ? undefined : "로그인 후 실행할 수 있어요"}
             >
               {pending ? (
                 <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
               ) : (
                 <GitCompare className="mr-1 h-3.5 w-3.5" />
               )}
-              비교 분석 실행
+              {user ? "비교 분석 실행" : "로그인 후 비교"}
             </Button>
           </div>
         </header>

@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { MessageSquare, Plus, Eye, Hash, RefreshCw, Sparkles } from "lucide-react";
+import { MessageSquare, Plus, Eye, Hash, LogIn, RefreshCw, Sparkles } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { ErrorBox, FeedbackBoxButton } from "@/components/ui/feedback-box";
 import { NewPostModal } from "@/components/community/NewPostModal";
@@ -12,8 +13,21 @@ import { PostModal } from "@/components/community/PostModal";
 import { formatRelativeKo } from "@/lib/format";
 
 export default function CommunityPage() {
+  const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
+
+  // 새 글 작성 진입 — 비로그인이면 /login 우회.
+  const openNewPost = () => {
+    if (!user) {
+      if (typeof window !== "undefined") {
+        const next = window.location.pathname + window.location.search;
+        window.location.href = `/login?next=${encodeURIComponent(next)}`;
+      }
+      return;
+    }
+    setOpen(true);
+  };
   // null = no post open. Set to post.id when user clicks a list row.
   // Keeps scroll position + pagination + filter state intact.
   const [openPostId, setOpenPostId] = useState<number | null>(null);
@@ -34,9 +48,16 @@ export default function CommunityPage() {
             CVE 분석·완화 방안·실전 사례를 익명으로 공유합니다.
           </p>
         </div>
-        <Button onClick={() => setOpen(true)} className="gap-2">
-          <Plus className="h-4 w-4" />새 글
-        </Button>
+        {user ? (
+          <Button onClick={openNewPost} className="gap-2">
+            <Plus className="h-4 w-4" />새 글
+          </Button>
+        ) : (
+          <Button onClick={openNewPost} variant="outline" className="gap-2">
+            <LogIn className="h-4 w-4" />
+            로그인 후 작성
+          </Button>
+        )}
       </header>
 
       {isPending ? (
@@ -70,9 +91,16 @@ export default function CommunityPage() {
           <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
             CVE 분석, 완화 방안, 실전 사례 — 어떤 주제든 공유해 주세요.
           </p>
-          <Button onClick={() => setOpen(true)} className="mt-5 gap-2">
-            <Plus className="h-4 w-4" />첫 글 작성하기
-          </Button>
+          {user ? (
+            <Button onClick={openNewPost} className="mt-5 gap-2">
+              <Plus className="h-4 w-4" />첫 글 작성하기
+            </Button>
+          ) : (
+            <Button onClick={openNewPost} variant="outline" className="mt-5 gap-2">
+              <LogIn className="h-4 w-4" />
+              로그인하고 첫 글 작성하기
+            </Button>
+          )}
         </div>
       ) : (
         <ul className="space-y-3">
