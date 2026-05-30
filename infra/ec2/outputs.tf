@@ -21,3 +21,8 @@ output "data_volume_id" {
   value       = aws_ebs_volume.data.id
   description = "데이터 EBS — 모든 영속 데이터 보관."
 }
+
+output "route53_nameservers" {
+  value       = var.domain_name == "" ? [] : data.aws_route53_zone.this[0].name_servers
+  description = "외부 구매 도메인을 Route53 으로 위임할 때 등록기관(가비아 등) 에 입력할 네임서버 4개. Route53 직접 구매 시 자동 설정됨."
+}

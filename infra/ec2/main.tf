@@ -203,6 +203,35 @@ resource "aws_eip" "host" {
   tags     = { Name = "${local.name_prefix}-eip" }
 }
 
+# ── Route53 — 도메인이 설정된 경우만 A 레코드 자동 생성 ─────
+# 도메인 자체는 Route53 콘솔에서 구매 (또는 외부 구매 후 네임서버 위임).
+# Hosted zone 은 도메인 등록 시 Route53 이 자동 만들어 주므로 여기서는
+# data source 로 lookup 만 한다.
+data "aws_route53_zone" "this" {
+  count        = var.domain_name == "" ? 0 : 1
+  name         = var.domain_name
+  private_zone = false
+}
+
+resource "aws_route53_record" "apex" {
+  count   = var.domain_name == "" ? 0 : 1
+  zone_id = data.aws_route53_zone.this[0].zone_id
+  name    = var.domain_name
+  type    = "A"
+  ttl     = 300
+  records = [aws_eip.host.public_ip]
+}
+
+# www 도 같은 IP 로 (선택적 — 도메인 등록자가 www 도 원할 때).
+resource "aws_route53_record" "www" {
+  count   = var.domain_name == "" ? 0 : 1
+  zone_id = data.aws_route53_zone.this[0].zone_id
+  name    = "www.${var.domain_name}"
+  type    = "A"
+  ttl     = 300
+  records = [aws_eip.host.public_ip]
+}
+
 # ── AWS Backup — 데이터 EBS daily snapshot, 7일 보존 ─────────
 resource "aws_iam_role" "backup" {
   name = "${local.name_prefix}-backup-role"

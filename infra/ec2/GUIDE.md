@@ -62,14 +62,31 @@ export AWS_PROFILE=kestrel-deploy
 aws sts get-caller-identity  # 계정 ID 확인
 ```
 
-### 2) 변수 설정
+### 2) (선택) 도메인 구매
+
+**Route53 에서 직접 구매 — 가장 단순.**
+
+AWS Console → Route 53 → Registered domains → Register domain
+- `.com` (~$14/년), `.dev` (~$12/년), `.io` (~$39/년) 등
+- WHOIS privacy 자동 활성
+- 결제 후 5–15분 대기 → "Registered domains" 에 표시되면 완료
+- 같은 시점에 hosted zone 도 자동 생성됨 (Terraform 이 자동 lookup)
+
+**외부에서 구매한 경우** (가비아 등):
+1. 외부에서 .com 구매
+2. AWS Route 53 → Hosted zones → Create hosted zone → 도메인 입력
+3. `terraform apply` 후 `terraform output route53_nameservers` 에 표시되는 네임서버 4개를 외부 등록기관 콘솔의 네임서버 칸에 입력
+4. DNS 전파 (수십 분 ~ 수 시간)
+
+### 3) 변수 설정
 ```bash
 cd infra/ec2
 cp terraform.tfvars.example terraform.tfvars
-# 도메인 없으면 그대로. 본인 이메일·도메인 있으면 수정.
+# 도메인 샀으면 domain_name = "example.com" / tls_email = "you@example.com" 채움.
+# 안 샀으면 그대로 두면 nip.io 자동 사용.
 ```
 
-### 3) 첫 apply
+### 4) 첫 apply
 ```bash
 terraform init
 terraform plan -out tfplan
@@ -77,7 +94,7 @@ terraform apply tfplan
 # 5분 안에 완료. 마지막에 host_url 출력.
 ```
 
-### 4) 부팅 대기 (5–10분)
+### 5) 부팅 대기 (5–10분)
 EC2 가 켜진 뒤 `user_data` 가 자동으로 진행:
 - Docker / docker compose / git 설치
 - 데이터 EBS 마운트
@@ -92,7 +109,7 @@ aws ssm start-session --target $(terraform output -raw instance_id)
 sudo tail -f /var/log/kestrel-bootstrap.log
 ```
 
-### 5) 접속
+### 6) 접속
 ```bash
 terraform output host_url
 # https://1.2.3.4.nip.io  (도메인 미설정 시)
@@ -100,7 +117,7 @@ terraform output host_url
 ```
 브라우저로 열어서 회원가입 → `initial_admin_emails` 이메일이면 자동 admin.
 
-### 6) 일상 운영
+### 7) 일상 운영
 
 | 작업 | 방법 |
 |---|---|
@@ -111,7 +128,7 @@ terraform output host_url
 | 인스턴스 교체 | `terraform taint aws_instance.host && terraform apply` (데이터 EBS 자동 detach → 새 인스턴스에 attach → user_data 가 기존 데이터 그대로 mount) |
 | 비용 확인 | AWS Console → Billing → "이번 달 예상 비용" |
 
-### 7) 정리
+### 8) 정리
 
 전부 지우고 싶으면:
 ```bash
