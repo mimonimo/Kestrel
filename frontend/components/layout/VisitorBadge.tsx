@@ -22,15 +22,15 @@ export function VisitorBadge() {
   return (
     <span
       title={`일 방문자 ${today.toLocaleString()}명 · 누적 ${total.toLocaleString()}명`}
-      className="inline-flex items-center gap-1 text-[11px]"
+      className="inline-flex items-center gap-1.5 text-[13px] font-semibold"
     >
       <span className="text-emerald-700 dark:text-emerald-300">일 방문자</span>
-      <span className="tabular-nums font-medium text-emerald-700 dark:text-emerald-300">
+      <span className="tabular-nums text-emerald-700 dark:text-emerald-300">
         {isPending ? "—" : today.toLocaleString()}
       </span>
       <span className="text-neutral-400 dark:text-neutral-500">/</span>
       <span className="text-sky-700 dark:text-sky-300">누적 방문자</span>
-      <span className="tabular-nums font-medium text-sky-700 dark:text-sky-300">
+      <span className="tabular-nums text-sky-700 dark:text-sky-300">
         {isPending ? "—" : total.toLocaleString()}
       </span>
     </span>
