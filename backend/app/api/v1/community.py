@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_optional_user
 from app.core.database import get_db
-from app.models import Comment, Post, User
+from app.models import Comment, Post, User, UserRole
 from app.schemas.vulnerability import CamelModel
 
 router = APIRouter(prefix="/community", tags=["community"])
@@ -39,6 +39,17 @@ def _is_owner(row_user_id, row_client_id: str | None, *, me: User | None, x_clie
     if row_user_id is None and x_client_id and row_client_id == x_client_id:
         return True
     return False
+
+
+def _can_manage(row_user_id, row_client_id: str | None, *, me: User | None, x_client_id: str | None) -> bool:
+    """관리 권한 — 본인 글이거나 admin 이면 True. delete/patch 가드에 사용.
+
+    is_owner 와 분리한 이유: UI 의 "내 글" 표시는 owner 기준, 삭제 버튼은
+    관리 권한 기준. admin 이 남의 글을 자기 것처럼 표시하는 일을 막는다.
+    """
+    if me is not None and me.role == UserRole.ADMIN:
+        return True
+    return _is_owner(row_user_id, row_client_id, me=me, x_client_id=x_client_id)
 
 
 # ---- Schemas --------------------------------------------------------------
@@ -65,6 +76,8 @@ class PostOut(CamelModel):
     view_count: int
     comment_count: int
     is_owner: bool
+    # 삭제/수정 권한 — owner 이거나 admin 이면 True. UI 의 삭제 버튼 노출 기준.
+    can_manage: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -93,6 +106,7 @@ class CommentOut(CamelModel):
     vulnerability_id: UUID | None
     parent_id: int | None
     is_owner: bool
+    can_manage: bool = False
     created_at: datetime
 
 
@@ -147,6 +161,7 @@ async def list_posts(
             view_count=r.view_count,
             comment_count=comment_counts.get(r.id, 0),
             is_owner=_is_owner(r.user_id, r.client_id, me=me, x_client_id=x_client_id),
+            can_manage=_can_manage(r.user_id, r.client_id, me=me, x_client_id=x_client_id),
             created_at=r.created_at,
             updated_at=r.updated_at,
         )
@@ -187,6 +202,7 @@ async def create_post(
         view_count=post.view_count,
         comment_count=0,
         is_owner=True,
+        can_manage=True,
         created_at=post.created_at,
         updated_at=post.updated_at,
     )
@@ -219,6 +235,7 @@ async def get_post(
         view_count=post.view_count,
         comment_count=cnt,
         is_owner=_is_owner(post.user_id, post.client_id, me=me, x_client_id=x_client_id),
+        can_manage=_can_manage(post.user_id, post.client_id, me=me, x_client_id=x_client_id),
         created_at=post.created_at,
         updated_at=post.updated_at,
     )
@@ -235,8 +252,8 @@ async def update_post(
     post = (await db.execute(select(Post).where(Post.id == post_id))).scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="post not found")
-    if not _is_owner(post.user_id, post.client_id, me=me, x_client_id=x_client_id):
-        raise HTTPException(status_code=403, detail="not the author")
+    if not _can_manage(post.user_id, post.client_id, me=me, x_client_id=x_client_id):
+        raise HTTPException(status_code=403, detail="not allowed")
 
     if body.title is not None:
         post.title = body.title
@@ -256,7 +273,8 @@ async def update_post(
         vulnerability_id=post.vulnerability_id,
         view_count=post.view_count,
         comment_count=cnt,
-        is_owner=True,
+        is_owner=_is_owner(post.user_id, post.client_id, me=me, x_client_id=x_client_id),
+        can_manage=True,  # patch 통과했으므로 항상 관리 권한
         created_at=post.created_at,
         updated_at=post.updated_at,
     )
@@ -272,8 +290,8 @@ async def delete_post(
     post = (await db.execute(select(Post).where(Post.id == post_id))).scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="post not found")
-    if not _is_owner(post.user_id, post.client_id, me=me, x_client_id=x_client_id):
-        raise HTTPException(status_code=403, detail="not the author")
+    if not _can_manage(post.user_id, post.client_id, me=me, x_client_id=x_client_id):
+        raise HTTPException(status_code=403, detail="not allowed")
     await db.delete(post)
     await db.commit()
 
@@ -309,6 +327,7 @@ async def list_comments(
             vulnerability_id=c.vulnerability_id,
             parent_id=c.parent_id,
             is_owner=_is_owner(c.user_id, c.client_id, me=me, x_client_id=x_client_id),
+            can_manage=_can_manage(c.user_id, c.client_id, me=me, x_client_id=x_client_id),
             created_at=c.created_at,
         )
         for c in rows
@@ -351,6 +370,7 @@ async def create_comment(
         vulnerability_id=comment.vulnerability_id,
         parent_id=comment.parent_id,
         is_owner=True,
+        can_manage=True,
         created_at=comment.created_at,
     )
 
@@ -367,7 +387,7 @@ async def delete_comment(
     ).scalar_one_or_none()
     if not comment:
         raise HTTPException(status_code=404, detail="comment not found")
-    if not _is_owner(comment.user_id, comment.client_id, me=me, x_client_id=x_client_id):
-        raise HTTPException(status_code=403, detail="not the author")
+    if not _can_manage(comment.user_id, comment.client_id, me=me, x_client_id=x_client_id):
+        raise HTTPException(status_code=403, detail="not allowed")
     await db.delete(comment)
     await db.commit()

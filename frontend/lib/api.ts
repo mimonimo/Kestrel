@@ -1203,6 +1203,8 @@ export interface CommunityPost {
   viewCount: number;
   commentCount: number;
   isOwner: boolean;
+  // 본인 글이거나 admin 이면 true — 삭제/수정 버튼 노출 기준 (PR 10-CO follow-up).
+  canManage: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -1222,6 +1224,7 @@ export interface CommunityComment {
   vulnerabilityId: string | null;
   parentId: number | null;
   isOwner: boolean;
+  canManage: boolean;
   createdAt: string;
 }
 

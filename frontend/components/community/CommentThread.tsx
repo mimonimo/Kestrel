@@ -140,12 +140,16 @@ export function CommentThread({ postId, vulnerabilityId }: Props) {
                     <span className="mx-1.5">·</span>
                     <span>{formatRelativeKo(c.createdAt)}</span>
                   </div>
-                  {c.isOwner && (
+                  {c.canManage && (
                     <button
                       type="button"
                       onClick={() => {
-                        if (confirm("이 댓글을 삭제할까요?")) remove.mutate(c.id);
+                        const msg = c.isOwner
+                          ? "이 댓글을 삭제할까요?"
+                          : "관리자 권한으로 이 댓글을 삭제할까요?";
+                        if (confirm(msg)) remove.mutate(c.id);
                       }}
+                      title={c.isOwner ? "댓글 삭제" : "관리자 권한으로 삭제"}
                       className="inline-flex items-center gap-1 rounded-full p-1 text-neutral-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-500/15 dark:hover:text-rose-300"
                       aria-label="댓글 삭제"
                     >

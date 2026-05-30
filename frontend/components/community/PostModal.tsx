@@ -130,13 +130,21 @@ export function PostModal({ postId, onClose }: Props) {
               {data.content}
             </div>
 
-            {data.isOwner && (
-              <div className="mt-6 flex justify-end">
+            {data.canManage && (
+              <div className="mt-6 flex items-center justify-end gap-2">
+                {!data.isOwner && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
+                    관리자 권한
+                  </span>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    if (confirm("이 글을 삭제하시겠습니까?")) remove.mutate();
+                    const msg = data.isOwner
+                      ? "이 글을 삭제하시겠습니까?"
+                      : "관리자 권한으로 이 글을 삭제하시겠습니까?";
+                    if (confirm(msg)) remove.mutate();
                   }}
                   disabled={remove.isPending}
                   className="gap-1 border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/40"
