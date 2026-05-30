@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Database,
   Key,
+  Lock,
   Server,
   Sparkles,
   User,
@@ -17,6 +18,7 @@ import { ClaudeIntegrationPanel } from "@/components/settings/ClaudeIntegrationP
 import { MitreBackfillPanel } from "@/components/settings/MitreBackfillPanel";
 import { ThemeSwitcher } from "@/components/settings/ThemeSwitcher";
 import { VersionPanel } from "@/components/settings/VersionPanel";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
 interface SectionDef {
@@ -30,6 +32,9 @@ interface CategoryDef {
   id: string;
   title: string;
   icon: typeof User;
+  // 'all'   = 로그인 사용자 누구나
+  // 'admin' = 관리자만 (사이드바/본문 모두 숨김)
+  audience: "all" | "admin";
   sections: SectionDef[];
 }
 
@@ -40,6 +45,7 @@ const CATEGORIES: CategoryDef[] = [
     id: "personal",
     title: "개인 설정",
     icon: User,
+    audience: "all",
     sections: [
       {
         id: "theme",
@@ -59,11 +65,12 @@ const CATEGORIES: CategoryDef[] = [
     id: "ingestion",
     title: "데이터 수집",
     icon: Key,
+    audience: "admin",
     sections: [
       {
         id: "external-keys",
         title: "외부 데이터 소스 API 키",
-        description: "선택 입력 — 등록하면 수집 속도가 빨라집니다",
+        description: "운영자 전용 — 등록한 키로 모든 사용자의 수집이 동작합니다",
         render: () => (
           <div className="space-y-4">
             <ApiKeyField settingKey="nvdApiKey" />
@@ -83,6 +90,9 @@ const CATEGORIES: CategoryDef[] = [
     id: "ai",
     title: "AI 분석",
     icon: Sparkles,
+    // Phase 2 에서 ai_credentials.user_id FK 도입 전까지 시스템 단일 credential —
+    // 일반 사용자가 와도 백엔드가 403 만 줄 뿐이라 일단 admin 만 표시.
+    audience: "admin",
     sections: [
       {
         id: "ai-analysis",
@@ -96,6 +106,7 @@ const CATEGORIES: CategoryDef[] = [
     id: "system",
     title: "시스템",
     icon: Server,
+    audience: "admin",
     sections: [
       {
         id: "resources",
@@ -144,11 +155,37 @@ const CATEGORIES: CategoryDef[] = [
   },
 ];
 
-const ALL_SECTION_IDS = CATEGORIES.flatMap((c) => c.sections.map((s) => s.id));
-
 export function SettingsLayout() {
-  const [active, setActive] = useState<string>(ALL_SECTION_IDS[0]);
+  const { user, loading: authLoading } = useAuth();
+
+  // 비로그인은 설정 페이지 자체를 못 봄 — 외부 키나 자원 점검 등 운영
+  // 정보가 노출되면 안 되므로 /login 으로 즉시 우회.
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user && typeof window !== "undefined") {
+      window.location.href = `/login?next=${encodeURIComponent("/settings")}`;
+    }
+  }, [user, authLoading]);
+
+  // 실제 렌더할 카테고리 — 일반 사용자에겐 admin 전용을 통째로 숨김.
+  const visibleCategories = useMemo(
+    () =>
+      CATEGORIES.filter((c) => c.audience === "all" || user?.isAdmin === true),
+    [user?.isAdmin],
+  );
+  const visibleSectionIds = useMemo(
+    () => visibleCategories.flatMap((c) => c.sections.map((s) => s.id)),
+    [visibleCategories],
+  );
+
+  const [active, setActive] = useState<string>("");
   const observer = useRef<IntersectionObserver | null>(null);
+
+  // 가시 섹션이 바뀌면 active 가 첫 항목으로 보정 (admin → 비admin 전환 등).
+  useEffect(() => {
+    if (!visibleSectionIds.length) return;
+    setActive((prev) => (visibleSectionIds.includes(prev) ? prev : visibleSectionIds[0]));
+  }, [visibleSectionIds]);
 
   // Scroll-spy: highlight the section closest to the top of the viewport.
   // Uses a band near the top (rootMargin top = -64px for sticky header,
@@ -161,7 +198,7 @@ export function SettingsLayout() {
   // the document footer has enough room to scroll the last section's
   // top into the 40% observation band.
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || visibleSectionIds.length === 0) return;
     observer.current?.disconnect();
     const visible = new Map<string, number>();
     const obs = new IntersectionObserver(
@@ -174,7 +211,7 @@ export function SettingsLayout() {
           }
         });
         if (visible.size === 0) return;
-        const orderIndex = (id: string) => ALL_SECTION_IDS.indexOf(id);
+        const orderIndex = (id: string) => visibleSectionIds.indexOf(id);
         const next = [...visible.keys()].sort(
           (a, b) => orderIndex(a) - orderIndex(b),
         )[0];
@@ -185,19 +222,19 @@ export function SettingsLayout() {
         threshold: [0, 0.1, 0.5, 1],
       },
     );
-    ALL_SECTION_IDS.forEach((id) => {
+    visibleSectionIds.forEach((id) => {
       const el = document.getElementById(id);
       if (el) obs.observe(el);
     });
     observer.current = obs;
     return () => obs.disconnect();
-  }, []);
+  }, [visibleSectionIds]);
 
   // Initial hash-based jump on mount (if user landed via /settings#assets etc).
   useEffect(() => {
     if (typeof window === "undefined") return;
     const hash = window.location.hash.slice(1);
-    if (hash && ALL_SECTION_IDS.includes(hash)) {
+    if (hash && visibleSectionIds.includes(hash)) {
       setActive(hash);
       // Defer scroll until layout settles.
       window.setTimeout(() => {
@@ -206,7 +243,7 @@ export function SettingsLayout() {
           ?.scrollIntoView({ behavior: "instant" as ScrollBehavior, block: "start" });
       }, 50);
     }
-  }, []);
+  }, [visibleSectionIds]);
 
   const handleNavClick = (id: string) => {
     setActive(id);
@@ -216,14 +253,31 @@ export function SettingsLayout() {
   };
 
   const sections = useMemo(
-    () => CATEGORIES.flatMap((c) => c.sections),
-    [],
+    () => visibleCategories.flatMap((c) => c.sections),
+    [visibleCategories],
   );
+
+  // auth 결정 전 / 비로그인 우회 중 — 빈 placeholder 만 렌더.
+  if (authLoading || !user) {
+    return (
+      <div className="mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-7xl items-center justify-center px-6 py-12">
+        <div className="inline-flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
+          <Lock className="h-4 w-4" />
+          로그인 후 이용할 수 있는 화면입니다.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto min-h-[calc(100vh-3.5rem)] max-w-7xl px-6 py-12">
-      <header className="mb-8">
-        <h1 className="text-2xl font-bold text-neutral-100">설정</h1>
+      <header className="mb-8 flex items-end justify-between gap-3">
+        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">설정</h1>
+        {user.isAdmin && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
+            관리자 모드
+          </span>
+        )}
       </header>
 
       <div className="grid gap-8 lg:grid-cols-[220px_1fr]">
@@ -233,7 +287,7 @@ export function SettingsLayout() {
           className="lg:sticky lg:top-20 lg:self-start"
         >
           <ul className="space-y-5">
-            {CATEGORIES.map((cat) => {
+            {visibleCategories.map((cat) => {
               const Icon = cat.icon;
               const hasActive = cat.sections.some((s) => s.id === active);
               return (

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { Route } from "next";
-import { Bird, Settings } from "lucide-react";
+import { Bird } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -61,20 +61,10 @@ export function Header() {
           </a>
           <span className="mx-1 hidden h-5 w-px bg-neutral-200 dark:bg-neutral-800 sm:inline-block" />
           <NotificationBell />
-          <Link
-            href="/settings"
-            className={cn(
-              "flex h-8 items-center gap-1.5 rounded-full px-3 transition-colors",
-              pathname.startsWith("/settings")
-                ? "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
-                : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100",
-            )}
-            aria-label="설정"
-          >
-            <Settings className="h-4 w-4" />
-            <span className="hidden sm:inline">설정</span>
-          </Link>
           <span className="mx-1 h-5 w-px bg-neutral-200 dark:bg-neutral-800" />
+          {/* 설정 진입점은 사용자 메뉴 안의 "내 설정" 한 곳으로 통합.
+              비로그인은 설정에 접근할 수 없으니 헤더에 별도 아이콘을 둘
+              이유가 없음. */}
           <UserMenu />
         </nav>
       </div>
