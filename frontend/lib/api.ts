@@ -306,6 +306,13 @@ export const api = {
       method: "DELETE",
       headers: clientHeaders(),
     }),
+  // ─── 방문자 카운터 (PR 10-CS) ─────────────────────────────────
+  // 호출 자체가 자신을 카운트 (X-Client-Id 또는 IP 기반 unique). public.
+  getVisitors: () =>
+    request<{ today: number; total: number }>(`/stats/visitors`, {
+      headers: clientHeaders(),
+    }),
+
   // ─── 외부 데이터 소스 키 (PR 10-CQ) ───────────────────────────
   // GET 은 마스킹된 값만 (`****1234`). PUT 으로 저장·삭제.
   getExternalKeys: () =>
