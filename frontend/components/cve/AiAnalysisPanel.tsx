@@ -297,14 +297,16 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
               <Download className="h-3 w-3" />
               리포트 다운로드
             </button>
-            <button
-              type="button"
-              onClick={() => runAnalysis()}
-              className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
-            >
-              <RotateCcw className="h-3 w-3" />
-              다시 분석
-            </button>
+            {!!user && (
+              <button
+                type="button"
+                onClick={() => runAnalysis()}
+                className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
+              >
+                <RotateCcw className="h-3 w-3" />
+                다시 분석
+              </button>
+            )}
           </div>
         )}
       </CardHeader>
@@ -316,15 +318,19 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
               한 번에 받아 보세요. 보안 운영팀이 그대로 점검·티켓팅에 쓸 수 있는
               형태로 정리해 드립니다.
             </p>
-            <Button
-              type="button"
-              onClick={() => runAnalysis()}
-              size="md"
-              className="rounded-full bg-violet-600 text-white shadow-sm shadow-violet-600/20 hover:bg-violet-700 hover:shadow-md hover:shadow-violet-600/30 dark:bg-violet-500 dark:text-white dark:hover:bg-violet-400"
-            >
-              <Sparkles className="mr-1.5 h-4 w-4" />
-              AI 심층 분석 요청
-            </Button>
+            {!authLoading && !user ? (
+              <AiAnalysisLoginGate cveId={cveId} />
+            ) : (
+              <Button
+                type="button"
+                onClick={() => runAnalysis()}
+                size="md"
+                className="rounded-full bg-violet-600 text-white shadow-sm shadow-violet-600/20 hover:bg-violet-700 hover:shadow-md hover:shadow-violet-600/30 dark:bg-violet-500 dark:text-white dark:hover:bg-violet-400"
+              >
+                <Sparkles className="mr-1.5 h-4 w-4" />
+                AI 심층 분석 요청
+              </Button>
+            )}
           </div>
         )}
 
@@ -633,6 +639,31 @@ function FollowUpThread({ cveId, prior }: { cveId: string; prior: AiAnalysisResp
         <InlineLoginGate label="추가 질문" />
       )}
     </section>
+  );
+}
+
+// AI 심층 분석 미실행 상태에서 비로그인 사용자에게 보여줄 큰 게이트.
+// 단순히 버튼을 숨기는 대신 "왜 로그인이 필요한지" 한 줄 설명까지 — 보안
+// 운영자가 분석을 본인 계정에 영구 저장한다는 가치 제안을 함께 전달.
+function AiAnalysisLoginGate({ cveId }: { cveId: string }) {
+  const next = encodeURIComponent(`/cves/${cveId}`);
+  return (
+    <div className="flex w-full flex-col items-start gap-2 rounded-lg border border-dashed border-violet-300 bg-violet-50/60 p-4 dark:border-violet-500/40 dark:bg-violet-500/10">
+      <p className="text-sm text-neutral-900 dark:text-neutral-100">
+        <span className="font-medium">AI 심층 분석</span> 은 로그인 후 이용할 수 있어요.
+      </p>
+      <p className="text-xs text-neutral-700 dark:text-neutral-300">
+        분석 결과가 본인 계정에 저장돼 언제든 다시 열어볼 수 있고, 커뮤니티에
+        공개하면 다른 보안 운영자에게도 도움이 됩니다.
+      </p>
+      <a
+        href={`/login?next=${next}`}
+        className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-500 dark:bg-violet-500 dark:hover:bg-violet-400"
+      >
+        <Sparkles className="h-3 w-3" />
+        로그인하고 분석하기
+      </a>
+    </div>
   );
 }
 
