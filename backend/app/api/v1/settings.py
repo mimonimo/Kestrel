@@ -14,18 +14,17 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import Field
-from sqlalchemy import func, select
+from sqlalchemy import select, update as sqla_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import require_admin
+from app.api.v1.deps import get_current_user
 from app.core.database import get_db
-from app.models import AiCredential, AppSettings
+from app.models import AiCredential, User
 from app.schemas.vulnerability import CamelModel
 
-# AI credential 관리 라우트 전반은 admin only — Phase 2 에서 user-scoped 로 분리 예정.
-# 그동안은 모든 사용자가 동일한 active credential 을 공유하는데, 분석 실행 자체에는
-# 로그인이 필요해서 credential 자체 유출은 없다. credential 등록·수정은 운영자만.
-router = APIRouter(prefix="/settings", tags=["settings"], dependencies=[Depends(require_admin)])
+# PR 10-CP2: 사용자별 분리. 모든 라우트가 로그인 사용자 본인의 AI credential 만
+# 읽고 쓴다. admin 도 동일 — 본인이 등록한 credential 만 본다.
+router = APIRouter(prefix="/settings", tags=["settings"], dependencies=[Depends(get_current_user)])
 
 
 class CredentialOut(CamelModel):
@@ -65,18 +64,19 @@ class CredentialUpdate(CamelModel):
     base_url: str | None = Field(default=None, max_length=256)
 
 
-async def _load_settings_row(db: AsyncSession) -> AppSettings:
-    row = (
-        await db.execute(select(AppSettings).where(AppSettings.id == 1))
+async def _active_for(db: AsyncSession, user_id) -> AiCredential | None:
+    """본인의 is_active credential."""
+    return (
+        await db.execute(
+            select(AiCredential).where(
+                AiCredential.user_id == user_id,
+                AiCredential.is_active.is_(True),
+            )
+        )
     ).scalar_one_or_none()
-    if row is None:
-        row = AppSettings(id=1)
-        db.add(row)
-        await db.flush()
-    return row
 
 
-def _to_out(cred: AiCredential, active_id: int | None) -> CredentialOut:
+def _to_out(cred: AiCredential) -> CredentialOut:
     return CredentialOut(
         id=cred.id,
         label=cred.label,
@@ -84,25 +84,19 @@ def _to_out(cred: AiCredential, active_id: int | None) -> CredentialOut:
         model=cred.model,
         base_url=cred.base_url,
         has_api_key=bool(cred.api_key),
-        is_active=(active_id is not None and active_id == cred.id),
+        is_active=bool(cred.is_active),
     )
 
 
 @router.get("", response_model=SettingsOut, response_model_by_alias=True)
-async def get_settings(db: AsyncSession = Depends(get_db)) -> SettingsOut:
-    row = await _load_settings_row(db)
-    active: CredentialOut | None = None
-    if row.active_credential_id is not None:
-        cred = (
-            await db.execute(
-                select(AiCredential).where(AiCredential.id == row.active_credential_id)
-            )
-        ).scalar_one_or_none()
-        if cred is not None:
-            active = _to_out(cred, row.active_credential_id)
+async def get_settings(
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SettingsOut:
+    active = await _active_for(db, me.id)
     return SettingsOut(
-        active_credential_id=row.active_credential_id,
-        active=active,
+        active_credential_id=active.id if active else None,
+        active=_to_out(active) if active else None,
     )
 
 
@@ -111,16 +105,21 @@ async def get_settings(db: AsyncSession = Depends(get_db)) -> SettingsOut:
     response_model=CredentialListOut,
     response_model_by_alias=True,
 )
-async def list_credentials(db: AsyncSession = Depends(get_db)) -> CredentialListOut:
-    row = await _load_settings_row(db)
+async def list_credentials(
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CredentialListOut:
     items = (
-        (await db.execute(select(AiCredential).order_by(AiCredential.created_at)))
-        .scalars()
-        .all()
-    )
+        await db.execute(
+            select(AiCredential)
+            .where(AiCredential.user_id == me.id)
+            .order_by(AiCredential.created_at)
+        )
+    ).scalars().all()
+    active = next((c for c in items if c.is_active), None)
     return CredentialListOut(
-        items=[_to_out(c, row.active_credential_id) for c in items],
-        active_credential_id=row.active_credential_id,
+        items=[_to_out(c) for c in items],
+        active_credential_id=active.id if active else None,
     )
 
 
@@ -132,30 +131,40 @@ async def list_credentials(db: AsyncSession = Depends(get_db)) -> CredentialList
 )
 async def create_credential(
     body: CredentialCreate,
+    me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CredentialOut:
     cred = AiCredential(
+        user_id=me.id,
         label=body.label.strip(),
         provider=body.provider.strip().lower(),
         model=body.model.strip(),
         api_key=body.api_key,
         base_url=(body.base_url or "").strip() or None,
+        is_active=False,
     )
     db.add(cred)
     await db.flush()
 
-    settings_row = await _load_settings_row(db)
-    # Auto-activate when it's the first credential, or when the caller asks.
-    total = (
-        await db.execute(select(func.count()).select_from(AiCredential))
-    ).scalar_one()
-    if body.activate or settings_row.active_credential_id is None or total == 1:
-        settings_row.active_credential_id = cred.id
+    # 본인 첫 credential 이거나 명시적으로 activate=true 면 자동 활성화.
+    existing_count = len(
+        (
+            await db.execute(
+                select(AiCredential.id).where(AiCredential.user_id == me.id)
+            )
+        ).all()
+    )
+    if body.activate or existing_count == 1:
+        await db.execute(
+            sqla_update(AiCredential)
+            .where(AiCredential.user_id == me.id, AiCredential.id != cred.id)
+            .values(is_active=False)
+        )
+        cred.is_active = True
 
     await db.commit()
     await db.refresh(cred)
-    await db.refresh(settings_row)
-    return _to_out(cred, settings_row.active_credential_id)
+    return _to_out(cred)
 
 
 @router.patch(
@@ -166,10 +175,15 @@ async def create_credential(
 async def update_credential(
     cred_id: int,
     body: CredentialUpdate,
+    me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CredentialOut:
     cred = (
-        await db.execute(select(AiCredential).where(AiCredential.id == cred_id))
+        await db.execute(
+            select(AiCredential).where(
+                AiCredential.id == cred_id, AiCredential.user_id == me.id
+            )
+        )
     ).scalar_one_or_none()
     if cred is None:
         raise HTTPException(status_code=404, detail="해당 AI 키를 찾을 수 없습니다.")
@@ -186,10 +200,9 @@ async def update_credential(
         cleaned = (body.base_url or "").strip()
         cred.base_url = cleaned or None
 
-    settings_row = await _load_settings_row(db)
     await db.commit()
     await db.refresh(cred)
-    return _to_out(cred, settings_row.active_credential_id)
+    return _to_out(cred)
 
 
 @router.delete(
@@ -198,15 +211,19 @@ async def update_credential(
 )
 async def delete_credential(
     cred_id: int,
+    me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     cred = (
-        await db.execute(select(AiCredential).where(AiCredential.id == cred_id))
+        await db.execute(
+            select(AiCredential).where(
+                AiCredential.id == cred_id, AiCredential.user_id == me.id
+            )
+        )
     ).scalar_one_or_none()
     if cred is None:
         raise HTTPException(status_code=404, detail="해당 AI 키를 찾을 수 없습니다.")
     await db.delete(cred)
-    # active_credential_id FK is ON DELETE SET NULL — no extra work needed.
     await db.commit()
 
 
@@ -217,21 +234,27 @@ async def delete_credential(
 )
 async def activate_credential(
     cred_id: int,
+    me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SettingsOut:
     cred = (
-        await db.execute(select(AiCredential).where(AiCredential.id == cred_id))
+        await db.execute(
+            select(AiCredential).where(
+                AiCredential.id == cred_id, AiCredential.user_id == me.id
+            )
+        )
     ).scalar_one_or_none()
     if cred is None:
         raise HTTPException(status_code=404, detail="해당 AI 키를 찾을 수 없습니다.")
-    settings_row = await _load_settings_row(db)
-    settings_row.active_credential_id = cred.id
-    await db.commit()
-    await db.refresh(settings_row)
-    return SettingsOut(
-        active_credential_id=settings_row.active_credential_id,
-        active=_to_out(cred, settings_row.active_credential_id),
+    await db.execute(
+        sqla_update(AiCredential)
+        .where(AiCredential.user_id == me.id, AiCredential.id != cred.id)
+        .values(is_active=False)
     )
+    cred.is_active = True
+    await db.commit()
+    await db.refresh(cred)
+    return SettingsOut(active_credential_id=cred.id, active=_to_out(cred))
 
 
 class CredentialPingResponse(CamelModel):
@@ -252,7 +275,10 @@ class CredentialPingResponse(CamelModel):
     response_model=CredentialPingResponse,
     response_model_by_alias=True,
 )
-async def ping_credential(db: AsyncSession = Depends(get_db)) -> CredentialPingResponse:
+async def ping_credential(
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CredentialPingResponse:
     """One-shot connectivity test against the *active* AI credential.
 
     Drives the "테스트" button in AiSettingsForm so the user gets an
@@ -266,7 +292,7 @@ async def ping_credential(db: AsyncSession = Depends(get_db)) -> CredentialPingR
     """
     from app.services.ai_analyzer import ping_active_credential
 
-    res = await ping_active_credential(db)
+    res = await ping_active_credential(db, user_id=me.id)
     return CredentialPingResponse(
         ok=bool(res.get("ok")),
         provider=res.get("provider"),

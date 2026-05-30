@@ -94,7 +94,7 @@ async def analyze_cve(
     vuln = await db.scalar(select(Vulnerability).where(Vulnerability.cve_id == cve_id))
     if vuln is None:
         raise HTTPException(status_code=404, detail=f"{cve_id} not found")
-    result = await analyze_vulnerability(db, vuln)
+    result = await analyze_vulnerability(db, vuln, user_id=user.id)
 
     # 분석 본문을 마크다운으로 직렬화 후 영구 저장.
     md_lines = [

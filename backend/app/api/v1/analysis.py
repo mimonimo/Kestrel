@@ -70,6 +70,7 @@ class AskResponse(CamelModel):
 )
 async def ask_followup(
     body: Annotated[AskRequest, Body()],
+    me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AskResponse:
     vuln = await db.scalar(
@@ -93,6 +94,7 @@ async def ask_followup(
         prior_obj,
         history_pairs,
         body.question,
+        user_id=me.id,
     )
     return AskResponse(answer=answer)
 
@@ -124,6 +126,7 @@ class CompareResponse(CamelModel):
 )
 async def compare(
     body: Annotated[CompareRequest, Body()],
+    me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CompareResponse:
     # Dedupe while preserving order so the LLM sees the same sequence
@@ -149,7 +152,7 @@ async def compare(
         )
 
     vulns = [by_id[c] for c in ordered]
-    result = await compare_vulnerabilities(db, vulns)
+    result = await compare_vulnerabilities(db, vulns, user_id=me.id)
     return CompareResponse(
         summary=result.summary,
         common_pattern=result.common_pattern,

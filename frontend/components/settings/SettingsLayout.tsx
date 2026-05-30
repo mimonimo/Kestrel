@@ -90,14 +90,13 @@ const CATEGORIES: CategoryDef[] = [
     id: "ai",
     title: "AI 분석",
     icon: Sparkles,
-    // Phase 2 에서 ai_credentials.user_id FK 도입 전까지 시스템 단일 credential —
-    // 일반 사용자가 와도 백엔드가 403 만 줄 뿐이라 일단 admin 만 표시.
-    audience: "admin",
+    // PR 10-CP2 이후 user-scoped — 일반 사용자도 자기 Claude credential 등록 가능.
+    audience: "all",
     sections: [
       {
         id: "ai-analysis",
         title: "Claude 연동",
-        description: "AI 분석에 사용할 인증과 모델 선택",
+        description: "AI 분석에 사용할 본인 Claude 계정과 모델 — 사용자별로 분리됩니다",
         render: () => <ClaudeIntegrationPanel />,
       },
     ],

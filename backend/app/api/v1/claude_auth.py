@@ -53,9 +53,10 @@ from pydantic.alias_generators import to_camel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import get_current_user
 from app.core.database import get_db
 from app.core.logging import get_logger
-from app.models import AiCredential, AppSettings
+from app.models import AiCredential, User
 
 router = APIRouter(prefix="/settings/claude-auth", tags=["claude-auth"])
 log = get_logger(__name__)
@@ -132,9 +133,22 @@ class CredentialsIn(_CamelOut):
 # Login session registry (in-memory; single backend instance assumed)
 # ---------------------------------------------------------------------------
 
-_CLAUDE_HOME = Path("/home/app/.claude")
-_CRED_FILE = _CLAUDE_HOME / ".credentials.json"
+_CLAUDE_HOME_BASE = Path("/home/app/.claude")
+# 사용자별 credentials 디렉토리 — user.id 를 디렉토리명으로 사용해 완전 분리.
+# 외부 시스템 (Claude CLI) 가 본인의 credentials 만 보도록 HOME 환경변수도 분기.
+_CLAUDE_USERS_BASE = _CLAUDE_HOME_BASE / "users"
 _SESSION_TTL_SECONDS = 600  # 10 min — caps a forgotten OAuth tab
+
+
+def _user_claude_home(user_id) -> Path:
+    """주어진 사용자 전용 ``.claude`` 디렉토리. 자동 생성."""
+    p = _CLAUDE_USERS_BASE / str(user_id) / ".claude"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _user_cred_file(user_id) -> Path:
+    return _user_claude_home(user_id) / ".credentials.json"
 
 
 @dataclass
@@ -208,19 +222,20 @@ def _build_authorize_url(challenge: str, state: str) -> str:
 # Credentials file inspection
 # ---------------------------------------------------------------------------
 
-def _read_credentials() -> dict[str, Any] | None:
-    if not _CRED_FILE.exists():
+def _read_credentials(user_id) -> dict[str, Any] | None:
+    f = _user_cred_file(user_id)
+    if not f.exists():
         return None
     try:
-        return json.loads(_CRED_FILE.read_text())
+        return json.loads(f.read_text())
     except Exception:
         return None
 
 
-def _write_credentials(payload: dict[str, Any]) -> None:
-    _CLAUDE_HOME.mkdir(parents=True, exist_ok=True)
-    _CRED_FILE.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
-    os.chmod(_CRED_FILE, 0o600)
+def _write_credentials(user_id, payload: dict[str, Any]) -> None:
+    f = _user_cred_file(user_id)
+    f.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+    os.chmod(f, 0o600)
 
 
 def _claude_version() -> str | None:
@@ -268,7 +283,7 @@ def _normalize_expires_at(raw: Any) -> int | None:
     return v
 
 
-def _migrate_credentials_if_needed(creds: dict[str, Any]) -> dict[str, Any]:
+def _migrate_credentials_if_needed(user_id, creds: dict[str, Any]) -> dict[str, Any]:
     """Rewrite ``.credentials.json`` if its expiresAt is in seconds.
 
     The CLI itself uses ``Date.now()`` (ms) for comparison, so a seconds
@@ -289,7 +304,7 @@ def _migrate_credentials_if_needed(creds: dict[str, Any]) -> dict[str, Any]:
     if 0 < v < 100_000_000_000:
         oauth["expiresAt"] = v * 1000
         try:
-            _write_credentials(creds)
+            _write_credentials(user_id, creds)
             log.info("claude_auth.expires_at_migrated_to_ms", from_seconds=v)
         except OSError as e:
             log.warning("claude_auth.migration_write_failed", error=str(e))
@@ -297,8 +312,8 @@ def _migrate_credentials_if_needed(creds: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/status", response_model=StatusOut, response_model_by_alias=True)
-async def status_route() -> StatusOut:
-    creds = _read_credentials()
+async def status_route(me: User = Depends(get_current_user)) -> StatusOut:
+    creds = _read_credentials(me.id)
     cli_version = _claude_version()
     if creds is None:
         return StatusOut(
@@ -306,7 +321,7 @@ async def status_route() -> StatusOut:
             cli_present=cli_version is not None,
             cli_version=cli_version,
         )
-    creds = _migrate_credentials_if_needed(creds)
+    creds = _migrate_credentials_if_needed(me.id, creds)
     oauth = creds.get("claudeAiOauth") or {}
     expires_at = _normalize_expires_at(oauth.get("expiresAt"))
     refresh_token_present = bool(oauth.get("refreshToken"))
@@ -321,7 +336,8 @@ async def status_route() -> StatusOut:
 
 
 @router.post("/start", response_model=StartOut, response_model_by_alias=True)
-async def start_route() -> StartOut:
+async def start_route(me: User = Depends(get_current_user)) -> StartOut:
+    _ = me  # 로그인 가드만 — start 단계는 PKCE 상태 발급이라 user_id 저장 불필요.
     async with _sessions_lock:
         _gc_sessions()
     verifier, challenge = _pkce_pair()
@@ -346,40 +362,46 @@ _DEFAULT_PROVIDER = "claude_cli"
 _DEFAULT_MODEL = "claude-sonnet-4-6"
 
 
-async def _ensure_active_credential(db: AsyncSession) -> AiCredential:
-    """Make sure there's exactly one ``claude_cli`` credential and it's active.
+async def _ensure_active_credential(db: AsyncSession, user_id) -> AiCredential:
+    """본인의 ``claude_cli`` credential 한 개를 보장하고 그것만 is_active=true 로 표시.
 
-    Called right after a successful login so the user doesn't have to
-    also visit the model-label form to activate something — the analyzer
-    can immediately route to the freshly-saved OAuth.
+    PR 10-CP2: 사용자별 분리. 같은 user 가 여러 번 로그인해도 row 한 개를
+    재사용. 다른 사용자의 active 상태에는 영향 없음.
     """
     cred = (
         await db.execute(
             select(AiCredential)
-            .where(AiCredential.provider == _DEFAULT_PROVIDER)
+            .where(
+                AiCredential.user_id == user_id,
+                AiCredential.provider == _DEFAULT_PROVIDER,
+            )
             .order_by(AiCredential.id.asc())
             .limit(1)
         )
     ).scalar_one_or_none()
     if cred is None:
         cred = AiCredential(
+            user_id=user_id,
             label=_DEFAULT_LABEL,
             provider=_DEFAULT_PROVIDER,
             model=_DEFAULT_MODEL,
-            # claude_cli reads OAuth from disk; the api_key column is
-            # NOT NULL so a sentinel keeps the schema happy.
+            # claude_cli reads OAuth from disk; api_key 컬럼은 NOT NULL 이라
+            # sentinel 로 채움.
             api_key="oauth-from-disk",
+            is_active=True,
         )
         db.add(cred)
         await db.flush()
+    else:
+        cred.is_active = True
 
-    settings_row = (
-        await db.execute(select(AppSettings).where(AppSettings.id == 1))
-    ).scalar_one_or_none()
-    if settings_row is None:
-        settings_row = AppSettings(id=1)
-        db.add(settings_row)
-    settings_row.active_credential_id = cred.id
+    # 본인 다른 credential 들의 active flag 는 모두 false 로 — 사용자 단위 mutual exclusion.
+    from sqlalchemy import update as sqla_update
+    await db.execute(
+        sqla_update(AiCredential)
+        .where(AiCredential.user_id == user_id, AiCredential.id != cred.id)
+        .values(is_active=False)
+    )
     await db.commit()
     await db.refresh(cred)
     return cred
@@ -416,6 +438,7 @@ def _parse_code_input(raw: str, expected_state: str) -> str:
 async def submit_route(
     session_id: str,
     body: SubmitIn,
+    me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ActionOut:
     async with _sessions_lock:
@@ -523,7 +546,7 @@ async def submit_route(
         }
     }
     try:
-        _write_credentials(payload)
+        _write_credentials(me.id, payload)
     except OSError as e:
         raise HTTPException(
             status_code=500,
@@ -534,12 +557,12 @@ async def submit_route(
         _sessions.pop(session_id, None)
 
     try:
-        cred = await _ensure_active_credential(db)
+        cred = await _ensure_active_credential(db, me.id)
         cred_msg = f"활성 모델: {cred.model}"
     except Exception as e:
         log.warning("claude_auth.activate_failed", error=str(e))
         cred_msg = "단, AI 키 활성화에 실패했습니다 — 설정에서 수동으로 활성화해 주세요."
-    log.info("claude_auth.login_success")
+    log.info("claude_auth.login_success", user_id=str(me.id))
     return ActionOut(
         ok=True,
         detail=(
@@ -554,7 +577,8 @@ async def submit_route(
     response_model=ActionOut,
     response_model_by_alias=True,
 )
-async def cancel_route(session_id: str) -> ActionOut:
+async def cancel_route(session_id: str, me: User = Depends(get_current_user)) -> ActionOut:
+    _ = me
     async with _sessions_lock:
         sess = _sessions.pop(session_id, None)
     if sess is None:
@@ -569,6 +593,7 @@ async def cancel_route(session_id: str) -> ActionOut:
 )
 async def credentials_route(
     body: CredentialsIn,
+    me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ActionOut:
     """Write a user-supplied ``.credentials.json`` to the backend volume.
@@ -604,7 +629,7 @@ async def credentials_route(
         )
 
     try:
-        _write_credentials(parsed)
+        _write_credentials(me.id, parsed)
     except OSError as e:
         raise HTTPException(
             status_code=500,
@@ -612,12 +637,12 @@ async def credentials_route(
         )
 
     try:
-        cred = await _ensure_active_credential(db)
+        cred = await _ensure_active_credential(db, me.id)
         cred_msg = f"활성 모델: {cred.model}"
     except Exception as e:
         log.warning("claude_auth.activate_failed", error=str(e))
         cred_msg = "단, AI 키 활성화에 실패했습니다 — 설정에서 수동으로 활성화해 주세요."
-    log.info("claude_auth.manual_credentials_saved")
+    log.info("claude_auth.manual_credentials_saved", user_id=str(me.id))
     return ActionOut(
         ok=True,
         detail=f"자격증명을 저장하고 AI 키를 활성화했습니다. ({cred_msg})",
@@ -625,11 +650,12 @@ async def credentials_route(
 
 
 @router.post("/logout", response_model=ActionOut, response_model_by_alias=True)
-async def logout_route() -> ActionOut:
-    if not _CRED_FILE.exists():
+async def logout_route(me: User = Depends(get_current_user)) -> ActionOut:
+    cred_file = _user_cred_file(me.id)
+    if not cred_file.exists():
         return ActionOut(ok=True, detail="이미 로그아웃 상태입니다.")
     try:
-        _CRED_FILE.unlink()
+        cred_file.unlink()
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"자격증명 삭제 실패: {e}")
     return ActionOut(

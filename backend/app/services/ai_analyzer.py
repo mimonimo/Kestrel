@@ -188,22 +188,36 @@ class AiAnalyzerNotConfigured(HTTPException):
         super().__init__(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
-async def _load_active_credential(db: AsyncSession) -> AiCredential:
-    settings_row = (
-        await db.execute(select(AppSettings).where(AppSettings.id == 1))
-    ).scalar_one_or_none()
-    if settings_row is None or settings_row.active_credential_id is None:
-        raise AiAnalyzerNotConfigured(
-            "활성화된 AI 인증이 없어요. 설정 페이지에서 키를 등록하고 사용할 항목을 선택해 주세요.",
-        )
-    cred = (
-        await db.execute(
-            select(AiCredential).where(AiCredential.id == settings_row.active_credential_id)
-        )
-    ).scalar_one_or_none()
+async def _load_active_credential(db: AsyncSession, user_id=None) -> AiCredential:
+    """본인의 is_active=true AI credential 을 반환.
+
+    user_id 미지정은 운영용 fallback (백워드 호환 — 시스템 단일 active row).
+    user_id 지정 시 본인 row 만 검색.
+    """
+    cred: AiCredential | None = None
+    if user_id is not None:
+        cred = (
+            await db.execute(
+                select(AiCredential).where(
+                    AiCredential.user_id == user_id,
+                    AiCredential.is_active.is_(True),
+                )
+            )
+        ).scalar_one_or_none()
+    else:
+        # PR 10-CP2 이전 호환 — AppSettings 단일 active.
+        settings_row = (
+            await db.execute(select(AppSettings).where(AppSettings.id == 1))
+        ).scalar_one_or_none()
+        if settings_row and settings_row.active_credential_id is not None:
+            cred = (
+                await db.execute(
+                    select(AiCredential).where(AiCredential.id == settings_row.active_credential_id)
+                )
+            ).scalar_one_or_none()
     if cred is None:
         raise AiAnalyzerNotConfigured(
-            "선택한 AI 인증을 찾을 수 없어요. 설정 페이지에서 다시 활성화해 주세요.",
+            "활성화된 AI 인증이 없어요. 설정 페이지에서 키를 등록하고 사용할 항목을 선택해 주세요.",
         )
     # claude_cli uses the host's Claude Code login, not an API key.
     if (cred.provider or "").lower() != "claude_cli" and not cred.api_key:
@@ -215,6 +229,18 @@ async def _load_active_credential(db: AsyncSession) -> AiCredential:
     if not cred.model:
         raise AiAnalyzerNotConfigured("AI 모델이 지정되지 않았어요.")
     return cred
+
+
+def _user_claude_home(user_id) -> str | None:
+    """사용자별 Claude credentials 디렉토리 — claude_cli subprocess HOME 으로 사용.
+
+    claude_auth 모듈과 같은 경로 규약. HOME=<base> 이면 CLI 는
+    ``$HOME/.claude/.credentials.json`` 을 읽으므로 base 는 ``.claude`` 의 부모.
+    """
+    if user_id is None:
+        return None
+    base = f"/home/app/.claude/users/{user_id}"
+    return base
 
 
 def _extract_first_json_object(raw: str) -> dict:
@@ -531,6 +557,7 @@ async def _call_claude_cli_text(
     system: str,
     user: str,
     *,
+    user_id=None,
     _retried_after_upgrade: bool = False,
 ) -> str:
     """Invoke the local Claude Code CLI in headless mode.
@@ -564,7 +591,9 @@ async def _call_claude_cli_text(
         "text",
     ]
     env = os.environ.copy()
-    env["HOME"] = _NATIVE_CLAUDE_HOME
+    # PR 10-CP2: 사용자 분리 — user_id 가 있으면 본인 디렉토리를 HOME 으로 사용.
+    user_home = _user_claude_home(user_id) if user_id is not None else None
+    env["HOME"] = user_home or _NATIVE_CLAUDE_HOME
     try:
         proc = await asyncio.create_subprocess_exec(
             *args,
@@ -714,6 +743,7 @@ async def _dispatch_text(
     user: str,
     *,
     force_json: bool,  # noqa: ARG001 — kept for legacy call sites; claude_cli ignores
+    user_id=None,
 ) -> str:
     """Dispatch the LLM call. PR 10-T 후 claude_cli 단일 경로만 지원.
 
@@ -724,7 +754,7 @@ async def _dispatch_text(
     """
     provider = (cred.provider or "").lower()
     if provider == "claude_cli":
-        return await _call_claude_cli_text(cred, system, user)
+        return await _call_claude_cli_text(cred, system, user, user_id=user_id)
     raise AiAnalyzerNotConfigured(
         f"PR 10-T 이후 claude_cli 만 지원합니다 (현재 활성: {cred.provider}). "
         "설정에서 'Claude Code CLI (로컬 구독)' 으로 새 credential 을 등록하고 활성화하세요."
@@ -737,18 +767,14 @@ async def call_llm(
     user: str,
     *,
     force_json: bool = True,
+    user_id=None,
 ) -> str:
-    """Public LLM-call helper. Loads the active credential and returns raw text.
-
-    Used by ai_analyzer.analyze_vulnerability and by the sandbox payload-
-    adapter / result-analyzer — anything that needs a one-shot prompt
-    against whatever provider the user has configured.
-    """
-    cred = await _load_active_credential(db)
-    return await _dispatch_text(cred, system, user, force_json=force_json)
+    """Public LLM-call helper. user-scoped 자격증명 사용 (PR 10-CP2)."""
+    cred = await _load_active_credential(db, user_id=user_id)
+    return await _dispatch_text(cred, system, user, force_json=force_json, user_id=user_id)
 
 
-async def ping_active_credential(db: AsyncSession) -> dict:
+async def ping_active_credential(db: AsyncSession, user_id=None) -> dict:
     """One-shot connectivity test for the *active* AI credential.
 
     Returns a structured probe result the settings UI can show next to
@@ -759,7 +785,7 @@ async def ping_active_credential(db: AsyncSession) -> dict:
     """
     started = datetime.now(timezone.utc)
     try:
-        cred = await _load_active_credential(db)
+        cred = await _load_active_credential(db, user_id=user_id)
     except AiAnalyzerNotConfigured as e:
         return {
             "ok": False,
@@ -775,6 +801,7 @@ async def ping_active_credential(db: AsyncSession) -> dict:
             "You are a connectivity test responder.",
             "Reply with the exact two characters: ok",
             force_json=False,
+            user_id=user_id,
         )
     except HTTPException as e:
         elapsed = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
@@ -876,14 +903,19 @@ def _build_extra_context(vuln: Vulnerability) -> str:
     return "\n부가 컨텍스트:\n  - " + "\n  - ".join(parts) + "\n"
 
 
-async def analyze_vulnerability(db: AsyncSession, vuln: Vulnerability) -> AiAnalysis:
+async def analyze_vulnerability(
+    db: AsyncSession,
+    vuln: Vulnerability,
+    *,
+    user_id=None,
+) -> AiAnalysis:
     user_prompt = _USER_TEMPLATE.format(
         cve_id=vuln.cve_id,
         title=vuln.title,
         description=vuln.description,
         extra_context=_build_extra_context(vuln),
     )
-    raw = await call_llm(db, _SYSTEM_PROMPT, user_prompt, force_json=True)
+    raw = await call_llm(db, _SYSTEM_PROMPT, user_prompt, force_json=True, user_id=user_id)
 
     # 거부/사과 텍스트 감지 시 한 번 더 강제. 두 번째 prompt 는 "JSON 이외
     # 어떤 텍스트도 허용 안 됨" + "추정으로 채워라" 를 더 강하게 박아 넣어
@@ -898,7 +930,7 @@ async def analyze_vulnerability(db: AsyncSession, vuln: Vulnerability) -> AiAnal
             "  · JSON 스키마(attack_method/payload_examples/mitigations) *만* 반환\n\n"
             + user_prompt
         )
-        raw = await call_llm(db, _SYSTEM_PROMPT, forced, force_json=True)
+        raw = await call_llm(db, _SYSTEM_PROMPT, forced, force_json=True, user_id=user_id)
 
     return _parse_payload(raw)
 
@@ -935,6 +967,8 @@ async def answer_followup_question(
     prior: "AiAnalysis | None",
     history: list[tuple[str, str]],  # [(question, answer), ...]
     question: str,
+    *,
+    user_id=None,
 ) -> str:
     """Free-form Q&A on top of an existing CVE analysis.
 
@@ -952,7 +986,7 @@ async def answer_followup_question(
             parts.append(f"## 질문 {i}\n{q}\n\n## 답변 {i}\n{a}")
     parts.append(f"# 새 질문\n\n{question}\n\n# 답변")
     user_prompt = "\n\n".join(parts)
-    return (await call_llm(db, _FOLLOWUP_SYSTEM, user_prompt, force_json=False)).strip()
+    return (await call_llm(db, _FOLLOWUP_SYSTEM, user_prompt, force_json=False, user_id=user_id)).strip()
 
 
 # ─────────────── Multi-CVE pattern comparison (JSON) ─────────────────
@@ -1007,7 +1041,7 @@ class CompareResult:
 
 
 async def compare_vulnerabilities(
-    db: AsyncSession, vulns: list[Vulnerability]
+    db: AsyncSession, vulns: list[Vulnerability], *, user_id=None
 ) -> CompareResult:
     """Cross-CVE pattern analysis. 2-5 vulns per call (LLM context limit)."""
     if len(vulns) < 2:
@@ -1021,7 +1055,7 @@ async def compare_vulnerabilities(
             f"## {v.cve_id}\n제목: {v.title}\n설명:\n{v.description}"
         )
     user_prompt = _COMPARE_USER_HEADER + "\n\n".join(rows)
-    raw = await call_llm(db, _COMPARE_SYSTEM, user_prompt, force_json=True)
+    raw = await call_llm(db, _COMPARE_SYSTEM, user_prompt, force_json=True, user_id=user_id)
 
     try:
         data = json.loads(raw)
