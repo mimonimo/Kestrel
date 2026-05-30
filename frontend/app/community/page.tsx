@@ -8,12 +8,17 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { ErrorBox, FeedbackBoxButton } from "@/components/ui/feedback-box";
+import { AnalysisFeed } from "@/components/community/AnalysisFeed";
 import { NewPostModal } from "@/components/community/NewPostModal";
 import { PostModal } from "@/components/community/PostModal";
 import { formatRelativeKo } from "@/lib/format";
+import { cn } from "@/lib/utils";
+
+type CommunityTab = "posts" | "analyses";
 
 export default function CommunityPage() {
   const { user } = useAuth();
+  const [tab, setTab] = useState<CommunityTab>("posts");
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
 
@@ -41,26 +46,54 @@ export default function CommunityPage() {
 
   return (
     <div className="mx-auto min-h-[calc(100vh-3.5rem)] max-w-7xl px-6 py-10">
-      <header className="mb-6 flex items-end justify-between border-b border-neutral-200 pb-4 dark:border-neutral-800">
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-3 border-b border-neutral-200 pb-4 dark:border-neutral-800">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">커뮤니티</h1>
           <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-500">
-            CVE 분석·완화 방안·실전 사례를 익명으로 공유합니다.
+            보안 운영자들이 공유한 글과 AI 분석 결과를 한 곳에서 확인하세요.
           </p>
         </div>
-        {user ? (
-          <Button onClick={openNewPost} className="gap-2">
-            <Plus className="h-4 w-4" />새 글
-          </Button>
-        ) : (
-          <Button onClick={openNewPost} variant="outline" className="gap-2">
-            <LogIn className="h-4 w-4" />
-            로그인 후 작성
-          </Button>
-        )}
+        {tab === "posts" &&
+          (user ? (
+            <Button onClick={openNewPost} className="gap-2">
+              <Plus className="h-4 w-4" />새 글
+            </Button>
+          ) : (
+            <Button onClick={openNewPost} variant="outline" className="gap-2">
+              <LogIn className="h-4 w-4" />
+              로그인 후 작성
+            </Button>
+          ))}
       </header>
 
-      {isPending ? (
+      {/* 글 / 분석 피드 탭 */}
+      <div className="mb-5 flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-50 p-1 text-xs dark:border-neutral-800 dark:bg-surface-1 w-fit">
+        {(
+          [
+            { id: "posts" as const, label: "글" },
+            { id: "analyses" as const, label: "분석 피드" },
+          ]
+        ).map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "rounded-full px-3 py-1.5 font-medium transition-colors",
+              tab === t.id
+                ? "bg-white text-neutral-900 shadow-sm dark:bg-surface-2 dark:text-neutral-100"
+                : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
+            )}
+            aria-pressed={tab === t.id}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "analyses" ? (
+        <AnalysisFeed />
+      ) : isPending ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
             <div

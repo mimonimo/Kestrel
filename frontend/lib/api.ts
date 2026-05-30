@@ -143,6 +143,7 @@ export interface AuthUser {
   id: string;
   email: string;
   username: string;
+  nickname: string | null;
   role: "user" | "expert" | "admin";
   isAdmin: boolean;
 }

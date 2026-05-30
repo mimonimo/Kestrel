@@ -49,6 +49,7 @@ class MeOut(CamelModel):
     id: str
     email: str
     username: str
+    nickname: str | None = None
     role: str
     is_admin: bool
 
@@ -58,6 +59,7 @@ def _to_me(u: User) -> MeOut:
         id=str(u.id),
         email=u.email,
         username=u.username,
+        nickname=u.nickname,
         role=u.role.value if hasattr(u.role, "value") else str(u.role),
         is_admin=u.role == UserRole.ADMIN,
     )

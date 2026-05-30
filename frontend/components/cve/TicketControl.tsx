@@ -29,7 +29,9 @@ export const STATUS_META: Record<TicketStatus, { label: string; cls: string }> =
   },
   ignored: {
     label: "무시",
-    cls: "border-neutral-400 bg-neutral-100 text-neutral-700 ring-1 ring-neutral-300/60 dark:border-neutral-500/60 dark:bg-neutral-500/15 dark:text-neutral-300 dark:ring-neutral-400/30",
+    // 다크 톤이 neutral-500/15 알파라 dark surface 위에서 검정 칩처럼 표시되던
+    // 회귀 수정. solid zinc 로 바꾸고 텍스트 명도도 충분히 끌어올림.
+    cls: "border-zinc-400 bg-zinc-200 text-zinc-800 ring-1 ring-zinc-400/60 dark:border-zinc-400/60 dark:bg-zinc-600/50 dark:text-zinc-100 dark:ring-zinc-400/40",
   },
 };
 

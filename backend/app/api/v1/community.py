@@ -1,8 +1,11 @@
-"""Community endpoints — anonymous posts and comments.
+"""Community endpoints — posts and comments.
 
-Ownership is tracked via `X-Client-Id` (the same browser-issued UUID used by
-bookmarks). There is no auth — anyone can read; only the original `client_id`
-can edit/delete what they wrote.
+PR 10-CN+CO: 읽기는 누구나, 쓰기 (생성/수정/삭제) 는 로그인 사용자만.
+- ``user_id`` 가 row 에 저장되고 ``is_owner`` 는 그것으로 매칭.
+- 작성자명(``author_name``) 은 사용자가 직접 입력할 수 없고, 로그인된 사용자의
+  ``nickname || username`` 으로 백엔드가 강제로 설정 (impersonation 방지).
+- 기존 익명 client_id 기반 row 는 그대로 남고, owner 매칭은 user_id 우선이지만
+  backward compat 으로 client_id 도 fallback.
 """
 from __future__ import annotations
 
@@ -15,27 +18,27 @@ from pydantic import Field
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import get_current_user, get_optional_user
 from app.core.database import get_db
-from app.models import Comment, Post
+from app.models import Comment, Post, User
 from app.schemas.vulnerability import CamelModel
 
 router = APIRouter(prefix="/community", tags=["community"])
 
 
-def _client(x_client_id: str | None) -> str:
-    if not x_client_id or len(x_client_id) > 64:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="X-Client-Id header is required",
-        )
-    return x_client_id
+def _display_name(user: User) -> str:
+    """사용자가 직접 입력한 author_name 은 무시. 표시명은 닉네임 우선."""
+    nick = (user.nickname or "").strip()
+    return (nick or user.username)[:64] or "익명"
 
 
-def _author(name: str | None) -> str:
-    if not name:
-        return "익명"
-    cleaned = name.strip()[:64]
-    return cleaned or "익명"
+def _is_owner(row_user_id, row_client_id: str | None, *, me: User | None, x_client_id: str | None) -> bool:
+    if me is not None and row_user_id is not None and row_user_id == me.id:
+        return True
+    # 기존 익명 글 backward compat — user_id 가 없을 때만 client_id 로 판단.
+    if row_user_id is None and x_client_id and row_client_id == x_client_id:
+        return True
+    return False
 
 
 # ---- Schemas --------------------------------------------------------------
@@ -43,7 +46,8 @@ def _author(name: str | None) -> str:
 class PostCreate(CamelModel):
     title: str = Field(min_length=1, max_length=255)
     content: str = Field(min_length=1, max_length=20000)
-    author_name: str | None = Field(default=None, max_length=64)
+    # 입력 받지만 무시 — author_name 은 로그인 사용자 닉네임으로 강제. backward compat 위해 schema 만 유지.
+    author_name: str | None = Field(default=None, max_length=64, deprecated=True)
     vulnerability_id: UUID | None = None
 
 
@@ -74,7 +78,8 @@ class PostListResponse(CamelModel):
 
 class CommentCreate(CamelModel):
     content: str = Field(min_length=1, max_length=4000)
-    author_name: str | None = Field(default=None, max_length=64)
+    # author_name 은 무시. 로그인 사용자 닉네임으로 강제.
+    author_name: str | None = Field(default=None, max_length=64, deprecated=True)
     post_id: int | None = None
     vulnerability_id: UUID | None = None
     parent_id: int | None = None
@@ -104,6 +109,7 @@ async def list_posts(
     page_size: int = Query(20, ge=1, le=100),
     vulnerability_id: UUID | None = Query(default=None, alias="vulnerabilityId"),
     x_client_id: str | None = Header(default=None, alias="X-Client-Id"),
+    me: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> PostListResponse:
     base = select(Post)
@@ -140,7 +146,7 @@ async def list_posts(
             vulnerability_id=r.vulnerability_id,
             view_count=r.view_count,
             comment_count=comment_counts.get(r.id, 0),
-            is_owner=bool(x_client_id and r.client_id == x_client_id),
+            is_owner=_is_owner(r.user_id, r.client_id, me=me, x_client_id=x_client_id),
             created_at=r.created_at,
             updated_at=r.updated_at,
         )
@@ -158,12 +164,13 @@ async def list_posts(
 async def create_post(
     body: PostCreate,
     x_client_id: Annotated[str | None, Header(alias="X-Client-Id")] = None,
+    me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> PostOut:
-    cid = _client(x_client_id)
     post = Post(
-        client_id=cid,
-        author_name=_author(body.author_name),
+        user_id=me.id,
+        client_id=x_client_id if x_client_id and len(x_client_id) <= 64 else None,
+        author_name=_display_name(me),  # 사용자 입력 무시 — 로그인 닉네임 강제
         title=body.title,
         content=body.content,
         vulnerability_id=body.vulnerability_id,
@@ -189,6 +196,7 @@ async def create_post(
 async def get_post(
     post_id: int,
     x_client_id: Annotated[str | None, Header(alias="X-Client-Id")] = None,
+    me: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> PostOut:
     post = (await db.execute(select(Post).where(Post.id == post_id))).scalar_one_or_none()
@@ -210,7 +218,7 @@ async def get_post(
         vulnerability_id=post.vulnerability_id,
         view_count=post.view_count,
         comment_count=cnt,
-        is_owner=bool(x_client_id and post.client_id == x_client_id),
+        is_owner=_is_owner(post.user_id, post.client_id, me=me, x_client_id=x_client_id),
         created_at=post.created_at,
         updated_at=post.updated_at,
     )
@@ -221,13 +229,13 @@ async def update_post(
     post_id: int,
     body: PostUpdate,
     x_client_id: Annotated[str | None, Header(alias="X-Client-Id")] = None,
+    me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> PostOut:
-    cid = _client(x_client_id)
     post = (await db.execute(select(Post).where(Post.id == post_id))).scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="post not found")
-    if post.client_id != cid:
+    if not _is_owner(post.user_id, post.client_id, me=me, x_client_id=x_client_id):
         raise HTTPException(status_code=403, detail="not the author")
 
     if body.title is not None:
@@ -258,13 +266,13 @@ async def update_post(
 async def delete_post(
     post_id: int,
     x_client_id: Annotated[str | None, Header(alias="X-Client-Id")] = None,
+    me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    cid = _client(x_client_id)
     post = (await db.execute(select(Post).where(Post.id == post_id))).scalar_one_or_none()
     if not post:
         raise HTTPException(status_code=404, detail="post not found")
-    if post.client_id != cid:
+    if not _is_owner(post.user_id, post.client_id, me=me, x_client_id=x_client_id):
         raise HTTPException(status_code=403, detail="not the author")
     await db.delete(post)
     await db.commit()
@@ -277,6 +285,7 @@ async def list_comments(
     post_id: int | None = Query(default=None, alias="postId"),
     vulnerability_id: UUID | None = Query(default=None, alias="vulnerabilityId"),
     x_client_id: Annotated[str | None, Header(alias="X-Client-Id")] = None,
+    me: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommentListResponse:
     if post_id is None and vulnerability_id is None:
@@ -299,7 +308,7 @@ async def list_comments(
             post_id=c.post_id,
             vulnerability_id=c.vulnerability_id,
             parent_id=c.parent_id,
-            is_owner=bool(x_client_id and c.client_id == x_client_id),
+            is_owner=_is_owner(c.user_id, c.client_id, me=me, x_client_id=x_client_id),
             created_at=c.created_at,
         )
         for c in rows
@@ -316,15 +325,16 @@ async def list_comments(
 async def create_comment(
     body: CommentCreate,
     x_client_id: Annotated[str | None, Header(alias="X-Client-Id")] = None,
+    me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommentOut:
-    cid = _client(x_client_id)
     if body.post_id is None and body.vulnerability_id is None:
         raise HTTPException(status_code=400, detail="postId or vulnerabilityId is required")
 
     comment = Comment(
-        client_id=cid,
-        author_name=_author(body.author_name),
+        user_id=me.id,
+        client_id=x_client_id if x_client_id and len(x_client_id) <= 64 else None,
+        author_name=_display_name(me),  # 사용자 입력 무시 — 로그인 닉네임 강제
         content=body.content,
         post_id=body.post_id,
         vulnerability_id=body.vulnerability_id,
@@ -349,15 +359,15 @@ async def create_comment(
 async def delete_comment(
     comment_id: int,
     x_client_id: Annotated[str | None, Header(alias="X-Client-Id")] = None,
+    me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    cid = _client(x_client_id)
     comment = (
         await db.execute(select(Comment).where(Comment.id == comment_id))
     ).scalar_one_or_none()
     if not comment:
         raise HTTPException(status_code=404, detail="comment not found")
-    if comment.client_id != cid:
+    if not _is_owner(comment.user_id, comment.client_id, me=me, x_client_id=x_client_id):
         raise HTTPException(status_code=403, detail="not the author")
     await db.delete(comment)
     await db.commit()

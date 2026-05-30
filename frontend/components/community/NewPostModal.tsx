@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import { User as UserIcon, X } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -16,17 +17,20 @@ interface Props {
 
 export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
   const qc = useQueryClient();
+  const { user } = useAuth();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [authorName, setAuthorName] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // 표시명 — 닉네임 우선, 없으면 사용자명. 백엔드도 같은 규칙으로 강제하지만
+  // UX 측면에서 미리 보여 줘 "내 이름으로 게시된다"는 점을 명확히 한다.
+  const displayName = (user?.nickname || user?.username || "").trim();
 
   const create = useMutation({
     mutationFn: () =>
       api.createPost({
         title: title.trim(),
         content: content.trim(),
-        authorName: authorName.trim() || undefined,
         vulnerabilityId,
       }),
     onSuccess: () => {
@@ -76,12 +80,11 @@ export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
             maxLength={255}
             required
           />
-          <Input
-            placeholder="이름 (선택, 비우면 익명)"
-            value={authorName}
-            onChange={(e) => setAuthorName(e.target.value)}
-            maxLength={64}
-          />
+          <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-700 dark:border-neutral-800 dark:bg-surface-2 dark:text-neutral-300">
+            <UserIcon className="h-3.5 w-3.5 text-neutral-500" />
+            <span className="text-neutral-500 dark:text-neutral-500">작성자</span>
+            <span className="font-medium text-neutral-900 dark:text-neutral-100">{displayName}</span>
+          </div>
           <textarea
             className="block min-h-[160px] w-full rounded-lg border border-neutral-800 bg-surface-2 p-3 text-sm text-neutral-100 placeholder:text-neutral-500 focus:border-neutral-600 focus:outline-none"
             placeholder="본문 (마크다운은 지원하지 않습니다)"

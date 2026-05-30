@@ -10,7 +10,6 @@ import { useAuth } from "@/lib/auth-context";
 import { recordCommentHistory } from "@/lib/comment-history";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { formatRelativeKo } from "@/lib/format";
 
 interface Props {
@@ -31,14 +30,16 @@ export function CommentThread({ postId, vulnerabilityId }: Props) {
   });
 
   const [content, setContent] = useState("");
-  const [authorName, setAuthorName] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // 댓글 작성자명은 백엔드가 user.nickname || user.username 으로 강제.
+  // frontend 는 입력란을 보여 주지 않고 사용자 메타로만 표시.
+  const displayName = (user?.nickname || user?.username || "").trim();
 
   const create = useMutation({
     mutationFn: () =>
       api.createComment({
         content: content.trim(),
-        authorName: authorName.trim() || undefined,
         postId,
         vulnerabilityId,
       }),
@@ -84,12 +85,10 @@ export function CommentThread({ postId, vulnerabilityId }: Props) {
             }}
             className="space-y-2"
           >
-            <Input
-              placeholder="이름 (선택)"
-              value={authorName}
-              onChange={(e) => setAuthorName(e.target.value)}
-              maxLength={64}
-            />
+            <div className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs text-neutral-700 dark:border-neutral-800 dark:bg-surface-2 dark:text-neutral-300">
+              <span className="text-neutral-500 dark:text-neutral-500">작성자</span>
+              <span className="font-medium text-neutral-900 dark:text-neutral-100">{displayName}</span>
+            </div>
             <textarea
               className="block min-h-[80px] w-full rounded-lg border border-neutral-300 bg-white p-3 text-sm text-neutral-900 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100"
               placeholder="의견을 남겨 주세요"
