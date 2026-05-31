@@ -38,6 +38,7 @@ import {
   deleteAnalysisHistoryEntry,
   readAnalysisHistory,
   recordAnalysisHistory,
+  syncAnalysisHistoryFromSummaries,
   type AnalysisHistoryEntry,
 } from "@/lib/analysis-history";
 import {
@@ -160,6 +161,7 @@ export default function AnalysisPage() {
 
 function AnalysisTab() {
   const qc = useQueryClient();
+  const { user } = useAuth();
   const [entries, setEntries] = useState<AnalysisHistoryEntry[]>([]);
   const [query, setQuery] = useState("");
   const [selectMode, setSelectMode] = useState(false);
@@ -175,6 +177,26 @@ function AnalysisTab() {
       window.removeEventListener("storage", sync);
     };
   }, []);
+
+  // PR 10-DC: backend AnalysisResult 가 진짜 source — localStorage 와 sync.
+  // 사용자가 다른 기기에서 한 분석도 여기에 나타나도록.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    api
+      .listMyAnalyses({ limit: 100 })
+      .then((res) => {
+        if (cancelled) return;
+        syncAnalysisHistoryFromSummaries(res.items);
+        setEntries(readAnalysisHistory());
+      })
+      .catch(() => {
+        /* 네트워크 실패 — localStorage 로 fallback */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   // 기록이 변경되면 살아있지 않은 선택 항목 정리
   useEffect(() => {

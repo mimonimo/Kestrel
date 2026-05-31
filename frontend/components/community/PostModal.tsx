@@ -157,7 +157,38 @@ export function PostModal({ postId, onClose }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         {isPending ? (
-          <div className="h-72 animate-pulse rounded-2xl bg-neutral-100 dark:bg-surface-2" />
+          // 회색 큰 박스만 띄우지 말고 실제 헤더/본문 구조의 skeleton 으로
+          // 보여서 깜빡임 줄이기.
+          <>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="닫기"
+              className="absolute right-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <header className="flex items-start justify-between gap-3 border-b border-neutral-200 px-6 py-4 dark:border-neutral-800">
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="h-5 w-2/3 animate-pulse rounded bg-neutral-200 dark:bg-surface-2" />
+                <div className="h-3 w-1/2 animate-pulse rounded bg-neutral-200 dark:bg-surface-2" />
+              </div>
+            </header>
+            <div className="space-y-2 px-6 py-5">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={i}
+                  className={cn(
+                    "h-3 animate-pulse rounded bg-neutral-200 dark:bg-surface-2",
+                    i % 3 === 2 ? "w-4/5" : "w-full",
+                  )}
+                />
+              ))}
+              <div className="mt-4 flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> 글을 불러오는 중…
+              </div>
+            </div>
+          </>
         ) : isError || !data ? (
           <div className="p-6">
             <button

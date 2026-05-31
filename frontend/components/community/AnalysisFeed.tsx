@@ -17,6 +17,7 @@ import {
   ExternalLink,
   Folder,
   Loader2,
+  Search,
   Share2,
   ShieldAlert,
   Sparkles,
@@ -65,6 +66,8 @@ export function AnalysisFeed() {
   const [categoryAxis, setCategoryAxis] = useState<"types" | "severity">("types");
   // 작성자별: 그룹별 펼침 상태. 기본 모두 접힘.
   const [expandedAuthors, setExpandedAuthors] = useState<Set<string>>(new Set());
+  // 검색어 — CVE ID / 제목 / 작성자 / excerpt 매칭. client-side.
+  const [search, setSearch] = useState("");
 
   const list = useQuery({
     queryKey: ["community-analyses"],
@@ -72,16 +75,27 @@ export function AnalysisFeed() {
     staleTime: 30_000,
   });
 
+  // 검색어로 필터링된 items — 모든 view 의 source.
+  const visibleItems = useMemo(() => {
+    if (!list.data) return [] as AnalysisSummary[];
+    const q = search.trim().toLowerCase();
+    if (!q) return list.data.items;
+    return list.data.items.filter((a) => {
+      const hay =
+        `${a.cveId} ${a.title ?? ""} ${a.excerpt} ${a.author.nickname ?? ""} ${a.author.username} ${a.cveTypes.join(" ")} ${a.cveSeverity ?? ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [list.data, search]);
+
   // 그룹화 — view 가 category(types/severity) / author 일 때 사용.
   // CVE 의 cveTypes 는 array 라 한 분석이 여러 유형 그룹에 동시 속할 수 있음 (의도).
   const grouped = useMemo(() => {
-    if (!list.data) return [] as { key: string; label: string; items: AnalysisSummary[] }[];
     const buckets = new Map<string, { label: string; items: AnalysisSummary[] }>();
     const push = (key: string, label: string, a: AnalysisSummary) => {
       if (!buckets.has(key)) buckets.set(key, { label, items: [] });
       buckets.get(key)!.items.push(a);
     };
-    for (const a of list.data.items) {
+    for (const a of visibleItems) {
       if (view === "author") {
         push(a.author.username, a.author.nickname || a.author.username, a);
       } else if (categoryAxis === "severity") {
@@ -112,7 +126,7 @@ export function AnalysisFeed() {
       entries.sort((a, b) => b.items.length - a.items.length || a.label.localeCompare(b.label));
     }
     return entries;
-  }, [list.data, view, categoryAxis]);
+  }, [visibleItems, view, categoryAxis]);
 
   const filteredGroups = useMemo(
     () => (filterKey ? grouped.filter((g) => g.key === filterKey) : grouped),
@@ -152,9 +166,29 @@ export function AnalysisFeed() {
     </div>
   );
 
-  // 정렬/그룹 모드 토글 + (그룹 모드) 칩 필터.
+  // 검색 input + 정렬/그룹 모드 토글 + (그룹 모드) 칩 필터.
   const controls = (
     <div className="mb-4 space-y-2">
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-500" />
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="CVE ID · 제목 · 작성자 · 유형 · 본문 키워드"
+          className="block w-full rounded-full border border-neutral-300 bg-white py-2 pl-9 pr-9 text-xs text-neutral-900 placeholder:text-neutral-500 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-200 dark:border-neutral-700 dark:bg-surface-1 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-violet-500/30"
+        />
+        {search && (
+          <button
+            type="button"
+            onClick={() => setSearch("")}
+            aria-label="검색어 지우기"
+            className="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
+      </div>
       <div className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-50 p-1 text-xs dark:border-neutral-800 dark:bg-surface-1">
         {(Object.keys(VIEW_LABELS) as ViewMode[]).map((m) => {
           const { label, icon: Icon } = VIEW_LABELS[m];
@@ -361,8 +395,12 @@ export function AnalysisFeed() {
     <>
       {header}
       {controls}
-      {view === "latest" ? (
-        <ul className="space-y-3">{list.data.items.map(renderCard)}</ul>
+      {visibleItems.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 px-6 py-10 text-center text-xs text-neutral-700 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-400">
+          {search ? `"${search}" 와 일치하는 분석이 없어요.` : "공유된 분석이 없어요."}
+        </div>
+      ) : view === "latest" ? (
+        <ul className="space-y-3">{visibleItems.map(renderCard)}</ul>
       ) : view === "category" ? (
         <div className="space-y-6">
           {filteredGroups.map((g) => (
