@@ -3,6 +3,11 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      # NEXT_PUBLIC_API_BASE_URL 은 *빌드 타임* 에 Next.js 번들에 박힘.
+      # 로컬은 frontend(:3000) ≠ backend(:8000) 다른 origin 이라 상대경로 X →
+      # 빌드 인자로 절대 URL 명시. 운영(AWS, Caddy 동일 origin) 은 /api/v1.
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
     ports:
       - "3000:3000"
     environment:
