@@ -168,7 +168,8 @@ function AnalysisTab() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    const sync = () => setEntries(readAnalysisHistory());
+    // 비로그인 상태에서는 분석 기록 노출 안 함 (PR 10-DJ).
+    const sync = () => setEntries(user ? readAnalysisHistory() : []);
     sync();
     window.addEventListener("kestrel:analysis-history-changed", sync);
     window.addEventListener("storage", sync);
@@ -176,7 +177,7 @@ function AnalysisTab() {
       window.removeEventListener("kestrel:analysis-history-changed", sync);
       window.removeEventListener("storage", sync);
     };
-  }, []);
+  }, [user]);
 
   // PR 10-DC: backend AnalysisResult 가 진짜 source — localStorage 와 sync.
   // 사용자가 다른 기기에서 한 분석도 여기에 나타나도록.
@@ -487,7 +488,8 @@ function CompareTab() {
   const compareHistory = useCompareHistory();
 
   useEffect(() => {
-    const sync = () => setEntries(readAnalysisHistory());
+    // 비로그인 상태에서는 분석 기록 노출 안 함 (PR 10-DJ).
+    const sync = () => setEntries(user ? readAnalysisHistory() : []);
     sync();
     window.addEventListener("kestrel:analysis-history-changed", sync);
     window.addEventListener("storage", sync);
@@ -495,7 +497,7 @@ function CompareTab() {
       window.removeEventListener("kestrel:analysis-history-changed", sync);
       window.removeEventListener("storage", sync);
     };
-  }, []);
+  }, [user]);
 
   // Pull vuln types for every history-listed CVE so the user can filter
   // the picker by type. One batch call cached for 5 min — the panel
