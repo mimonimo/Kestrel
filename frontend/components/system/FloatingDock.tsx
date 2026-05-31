@@ -22,9 +22,12 @@ import {
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 
 import { useStatus } from "@/hooks/useStatus";
+import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { useUserSetting } from "@/lib/user-settings";
 import {
   readAnalysisHistory,
+  syncAnalysisHistoryFromSummaries,
   type AnalysisHistoryEntry,
 } from "@/lib/analysis-history";
 import { useRunningAnalyses } from "@/lib/analysis-running";
@@ -142,6 +145,29 @@ export function FloatingDock() {
       window.removeEventListener("storage", refresh);
     };
   }, []);
+
+  // PR 10-DH — 활동센터도 backend /me/analyses 와 sync. AI 분석 탭과
+  // 동일하게 다른 기기에서 한 분석도 dock 알림으로 노출.
+  const { user: authUser } = useAuth();
+  useEffect(() => {
+    if (!authUser) return;
+    let cancelled = false;
+    api
+      .listMyAnalyses({ limit: 100 })
+      .then((res) => {
+        if (cancelled) return;
+        syncAnalysisHistoryFromSummaries(res.items);
+        // 위 sync 가 dispatchEvent 까지 하니 setEntries 호출은 storage event
+        // 핸들러가 알아서 처리 — 다만 같은 탭 race 보완용으로 한 번 더.
+        setEntries(readAnalysisHistory());
+      })
+      .catch(() => {
+        /* 401 등 — localStorage 단독 사용 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser?.id]);
 
   // ── Status state ─────────────────────────────────────────────────
   const clientKeys = useMemo(
