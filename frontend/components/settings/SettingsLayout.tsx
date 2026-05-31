@@ -276,8 +276,8 @@ export function SettingsLayout() {
   }
 
   return (
-    <div className="mx-auto min-h-[calc(100vh-3.5rem)] max-w-7xl px-6 py-12">
-      <header className="mb-8 flex items-end justify-between gap-3">
+    <div className="mx-auto min-h-[calc(100vh-3.5rem)] max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-3 sm:mb-8">
         <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">설정</h1>
         {user.isAdmin && (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
@@ -286,37 +286,39 @@ export function SettingsLayout() {
         )}
       </header>
 
-      <div className="grid gap-8 lg:grid-cols-[220px_1fr]">
-        {/* ── 좌측 목차 (모바일에서는 가로 카드 묶음으로 떨어짐) ─── */}
+      <div className="grid gap-6 lg:grid-cols-[220px_1fr] lg:gap-8">
+        {/* ── 좌측 목차 (lg+) / 모바일·태블릿: 위쪽 가로 스크롤 영역 ─── */}
         <nav
           aria-label="설정 카테고리"
-          className="lg:sticky lg:top-20 lg:self-start"
+          className="-mx-4 overflow-x-auto px-4 lg:mx-0 lg:overflow-visible lg:px-0 lg:sticky lg:top-20 lg:self-start"
         >
-          <ul className="space-y-5">
+          <ul className="flex gap-5 lg:block lg:space-y-5">
             {visibleCategories.map((cat) => {
               const Icon = cat.icon;
               const hasActive = cat.sections.some((s) => s.id === active);
               return (
-                <li key={cat.id}>
+                <li key={cat.id} className="shrink-0 lg:shrink">
                   <div
                     className={cn(
                       "mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider",
-                      hasActive ? "text-neutral-200" : "text-neutral-500",
+                      hasActive
+                        ? "text-neutral-900 dark:text-neutral-100"
+                        : "text-neutral-500 dark:text-neutral-500",
                     )}
                   >
                     <Icon className="h-3 w-3" />
                     {cat.title}
                   </div>
-                  <ul className="space-y-0.5">
+                  <ul className="flex gap-1 lg:block lg:space-y-0.5">
                     {cat.sections.map((s) => {
                       const isActive = s.id === active;
                       return (
-                        <li key={s.id}>
+                        <li key={s.id} className="shrink-0 lg:shrink">
                           <a
                             href={`#${s.id}`}
                             onClick={() => handleNavClick(s.id)}
                             className={cn(
-                              "block rounded-full px-3 py-1.5 text-xs transition-all duration-150 active:scale-95",
+                              "inline-block whitespace-nowrap rounded-full px-3 py-1.5 text-xs transition-all duration-150 active:scale-95 lg:block",
                               isActive
                                 ? "bg-sky-100 font-medium text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"
                                 : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100",
