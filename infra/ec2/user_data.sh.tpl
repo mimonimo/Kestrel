@@ -94,8 +94,11 @@ curl -fsSL "https://github.com/docker/buildx/releases/download/$${BUILDX_VER}/bu
 chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
 
 # ── 4) Repo clone ────────────────────────────────────────────
+# /opt/kestrel 디렉토리는 있지만 .git 없는 회귀 케이스 (이전 부팅에서 user_data
+# 가 도중 실패) — 디렉토리 자체 제거 후 다시 clone.
 mkdir -p /opt
 if [ ! -d /opt/kestrel/.git ]; then
+  rm -rf /opt/kestrel
   git clone --branch "$GIT_BRANCH" --depth 1 "$GIT_REPO_URL" /opt/kestrel
 fi
 
@@ -143,6 +146,9 @@ EOF
 fi
 
 # Caddyfile — same-origin 으로 frontend + /api/* 라우팅 + 자동 TLS.
+# 주의: named matcher 와 handle 의 ``{`` 는 *반드시 단독 라인* 이어야 한다.
+# ``@api { path ... }`` 처럼 한 줄로 쓰면 Caddy 가 "Unexpected next token after '{'"
+# 로 거부하고 80/443 listen 자체를 안 한다.
 PUBLIC_HOST="$${DOMAIN:-$(imds public-ipv4).nip.io}"
 mkdir -p /opt/kestrel/caddy
 cat > /opt/kestrel/caddy/Caddyfile <<EOF
@@ -159,7 +165,6 @@ $${PUBLIC_HOST} {
   handle @api {
     reverse_proxy backend:8000
   }
-
   handle {
     reverse_proxy frontend:3000
   }
@@ -167,6 +172,8 @@ $${PUBLIC_HOST} {
 EOF
 
 # docker-compose override — caddy 서비스 추가 + frontend 빌드 인자 + ports 노출 조정.
+# 주의: NEXT_PUBLIC_API_BASE_URL 은 *빌드 타임* 에 Next.js 코드에 박히므로
+# 변경할 때마다 ``docker compose build --no-cache frontend`` 로 강제 재빌드 필요.
 cat > /opt/kestrel/docker-compose.override.yml <<EOF
 services:
   caddy:

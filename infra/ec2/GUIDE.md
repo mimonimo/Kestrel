@@ -122,7 +122,9 @@ terraform output host_url
 | 작업 | 방법 |
 |---|---|
 | 코드 업데이트 | SSM 으로 접속 → `cd /opt/kestrel && git pull && docker compose up -d --build` |
+| 도메인 변경 후 frontend 재빌드 | `cd /opt/kestrel && docker compose build --no-cache --build-arg NEXT_PUBLIC_API_BASE_URL=/api/v1 frontend && docker compose up -d frontend` |
 | 로그 확인 | `docker compose logs -f backend` 등 |
+| Caddy 설정 변경 | `caddy/Caddyfile` 편집 → `docker compose restart caddy`. **주의**: `@matcher { ... }` 의 `{` 는 *단독 라인*이어야 함 |
 | DB 백업 | AWS Backup 이 daily snapshot — 추가 작업 없음 |
 | DB 복구 | AWS Console → Backup → snapshot 선택 → restore → 새 EBS 만들고 인스턴스에 attach |
 | 인스턴스 교체 | `terraform taint aws_instance.host && terraform apply` (데이터 EBS 자동 detach → 새 인스턴스에 attach → user_data 가 기존 데이터 그대로 mount) |
