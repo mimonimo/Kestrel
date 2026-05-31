@@ -59,13 +59,13 @@ resource "aws_security_group" "host" {
   description = "Kestrel single-host: HTTPS + optional SSH"
   vpc_id      = aws_vpc.this.id
 
-  # 80 (Caddy HTTP→HTTPS 자동 리다이렉트 + Let's Encrypt HTTP-01 challenge)
+  # 80 (Caddy HTTP redirect + Let's Encrypt HTTP-01 challenge)
   ingress {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTP (Caddy autoredirect + ACME challenge)"
+    description = "HTTP for Caddy autoredirect and ACME challenge"
   }
 
   # 443 (Caddy TLS)
@@ -74,10 +74,10 @@ resource "aws_security_group" "host" {
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTPS (Caddy)"
+    description = "HTTPS via Caddy"
   }
 
-  # SSH — 변수 비우면 열지 않음 (SSM Session Manager 만 사용 권장).
+  # SSH — only opened when ssh_allowed_cidr is set; otherwise use SSM.
   dynamic "ingress" {
     for_each = var.ssh_allowed_cidr == "" ? [] : [1]
     content {
@@ -85,7 +85,7 @@ resource "aws_security_group" "host" {
       to_port     = 22
       protocol    = "tcp"
       cidr_blocks = [var.ssh_allowed_cidr]
-      description = "SSH (operator only)"
+      description = "SSH for operator"
     }
   }
 
@@ -94,7 +94,7 @@ resource "aws_security_group" "host" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "All outbound — NVD/GHSA/MITRE API + Docker Hub + Let's Encrypt"
+    description = "All outbound for upstream APIs, Docker Hub, ACME"
   }
 
   tags = { Name = "${local.name_prefix}-host-sg" }

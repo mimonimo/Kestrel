@@ -21,11 +21,29 @@ GIT_REPO_URL="${GIT_REPO_URL}"
 GIT_BRANCH="${GIT_BRANCH}"
 DATA_DEVICE_HINT="${DATA_VOLUME_DEVICE}"
 
+# ── IMDSv2 helper ────────────────────────────────────────────
+imds() {
+  local token
+  token=$(curl -s -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 300" \
+    http://169.254.169.254/latest/api/token)
+  curl -s -H "X-aws-ec2-metadata-token: $token" \
+    "http://169.254.169.254/latest/meta-data/$1"
+}
+
 # ── 1) 패키지 ────────────────────────────────────────────────
 dnf -y update
 dnf -y install docker git openssl jq
 
 systemctl enable docker
+
+# ── 1.5) swap 2GB — t4g.small (2GB RAM) 에서 frontend next build OOM 방지 ───
+if [ ! -f /swapfile ]; then
+  dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo "/swapfile none swap sw 0 0" >> /etc/fstab
+fi
 
 # ── 2) 데이터 EBS 마운트 ─────────────────────────────────────
 # AL2023 ARM 에서 EBS 가 /dev/nvme1n1 으로 노출됨 (sdb 힌트는 무시됨).
@@ -67,6 +85,14 @@ curl -sSL "https://github.com/docker/compose/releases/latest/download/docker-com
   -o /usr/local/lib/docker/cli-plugins/docker-compose
 chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
+# docker buildx — AL2023 의 docker 패키지 buildx 가 옛 버전이라 compose --build 가 거부.
+# latest 직접 설치.
+BUILDX_VER=$(curl -s https://api.github.com/repos/docker/buildx/releases/latest \
+  | grep tag_name | cut -d'"' -f4)
+curl -fsSL "https://github.com/docker/buildx/releases/download/$${BUILDX_VER}/buildx-$${BUILDX_VER}.linux-arm64" \
+  -o /usr/local/lib/docker/cli-plugins/docker-buildx
+chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
+
 # ── 4) Repo clone ────────────────────────────────────────────
 mkdir -p /opt
 if [ ! -d /opt/kestrel/.git ]; then
@@ -79,26 +105,26 @@ if [ ! -f .env ]; then
   JWT_SECRET="$(openssl rand -hex 32)"
   POSTGRES_PASSWORD="$(openssl rand -hex 16)"
   MEILI_MASTER_KEY="$(openssl rand -hex 24)"
-  PUBLIC_HOST="$${DOMAIN:-$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4).nip.io}"
+  PUBLIC_HOST="$${DOMAIN:-$(imds public-ipv4).nip.io}"
   cat > .env <<EOF
 # 자동 생성 — 운영자 외 접근 금지. chmod 600 .env
 POSTGRES_USER=kestrel
-POSTGRES_PASSWORD=$$POSTGRES_PASSWORD
+POSTGRES_PASSWORD=$${POSTGRES_PASSWORD}
 POSTGRES_DB=kestrel
-DATABASE_URL=postgresql+asyncpg://kestrel:$$POSTGRES_PASSWORD@postgres:5432/kestrel
+DATABASE_URL=postgresql+asyncpg://kestrel:$${POSTGRES_PASSWORD}@postgres:5432/kestrel
 
 REDIS_URL=redis://redis:6379/0
 
 MEILI_HOST=http://meilisearch:7700
-MEILI_MASTER_KEY=$$MEILI_MASTER_KEY
+MEILI_MASTER_KEY=$${MEILI_MASTER_KEY}
 
-JWT_SECRET=$$JWT_SECRET
+JWT_SECRET=$${JWT_SECRET}
 JWT_EXP_HOURS=12
-INITIAL_ADMIN_EMAILS=$INITIAL_ADMIN_EMAILS
+INITIAL_ADMIN_EMAILS=${INITIAL_ADMIN_EMAILS}
 
 # CORS — Caddy 가 같은 origin 으로 프록시하므로 사실상 same-origin 이지만
 # 도메인 명시는 안전 마진.
-CORS_ORIGINS=["https://$$PUBLIC_HOST"]
+CORS_ORIGINS=["https://$${PUBLIC_HOST}"]
 
 # Frontend → backend 호출 — Caddy 가 /api/* 를 backend 로 라우팅하니
 # 클라이언트에서는 상대경로 사용. NEXT_PUBLIC_API_BASE_URL 은 빌드 타임 값이라
@@ -117,14 +143,14 @@ EOF
 fi
 
 # Caddyfile — same-origin 으로 frontend + /api/* 라우팅 + 자동 TLS.
-PUBLIC_HOST="$${DOMAIN:-$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4).nip.io}"
+PUBLIC_HOST="$${DOMAIN:-$(imds public-ipv4).nip.io}"
 mkdir -p /opt/kestrel/caddy
 cat > /opt/kestrel/caddy/Caddyfile <<EOF
 {
-  email $TLS_EMAIL
+  email ${TLS_EMAIL}
 }
 
-$$PUBLIC_HOST {
+$${PUBLIC_HOST} {
   encode gzip zstd
 
   @api {
