@@ -40,6 +40,11 @@ class AnalysisSummary(CamelModel):
     created_at: datetime
     author: AuthorOut
     excerpt: str  # 첫 240자 미리보기
+    # AI 분석 탭의 history 형식과 통합 (PR 10-DA).
+    # result_md 의 ``## 페이로드 예시`` / ``## 완화 방안`` 섹션의 ``- `` 줄을 카운트.
+    payload_count: int = 0
+    mitigation_count: int = 0
+    attack_method: str = ""  # ``## 공격 방법`` 섹션 본문 (한 단락)
 
 
 class AnalysisDetail(AnalysisSummary):
@@ -62,11 +67,52 @@ def _excerpt(md: str, n: int = 240) -> str:
     return flat[:n] + ("…" if len(flat) > n else "")
 
 
+def _parse_result_md(md: str) -> tuple[str, int, int]:
+    """``## 공격 방법`` 본문 + 페이로드/완화 줄 수 추출.
+
+    cves.py 의 analyze_cve 가 생성하는 마크다운 양식 고정:
+        ## 공격 방법
+        <한 단락>
+
+        ## 페이로드 예시
+        - ```...```
+        - ```...```
+
+        ## 완화 방안
+        - ...
+        - ...
+    각 섹션 ``- `` 줄 수만 세고, ## 공격 방법 본문 첫 단락은 그대로 반환.
+    """
+    if not md:
+        return "", 0, 0
+    lines = md.split("\n")
+    section: str | None = None
+    attack_lines: list[str] = []
+    payload_count = 0
+    mitigation_count = 0
+    for raw in lines:
+        line = raw.rstrip()
+        if line.startswith("## "):
+            section = line[3:].strip()
+            continue
+        if section == "공격 방법":
+            if line.strip():
+                attack_lines.append(line)
+        elif section == "페이로드 예시":
+            if line.lstrip().startswith("- "):
+                payload_count += 1
+        elif section == "완화 방안":
+            if line.lstrip().startswith("- "):
+                mitigation_count += 1
+    return " ".join(attack_lines).strip()[:400], payload_count, mitigation_count
+
+
 def _to_summary(r: AnalysisResult) -> AnalysisSummary:
     author = AuthorOut(
         username=r.user.username if r.user else "(deleted)",
         nickname=r.user.nickname if r.user else None,
     )
+    attack_method, payload_count, mitigation_count = _parse_result_md(r.result_md or "")
     return AnalysisSummary(
         id=str(r.id),
         cve_id=r.cve_id,
@@ -76,6 +122,9 @@ def _to_summary(r: AnalysisResult) -> AnalysisSummary:
         created_at=r.created_at,
         author=author,
         excerpt=_excerpt(r.result_md or ""),
+        payload_count=payload_count,
+        mitigation_count=mitigation_count,
+        attack_method=attack_method,
     )
 
 

@@ -184,6 +184,10 @@ export interface AnalysisSummary {
   createdAt: string;
   author: AnalysisAuthor;
   excerpt: string;
+  // PR 10-DA: AI 분석 탭 history 형식 통합용.
+  payloadCount: number;
+  mitigationCount: number;
+  attackMethod: string;
 }
 
 export interface AnalysisDetail extends AnalysisSummary {

@@ -63,6 +63,58 @@ export function recordAnalysisHistory(entry: Omit<AnalysisHistoryEntry, "timesta
   }
 }
 
+/** Backend ``/me/analyses`` 응답을 localStorage 의 history 형식으로 동기화.
+ *
+ * 분석 결과는 backend AnalysisResult 가 진짜 source of truth — frontend 의
+ * localStorage history 는 빠른 표시용 캐시. 두 데이터가 분리돼 있어
+ * "AI 분석 탭에 보이는데 커뮤니티 피드에 없다" 같은 회귀 보고가 있었음.
+ *
+ * 호출 시점: 로그인 사용자가 AI 분석 페이지 또는 활동센터 mount 시. 응답을
+ * AnalysisHistoryEntry 형식으로 변환해 localStorage 와 merge — 같은 cveId 면
+ * backend 데이터가 우선, 없으면 기존 localStorage entry 유지.
+ */
+export function syncAnalysisHistoryFromSummaries(
+  summaries: Array<{
+    cveId: string;
+    createdAt: string;
+    attackMethod: string;
+    excerpt: string;
+    payloadCount: number;
+    mitigationCount: number;
+  }>,
+): void {
+  if (typeof window === "undefined" || summaries.length === 0) return;
+  const existing = readAnalysisHistory();
+  const byCve = new Map<string, AnalysisHistoryEntry>();
+  for (const e of existing) byCve.set(e.cveId, e);
+  for (const s of summaries) {
+    const ts = Date.parse(s.createdAt);
+    const next: AnalysisHistoryEntry = {
+      cveId: s.cveId,
+      timestamp: Number.isFinite(ts) ? ts : Date.now(),
+      attackMethod: s.attackMethod || s.excerpt || "(빈 본문)",
+      payloadCount: s.payloadCount || 0,
+      mitigationCount: s.mitigationCount || 0,
+      status: "success",
+    };
+    // backend 데이터가 더 최신이면 덮어쓰기.
+    const prev = byCve.get(s.cveId);
+    if (!prev || (prev.timestamp ?? 0) < next.timestamp) {
+      byCve.set(s.cveId, next);
+    }
+  }
+  const merged = Array.from(byCve.values())
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, MAX_ENTRIES);
+  try {
+    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(merged));
+    window.dispatchEvent(new Event("kestrel:analysis-history-changed"));
+  } catch {
+    /* quota — keep memory copy */
+  }
+}
+
+
 /** 분석이 실패했을 때 한 줄짜리 entry 를 기록 — 활동센터에서 빨간 톤으로 노출. */
 export function recordAnalysisFailure(cveId: string, errorMessage: string): void {
   recordAnalysisHistory({

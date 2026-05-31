@@ -370,8 +370,10 @@ class FacetsResponse(CamelModel):
 # not per-request. Frontend FilterPanel + CorpusRange + future surfaces
 # all hit /search/facets — a 60s TTL cache turns N concurrent requests
 # into one DB round-trip without staleness anyone notices.
+# 5분 캐시 — facets 는 ingestion 빈도(~30분)보다 훨씬 자주 안 바뀌고
+# 같은 (window, filter) 조합으로 N concurrent 요청이 와도 한 번만 계산.
 _FACETS_CACHE: dict[str, tuple[float, "FacetsResponse"]] = {}
-_FACETS_CACHE_TTL = 60.0
+_FACETS_CACHE_TTL = 300.0
 _FACETS_CACHE_LOCK = asyncio.Lock()
 
 
@@ -528,8 +530,14 @@ async def _build_facets(
         )
         .where(*type_conds)
     )
+    # 캐시 TTL 5분 + alembic 0022 의 인덱스 (severity / source / domains GIN /
+    # affected_products(vuln_id, os_family)) 로 query 자체가 빠름.
+    # AsyncSession 은 single connection 이라 asyncio.gather 로 6개 query 를
+    # 병렬화하기는 어려움 — 별 engine connection 필요. 단순 sequential 유지.
     type_rows = (
-        await db.execute(type_q.group_by(VulnerabilityType.name).order_by(func.count().desc()))
+        await db.execute(
+            type_q.group_by(VulnerabilityType.name).order_by(func.count().desc())
+        )
     ).all()
 
     # os families — JOIN through Vulnerability so all filters apply.
