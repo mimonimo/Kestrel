@@ -496,18 +496,39 @@ export function FloatingDock() {
                             <span className="font-mono text-[12px] font-semibold text-neutral-900 dark:text-neutral-100">
                               {e.cveId}
                             </span>
-                            <span className="shrink-0 text-[10px] tabular-nums text-neutral-500 dark:text-neutral-500">
-                              {formatAge(e.timestamp)}
+                            <span className="shrink-0 flex items-center gap-1.5">
+                              {e.status === "failed" && (
+                                <span
+                                  className="inline-flex items-center rounded-full bg-rose-100 px-1.5 py-px text-[10px] font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
+                                  title={e.errorMessage || "분석 실패"}
+                                >
+                                  실패
+                                </span>
+                              )}
+                              <span className="text-[10px] tabular-nums text-neutral-500 dark:text-neutral-500">
+                                {formatAge(e.timestamp)}
+                              </span>
                             </span>
                           </div>
-                          <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-neutral-700 dark:text-neutral-400">
-                            {e.attackMethod}
+                          <p
+                            className={
+                              "mt-0.5 line-clamp-2 text-[11px] leading-snug " +
+                              (e.status === "failed"
+                                ? "text-rose-700 dark:text-rose-300"
+                                : "text-neutral-700 dark:text-neutral-400")
+                            }
+                          >
+                            {e.status === "failed"
+                              ? e.errorMessage || e.attackMethod
+                              : e.attackMethod}
                           </p>
-                          <div className="mt-1 flex items-center gap-2 text-[10px] text-neutral-600 dark:text-neutral-500">
-                            <span>페이로드 {e.payloadCount}</span>
-                            <span>·</span>
-                            <span>대응 {e.mitigationCount}</span>
-                          </div>
+                          {e.status !== "failed" && (
+                            <div className="mt-1 flex items-center gap-2 text-[10px] text-neutral-600 dark:text-neutral-500">
+                              <span>페이로드 {e.payloadCount}</span>
+                              <span>·</span>
+                              <span>대응 {e.mitigationCount}</span>
+                            </div>
+                          )}
                         </Link>
                         <button
                           type="button"

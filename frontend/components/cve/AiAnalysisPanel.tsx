@@ -16,7 +16,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, api, type AiAnalysisResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { recordAnalysisHistory } from "@/lib/analysis-history";
+import { recordAnalysisFailure, recordAnalysisHistory } from "@/lib/analysis-history";
 import { clearRunning, markRunning, readRunningAnalyses } from "@/lib/analysis-running";
 import { appendQaTurn, clearQaHistory, useQaHistory } from "@/lib/analysis-qa";
 import { clearRunningQa, markRunningQa, readRunningQa } from "@/lib/qa-running";
@@ -226,7 +226,17 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
             payloadCount: res.data.payloadExamples.length,
             mitigationCount: res.data.mitigations.length,
           });
+        } else if (res.error) {
+          // 분석 실패 — 활동센터에서 빨간 톤으로 표시. 사용자가 페이지를 떠나
+          // unmount 된 상태여도 promise 의 then 은 실행되므로 보장.
+          const msg = res.error instanceof Error ? res.error.message : "분석에 실패했습니다.";
+          recordAnalysisFailure(cveId, msg);
         }
+      })
+      .catch((err) => {
+        // refetch 자체가 throw 한 케이스 (network 끊김 등). 한 번 더 안전망.
+        const msg = err instanceof Error ? err.message : "분석에 실패했습니다.";
+        recordAnalysisFailure(cveId, msg);
       })
       .finally(() => {
         clearRunning(cveId);
