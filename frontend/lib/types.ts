@@ -24,6 +24,20 @@ export type VulnType =
   | "Auth"
   | "Other";
 
+// FilterPanel 의 취약점 유형 칩이 facets 응답을 기다리지 않고 즉시 표시되도록
+// 자주 보이는 유형들을 hardcoded default 로 보존. facets 응답이 도착하면
+// dynamic 목록과 merge 되어 카운트가 채워진다.
+export const DEFAULT_VULN_TYPES: VulnType[] = [
+  "RCE",
+  "XSS",
+  "SQLi",
+  "Memory-Corruption",
+  "Info-Disclosure",
+  "Auth",
+  "DoS",
+  "Path-Traversal",
+];
+
 // Cross-domain technology surface (PR 10-B). A CVE can carry multiple
 // — e.g. an audio codec parser bug embedded in an SSH client gets both
 // `media` and `auth`. Backend infers these at ingestion time and stores
