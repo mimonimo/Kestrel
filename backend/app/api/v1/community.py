@@ -219,26 +219,30 @@ async def get_post(
     if not post:
         raise HTTPException(status_code=404, detail="post not found")
 
-    post.view_count = (post.view_count or 0) + 1
-    await db.commit()
-
+    # PR 10-CZ: db.commit() 직후 ORM 객체 속성 접근은 expire_on_commit 기본값으로
+    # lazy-reload 트리거 → async session 에서 MissingGreenlet 발생.
+    # 응답에 필요한 모든 필드를 commit 전에 캡처한 뒤, 마지막에 view_count 만
+    # 증가시키고 commit 한다.
     cnt = (
         await db.execute(select(func.count(Comment.id)).where(Comment.post_id == post.id))
     ).scalar_one()
-
-    return PostOut(
+    post_view_count = (post.view_count or 0) + 1
+    out = PostOut(
         id=post.id,
         title=post.title,
         content=post.content,
         author_name=post.author_name,
         vulnerability_id=post.vulnerability_id,
-        view_count=post.view_count,
-        comment_count=cnt,
+        view_count=post_view_count,
+        comment_count=int(cnt),
         is_owner=_is_owner(post.user_id, post.client_id, me=me, x_client_id=x_client_id),
         can_manage=_can_manage(post.user_id, post.client_id, me=me, x_client_id=x_client_id),
         created_at=post.created_at,
         updated_at=post.updated_at,
     )
+    post.view_count = post_view_count
+    await db.commit()
+    return out
 
 
 @router.patch("/posts/{post_id}", response_model=PostOut, response_model_by_alias=True)
