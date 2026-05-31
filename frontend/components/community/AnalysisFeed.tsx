@@ -11,11 +11,14 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  ChevronDown,
+  ChevronRight,
   Clock,
   ExternalLink,
   Folder,
   Loader2,
   Share2,
+  ShieldAlert,
   Sparkles,
   User as UserIcon,
   Users,
@@ -33,16 +36,22 @@ type ViewMode = "latest" | "category" | "author";
 
 const VIEW_LABELS: Record<ViewMode, { label: string; icon: typeof Clock }> = {
   latest: { label: "최신순", icon: Clock },
-  category: { label: "유형별", icon: Folder },
+  category: { label: "유형·위험도별", icon: Folder },
   author: { label: "작성자별", icon: Users },
 };
 
-const CATEGORY_LABEL: Record<string, string> = {
-  general: "기본 분석",
-  "threat-modeling": "위협 모델링",
-  poc: "PoC",
-  mitigation: "완화",
-  "attack-chain": "공격 체인",
+const SEVERITY_LABEL: Record<string, string> = {
+  critical: "Critical",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+const SEVERITY_ORDER = ["critical", "high", "medium", "low"];
+const SEVERITY_TONE: Record<string, string> = {
+  critical: "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200",
+  high: "bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-200",
+  medium: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200",
+  low: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200",
 };
 
 export function AnalysisFeed() {
@@ -52,6 +61,10 @@ export function AnalysisFeed() {
   const [view, setView] = useState<ViewMode>("latest");
   // 그룹 모드에서 특정 키만 보고 싶을 때 클릭 필터 (null = 전체).
   const [filterKey, setFilterKey] = useState<string | null>(null);
+  // 유형별 의 sub-axis: types (취약점 유형) | severity (위험도)
+  const [categoryAxis, setCategoryAxis] = useState<"types" | "severity">("types");
+  // 작성자별: 그룹별 펼침 상태. 기본 모두 접힘.
+  const [expandedAuthors, setExpandedAuthors] = useState<Set<string>>(new Set());
 
   const list = useQuery({
     queryKey: ["community-analyses"],
@@ -59,32 +72,61 @@ export function AnalysisFeed() {
     staleTime: 30_000,
   });
 
-  // 그룹화 — view 가 category / author 일 때 사용.
+  // 그룹화 — view 가 category(types/severity) / author 일 때 사용.
+  // CVE 의 cveTypes 는 array 라 한 분석이 여러 유형 그룹에 동시 속할 수 있음 (의도).
   const grouped = useMemo(() => {
     if (!list.data) return [] as { key: string; label: string; items: AnalysisSummary[] }[];
     const buckets = new Map<string, { label: string; items: AnalysisSummary[] }>();
-    for (const a of list.data.items) {
-      const key =
-        view === "category"
-          ? a.category || "general"
-          : a.author.username;
-      const label =
-        view === "category"
-          ? CATEGORY_LABEL[key] || key
-          : a.author.nickname || a.author.username;
+    const push = (key: string, label: string, a: AnalysisSummary) => {
       if (!buckets.has(key)) buckets.set(key, { label, items: [] });
       buckets.get(key)!.items.push(a);
+    };
+    for (const a of list.data.items) {
+      if (view === "author") {
+        push(a.author.username, a.author.nickname || a.author.username, a);
+      } else if (categoryAxis === "severity") {
+        const sev = (a.cveSeverity || "unscored").toLowerCase();
+        push(sev, SEVERITY_LABEL[sev] || "미분류", a);
+      } else {
+        // 유형별 (types). 분석이 attach 된 CVE 의 cveTypes 가 비면 "분류 없음".
+        if (a.cveTypes && a.cveTypes.length > 0) {
+          for (const t of a.cveTypes) push(t, t, a);
+        } else {
+          push("(unclassified)", "분류 없음", a);
+        }
+      }
     }
-    // 항목 많은 그룹 우선. 같은 카운트면 label 가나다순.
-    return Array.from(buckets.entries())
-      .map(([key, v]) => ({ key, label: v.label, items: v.items }))
-      .sort((a, b) => b.items.length - a.items.length || a.label.localeCompare(b.label));
-  }, [list.data, view]);
+    let entries = Array.from(buckets.entries()).map(([key, v]) => ({
+      key,
+      label: v.label,
+      items: v.items,
+    }));
+    if (view === "category" && categoryAxis === "severity") {
+      // 위험도 순으로 정렬 (critical → low → unscored).
+      entries = entries.sort((a, b) => {
+        const ai = SEVERITY_ORDER.indexOf(a.key);
+        const bi = SEVERITY_ORDER.indexOf(b.key);
+        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+      });
+    } else {
+      entries.sort((a, b) => b.items.length - a.items.length || a.label.localeCompare(b.label));
+    }
+    return entries;
+  }, [list.data, view, categoryAxis]);
 
   const filteredGroups = useMemo(
     () => (filterKey ? grouped.filter((g) => g.key === filterKey) : grouped),
     [grouped, filterKey],
   );
+
+  const toggleAuthor = (key: string) => {
+    setExpandedAuthors((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   // 헤더 — 로그인 사용자에겐 "내 분석 공유하기" 버튼 노출. 비로그인은 그대로 읽기만.
   const header = (
@@ -93,8 +135,10 @@ export function AnalysisFeed() {
         {view === "latest"
           ? "공개된 분석을 시간 역순으로 보여줍니다."
           : view === "category"
-            ? "분석 유형별로 묶어서 보여줍니다."
-            : "공유한 작성자별로 묶어서 보여줍니다."}
+            ? categoryAxis === "severity"
+              ? "위험도별 그룹 — Critical / High / Medium / Low / 미분류 순."
+              : "취약점 유형별 그룹 — XSS · SQLi · RCE · 인증 등 한 분석이 여러 유형에 속할 수 있어요."
+            : "작성자별 그룹 — 행을 눌러 펼쳐 보세요."}
       </span>
       {user && (
         <button
@@ -138,7 +182,39 @@ export function AnalysisFeed() {
         })}
       </div>
 
-      {view !== "latest" && grouped.length > 1 && (
+      {view === "category" && (
+        <div className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-50 p-1 text-[11px] dark:border-neutral-800 dark:bg-surface-1">
+          {(
+            [
+              { id: "types" as const, label: "취약점 유형", icon: Folder },
+              { id: "severity" as const, label: "위험도", icon: ShieldAlert },
+            ]
+          ).map(({ id, label, icon: Icon }) => {
+            const active = categoryAxis === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setCategoryAxis(id);
+                  setFilterKey(null);
+                }}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium transition-colors",
+                  active
+                    ? "bg-white text-neutral-900 shadow-sm dark:bg-surface-2 dark:text-neutral-100"
+                    : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
+                )}
+              >
+                <Icon className="h-3 w-3" />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {view === "category" && grouped.length > 1 && (
         <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
           <button
             type="button"
@@ -161,7 +237,9 @@ export function AnalysisFeed() {
                 "rounded-full border px-2.5 py-0.5 transition-colors",
                 filterKey === g.key
                   ? "border-violet-400 bg-violet-50 text-violet-800 dark:border-violet-500/50 dark:bg-violet-500/15 dark:text-violet-200"
-                  : "border-neutral-300 text-neutral-700 hover:border-violet-300 hover:text-violet-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-violet-500/40 dark:hover:text-violet-200",
+                  : categoryAxis === "severity" && SEVERITY_TONE[g.key]
+                    ? `border-transparent ${SEVERITY_TONE[g.key]} hover:opacity-90`
+                    : "border-neutral-300 text-neutral-700 hover:border-violet-300 hover:text-violet-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-violet-500/40 dark:hover:text-violet-200",
               )}
             >
               {g.label}{" "}
@@ -244,14 +322,28 @@ export function AnalysisFeed() {
           <span className="tabular-nums text-neutral-600 dark:text-neutral-500">
             {formatRelativeKo(a.createdAt)}
           </span>
-          {a.category && a.category !== "general" && (
+          {a.cveSeverity && (
             <>
               <span className="text-neutral-500 dark:text-neutral-500">·</span>
-              <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-neutral-700 dark:bg-surface-2 dark:text-neutral-300">
-                {CATEGORY_LABEL[a.category] || a.category}
+              <span
+                className={cn(
+                  "rounded-full px-2 py-0.5 font-medium",
+                  SEVERITY_TONE[a.cveSeverity] ||
+                    "bg-neutral-100 text-neutral-700 dark:bg-surface-2 dark:text-neutral-300",
+                )}
+              >
+                {SEVERITY_LABEL[a.cveSeverity] || a.cveSeverity}
               </span>
             </>
           )}
+          {a.cveTypes.slice(0, 2).map((t) => (
+            <span
+              key={t}
+              className="rounded-full bg-violet-50 px-2 py-0.5 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300"
+            >
+              {t}
+            </span>
+          ))}
         </div>
         {a.title && (
           <h3 className="mt-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
@@ -271,24 +363,69 @@ export function AnalysisFeed() {
       {controls}
       {view === "latest" ? (
         <ul className="space-y-3">{list.data.items.map(renderCard)}</ul>
-      ) : (
+      ) : view === "category" ? (
         <div className="space-y-6">
+          {filteredGroups.map((g) => (
+            <section key={g.key}>
+              <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
+                {categoryAxis === "severity" ? (
+                  <ShieldAlert className="h-3 w-3" />
+                ) : (
+                  <Folder className="h-3 w-3" />
+                )}
+                {g.label}
+                <span className="tabular-nums font-normal text-neutral-500 dark:text-neutral-500">
+                  · {g.items.length}건
+                </span>
+              </h3>
+              <ul className="space-y-3">{g.items.map(renderCard)}</ul>
+            </section>
+          ))}
+        </div>
+      ) : (
+        // 작성자별: 그룹 헤더만 먼저 표시, 클릭 시 펼침.
+        <ul className="space-y-2">
           {filteredGroups.map((g) => {
-            const Icon = view === "category" ? Folder : UserIcon;
+            const expanded = expandedAuthors.has(g.key);
+            const sample = g.items[0];
+            const initial = (g.label.trim().charAt(0) || "?").toUpperCase();
             return (
-              <section key={g.key}>
-                <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
-                  <Icon className="h-3 w-3" />
-                  {g.label}
-                  <span className="tabular-nums font-normal text-neutral-500 dark:text-neutral-500">
-                    · {g.items.length}건
+              <li key={g.key}>
+                <button
+                  type="button"
+                  onClick={() => toggleAuthor(g.key)}
+                  aria-expanded={expanded}
+                  className="flex w-full items-center gap-3 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-left transition-colors hover:border-violet-300 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-violet-500/40"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-100 text-xs font-semibold text-sky-800 dark:bg-sky-500/20 dark:text-sky-200">
+                    {initial}
                   </span>
-                </h3>
-                <ul className="space-y-3">{g.items.map(renderCard)}</ul>
-              </section>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                      {g.label}
+                    </span>
+                    <span className="block truncate text-[11px] text-neutral-600 dark:text-neutral-400">
+                      가장 최근 · {sample.cveId} · {formatRelativeKo(sample.createdAt)}
+                    </span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] tabular-nums text-neutral-700 dark:bg-surface-2 dark:text-neutral-300">
+                    {g.items.length}건
+                  </span>
+                  {expanded ? (
+                    <ChevronDown className="h-4 w-4 text-neutral-500" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-neutral-500" />
+                  )}
+                </button>
+                {expanded && (
+                  <ul className="mt-2 ml-4 space-y-2 border-l-2 border-neutral-200 pl-4 dark:border-neutral-800">
+                    {g.items.map(renderCard)}
+                  </ul>
+                )}
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
       <AnalysisDetailModal
         analysisId={openId}

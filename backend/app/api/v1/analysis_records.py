@@ -22,7 +22,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.v1.deps import get_current_user, get_optional_user
 from app.core.database import get_db
-from app.models import AnalysisResult, User
+from app.models import AnalysisResult, User, Vulnerability, VulnerabilityType, vulnerability_type_map
 from app.schemas.vulnerability import CamelModel
 
 
@@ -41,10 +41,13 @@ class AnalysisSummary(CamelModel):
     author: AuthorOut
     excerpt: str  # 첫 240자 미리보기
     # AI 분석 탭의 history 형식과 통합 (PR 10-DA).
-    # result_md 의 ``## 페이로드 예시`` / ``## 완화 방안`` 섹션의 ``- `` 줄을 카운트.
     payload_count: int = 0
     mitigation_count: int = 0
     attack_method: str = ""  # ``## 공격 방법`` 섹션 본문 (한 단락)
+    # 그룹핑·필터링용 CVE 메타 (PR 10-DC).
+    # analysis_records 의 list_* 함수가 Vulnerability JOIN 으로 채움.
+    cve_severity: str | None = None  # critical / high / medium / low / null
+    cve_types: list[str] = []        # ["XSS", "SQLi", ...] — 빈 배열은 분류 없음
 
 
 class AnalysisDetail(AnalysisSummary):
@@ -107,7 +110,12 @@ def _parse_result_md(md: str) -> tuple[str, int, int]:
     return " ".join(attack_lines).strip()[:400], payload_count, mitigation_count
 
 
-def _to_summary(r: AnalysisResult) -> AnalysisSummary:
+def _to_summary(
+    r: AnalysisResult,
+    *,
+    severity: str | None = None,
+    types: list[str] | None = None,
+) -> AnalysisSummary:
     author = AuthorOut(
         username=r.user.username if r.user else "(deleted)",
         nickname=r.user.nickname if r.user else None,
@@ -125,7 +133,49 @@ def _to_summary(r: AnalysisResult) -> AnalysisSummary:
         payload_count=payload_count,
         mitigation_count=mitigation_count,
         attack_method=attack_method,
+        cve_severity=severity,
+        cve_types=types or [],
     )
+
+
+async def _build_cve_meta(
+    db: AsyncSession, cve_ids: list[str]
+) -> tuple[dict[str, str | None], dict[str, list[str]]]:
+    """주어진 cve_id 목록의 severity + types 한 번에 가져와 dict 반환.
+
+    list_* 함수가 N+1 query 안 나도록 batch.
+    """
+    if not cve_ids:
+        return {}, {}
+    sev_rows = (
+        await db.execute(
+            select(Vulnerability.cve_id, Vulnerability.severity).where(
+                Vulnerability.cve_id.in_(cve_ids)
+            )
+        )
+    ).all()
+    sev_map: dict[str, str | None] = {}
+    for cid, sev in sev_rows:
+        sev_map[cid] = sev.value if hasattr(sev, "value") else (str(sev) if sev else None)
+
+    types_rows = (
+        await db.execute(
+            select(Vulnerability.cve_id, VulnerabilityType.name)
+            .join(
+                vulnerability_type_map,
+                Vulnerability.id == vulnerability_type_map.c.vulnerability_id,
+            )
+            .join(
+                VulnerabilityType,
+                VulnerabilityType.id == vulnerability_type_map.c.type_id,
+            )
+            .where(Vulnerability.cve_id.in_(cve_ids))
+        )
+    ).all()
+    types_map: dict[str, list[str]] = {}
+    for cid, name in types_rows:
+        types_map.setdefault(cid, []).append(name)
+    return sev_map, types_map
 
 
 # ─── 내 분석 ────────────────────────────────────────────
@@ -148,7 +198,14 @@ async def list_my_analyses(
         .offset(offset)
     )
     rows = (await db.execute(q)).scalars().all()
-    return AnalysisList(items=[_to_summary(r) for r in rows], total=len(rows))
+    sev_map, types_map = await _build_cve_meta(db, [r.cve_id for r in rows])
+    return AnalysisList(
+        items=[
+            _to_summary(r, severity=sev_map.get(r.cve_id), types=types_map.get(r.cve_id, []))
+            for r in rows
+        ],
+        total=len(rows),
+    )
 
 
 # ─── 공개 분석 (커뮤니티) ───────────────────────────────
@@ -182,7 +239,14 @@ async def list_community_analyses(
         q = q.where(AnalysisResult.cve_id == cve_id)
     q = q.limit(limit).offset(offset)
     rows = (await db.execute(q)).scalars().all()
-    return AnalysisList(items=[_to_summary(r) for r in rows], total=len(rows))
+    sev_map, types_map = await _build_cve_meta(db, [r.cve_id for r in rows])
+    return AnalysisList(
+        items=[
+            _to_summary(r, severity=sev_map.get(r.cve_id), types=types_map.get(r.cve_id, []))
+            for r in rows
+        ],
+        total=len(rows),
+    )
 
 
 # ─── CVE 별 분석 히스토리 ───────────────────────────────
@@ -213,7 +277,14 @@ async def list_cve_analyses(
         .order_by(desc(AnalysisResult.created_at))
     )
     rows = (await db.execute(q)).scalars().all()
-    return AnalysisList(items=[_to_summary(r) for r in rows], total=len(rows))
+    sev_map, types_map = await _build_cve_meta(db, [r.cve_id for r in rows])
+    return AnalysisList(
+        items=[
+            _to_summary(r, severity=sev_map.get(r.cve_id), types=types_map.get(r.cve_id, []))
+            for r in rows
+        ],
+        total=len(rows),
+    )
 
 
 # ─── 단건 / 수정 / 삭제 ──────────────────────────────────
