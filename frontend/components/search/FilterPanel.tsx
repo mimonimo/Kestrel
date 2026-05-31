@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { Domain, OsFamily, Severity, VulnType } from "@/lib/types";
-import { DOMAINS } from "@/lib/types";
+import { DEFAULT_VULN_TYPES, DOMAINS } from "@/lib/types";
 
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low"];
 const OS_FAMILIES: OsFamily[] = ["windows", "linux", "macos", "android", "ios", "other"];
@@ -141,8 +141,11 @@ export function FilterPanel({ value, onChange }: Props) {
   // even if it's not in the facets response (so an old URL with a
   // selected type that has 0 rows still shows the chip in active state).
   const dynamicTypes = facets.data?.types.map((b) => b.value) ?? [];
+  // facets 응답 도착 전엔 hardcoded DEFAULT 가 표시 → severity/os/domain 처럼
+  // 즉시 칩이 그려짐. 응답 후엔 backend 가 알려준 실제 유형과 union 으로 카운트가
+  // 채워짐.
   const typesToRender = Array.from(
-    new Set([...dynamicTypes, ...value.types]),
+    new Set<string>([...DEFAULT_VULN_TYPES, ...dynamicTypes, ...value.types]),
   );
 
   return (
