@@ -135,8 +135,13 @@ export function FloatingDock() {
     setDismissedSig(readDismissed());
   }, []);
 
+  // useAuth 가 아래쪽 useEffect 에서도 필요해 위쪽으로 끌어올림.
+  const { user: authUser } = useAuth();
+
   useEffect(() => {
-    const refresh = () => setEntries(readAnalysisHistory());
+    // 비로그인 상태에서는 활동센터에 분석 기록 노출 안 함 — localStorage 잔재
+    // (이전 로그인 시 캐시) 도 가림 (PR 10-DJ).
+    const refresh = () => setEntries(authUser ? readAnalysisHistory() : []);
     refresh();
     window.addEventListener("kestrel:analysis-history-changed", refresh);
     window.addEventListener("storage", refresh);
@@ -144,11 +149,10 @@ export function FloatingDock() {
       window.removeEventListener("kestrel:analysis-history-changed", refresh);
       window.removeEventListener("storage", refresh);
     };
-  }, []);
+  }, [authUser]);
 
   // PR 10-DH — 활동센터도 backend /me/analyses 와 sync. AI 분석 탭과
   // 동일하게 다른 기기에서 한 분석도 dock 알림으로 노출.
-  const { user: authUser } = useAuth();
   useEffect(() => {
     if (!authUser) return;
     let cancelled = false;
