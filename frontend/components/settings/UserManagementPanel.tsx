@@ -9,7 +9,7 @@
  */
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Search, ShieldCheck, Trash2, User as UserIcon } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, Loader2, Search, ShieldCheck, Trash2, User as UserIcon } from "lucide-react";
 
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -33,7 +33,16 @@ interface AdminUser {
   isAdmin: boolean;
   createdAt: string;
   updatedAt: string;
+  lastLoginAt: string | null;
   stats: UserStats;
+}
+
+interface LoginLog {
+  id: number;
+  userId: string;
+  ip: string | null;
+  userAgent: string | null;
+  createdAt: string;
 }
 
 async function fetchUsers(q: string): Promise<{ items: AdminUser[]; total: number }> {
@@ -43,6 +52,16 @@ async function fetchUsers(q: string): Promise<{ items: AdminUser[]; total: numbe
   if (!res.ok) {
     throw new ApiError(res.status, `사용자 목록을 불러오지 못했습니다 (${res.status})`);
   }
+  return res.json();
+}
+
+async function fetchLoginLogs(id: string): Promise<{ items: LoginLog[] }> {
+  const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+  const res = await fetch(`${BASE}/admin/users/${encodeURIComponent(id)}/login-logs?limit=20`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!res.ok) throw new ApiError(res.status, `접속 로그 로딩 실패 (${res.status})`);
   return res.json();
 }
 
@@ -69,6 +88,7 @@ export function UserManagementPanel() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // 200ms debounce
   useState(() => {
@@ -176,7 +196,22 @@ export function UserManagementPanel() {
                     {u.stats.lastActivityAt
                       ? formatRelativeKo(u.stats.lastActivityAt)
                       : "없음"}
+                    {" · "} 마지막 로그인{" "}
+                    {u.lastLoginAt ? formatRelativeKo(u.lastLoginAt) : "없음"}
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(expandedId === u.id ? null : u.id)}
+                    className="mt-2 inline-flex items-center gap-1 rounded-full border border-neutral-300 px-2 py-0.5 text-[10px] text-neutral-700 hover:border-sky-300 hover:text-sky-700 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-sky-500/40 dark:hover:text-sky-200"
+                  >
+                    {expandedId === u.id ? (
+                      <ChevronDown className="h-3 w-3" />
+                    ) : (
+                      <ChevronRight className="h-3 w-3" />
+                    )}
+                    접속 로그
+                  </button>
+                  {expandedId === u.id && <LoginLogList userId={u.id} />}
                 </div>
                 <button
                   type="button"
@@ -216,6 +251,57 @@ export function UserManagementPanel() {
         </p>
       )}
     </div>
+  );
+}
+
+function LoginLogList({ userId }: { userId: string }) {
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["admin-user-login-logs", userId],
+    queryFn: () => fetchLoginLogs(userId),
+    staleTime: 30_000,
+  });
+  if (isPending) {
+    return (
+      <p className="mt-2 inline-flex items-center gap-1.5 text-[10px] text-neutral-500 dark:text-neutral-500">
+        <Loader2 className="h-3 w-3 animate-spin" /> 로그 불러오는 중…
+      </p>
+    );
+  }
+  if (isError) {
+    return (
+      <p className="mt-2 text-[10px] text-rose-700 dark:text-rose-300">
+        접속 로그를 가져오지 못했어요.
+      </p>
+    );
+  }
+  if (!data || data.items.length === 0) {
+    return (
+      <p className="mt-2 text-[10px] text-neutral-500 dark:text-neutral-500">
+        기록된 접속이 없어요.
+      </p>
+    );
+  }
+  return (
+    <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto border-l-2 border-neutral-200 pl-3 dark:border-neutral-800">
+      {data.items.map((log) => (
+        <li key={log.id} className="text-[10px] text-neutral-600 dark:text-neutral-400">
+          <span className="inline-flex items-center gap-1 text-neutral-700 dark:text-neutral-300">
+            <Clock className="h-2.5 w-2.5" />
+            {formatRelativeKo(log.createdAt)}
+          </span>
+          {log.ip && <span className="ml-2 tabular-nums">{log.ip}</span>}
+          {log.userAgent && (
+            <span
+              className="ml-2 truncate text-neutral-500 dark:text-neutral-500"
+              title={log.userAgent}
+            >
+              · {log.userAgent.slice(0, 60)}
+              {log.userAgent.length > 60 ? "…" : ""}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

@@ -4,6 +4,7 @@ from app.models.base import Base
 from app.models.bookmark import Bookmark
 from app.models.community import Comment, Post, PostLike, Tag, User, UserRole, Vote, VoteTarget
 from app.models.cve_lab_mapping import CveLabFeedback, CveLabMapping, LabSourceKind
+from app.models.login_log import LoginLog
 from app.models.sandbox import SandboxSession, SandboxStatus
 from app.models.settings import AppSettings
 from app.models.ticket import Ticket, TicketStatus
@@ -33,6 +34,7 @@ __all__ = [
     "IngestionLog",
     "LabSourceKind",
     "OsFamily",
+    "LoginLog",
     "Post",
     "PostLike",
     "RefType",

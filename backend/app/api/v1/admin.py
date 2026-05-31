@@ -90,6 +90,7 @@ async def get_external_keys(db: AsyncSession = Depends(get_db)) -> ExternalKeysO
 from datetime import datetime as _dt
 
 from app.core.security import is_admin_email
+from app.models import LoginLog as _LoginLog
 from app.models import User as _User
 from app.models import UserRole as _UserRole
 
@@ -119,7 +120,24 @@ class _UserOut(_PydBaseModel):
     is_admin: bool
     created_at: _dt
     updated_at: _dt
+    last_login_at: _dt | None = None
     stats: _UserStats = _UserStats()
+
+
+class _LoginLogOut(_PydBaseModel):
+    model_config = _PydConfigDict(populate_by_name=True, alias_generator=lambda s: "".join(
+        [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
+    ))
+    id: int
+    user_id: str
+    ip: str | None = None
+    user_agent: str | None = None
+    created_at: _dt
+
+
+class _LoginLogsList(_PydBaseModel):
+    items: list[_LoginLogOut]
+    total: int
 
 
 class _UsersList(_PydBaseModel):
@@ -142,8 +160,49 @@ def _to_user_out(u: _User, stats: _UserStats | None = None) -> _UserOut:
         is_admin=u.role == _UserRole.ADMIN,
         created_at=u.created_at,
         updated_at=u.updated_at,
+        last_login_at=u.last_login_at,
         stats=stats or _UserStats(),
     )
+
+
+@router.get(
+    "/users/{user_id}/login-logs",
+    response_model=_LoginLogsList,
+    response_model_by_alias=True,
+)
+async def list_user_login_logs(
+    user_id: str,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+) -> _LoginLogsList:
+    import uuid as _uuid
+    try:
+        uid = _uuid.UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(404, detail="사용자를 찾을 수 없습니다.") from None
+    target = await db.scalar(select(_User).where(_User.id == uid))
+    if target is None:
+        raise HTTPException(404, detail="사용자를 찾을 수 없습니다.")
+    from sqlalchemy import desc as _desc
+    rows = (
+        await db.execute(
+            select(_LoginLog)
+            .where(_LoginLog.user_id == uid)
+            .order_by(_desc(_LoginLog.created_at))
+            .limit(max(1, min(200, limit)))
+        )
+    ).scalars().all()
+    items = [
+        _LoginLogOut(
+            id=r.id,
+            user_id=str(r.user_id),
+            ip=r.ip,
+            user_agent=r.user_agent,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
+    return _LoginLogsList(items=items, total=len(items))
 
 
 @router.get("/users", response_model=_UsersList, response_model_by_alias=True)

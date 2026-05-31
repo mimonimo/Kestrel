@@ -12,7 +12,9 @@ from __future__ import annotations
 import re
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import EmailStr, Field
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +29,7 @@ from app.core.security import (
     issue_access_token,
     verify_password,
 )
-from app.models import User, UserRole
+from app.models import LoginLog, User, UserRole
 from app.schemas.vulnerability import CamelModel
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -124,6 +126,7 @@ async def signup(
 @router.post("/login", response_model=MeOut, response_model_by_alias=True)
 async def login(
     body: LoginIn,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> MeOut:
@@ -132,6 +135,13 @@ async def login(
     if user is None or not verify_password(body.password, user.password_hash):
         # 동일 메시지 — 이메일 존재 여부 노출 방지.
         raise HTTPException(401, detail="이메일 또는 비밀번호가 일치하지 않습니다.")
+
+    # PR 10-DE — last_login_at + login_logs 갱신. 운영자 추적용.
+    user.last_login_at = datetime.now(timezone.utc)
+    ip = request.client.host if request.client else None
+    ua = (request.headers.get("user-agent") or "")[:512] or None
+    db.add(LoginLog(user_id=user.id, ip=ip, user_agent=ua))
+    await db.commit()
 
     role = user.role.value if hasattr(user.role, "value") else str(user.role)
     token = issue_access_token(user_id=str(user.id), role=role)

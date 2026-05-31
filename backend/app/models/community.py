@@ -42,6 +42,10 @@ class User(Base, TimestampMixin):
     # username 은 시스템 식별자 (변경 불가), nickname 은 표시명 (변경 가능).
     nickname: Mapped[str | None] = mapped_column(String(64), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # PR 10-DE — 마지막 로그인 시각. auth.login 에서 갱신.
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class Post(Base, TimestampMixin):
