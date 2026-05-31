@@ -408,7 +408,7 @@ export function AnalysisFeed() {
                       가장 최근 · {sample.cveId} · {formatRelativeKo(sample.createdAt)}
                     </span>
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] tabular-nums text-neutral-700 dark:bg-surface-2 dark:text-neutral-300">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium tabular-nums text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">
                     {g.items.length}건
                   </span>
                   {expanded ? (
