@@ -8,30 +8,94 @@
  * 각 카드 클릭 시 본문(result_md) 을 펼친 모달로 보여 준다.
  */
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, Loader2, Share2, Sparkles, User as UserIcon, X } from "lucide-react";
+import {
+  Clock,
+  ExternalLink,
+  Folder,
+  Loader2,
+  Share2,
+  Sparkles,
+  User as UserIcon,
+  Users,
+  X,
+} from "lucide-react";
 
 import { api, type AnalysisSummary } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { ErrorBox } from "@/components/ui/feedback-box";
 import { ShareMyAnalysesModal } from "@/components/community/ShareMyAnalysesModal";
 import { formatRelativeKo } from "@/lib/format";
+import { cn } from "@/lib/utils";
+
+type ViewMode = "latest" | "category" | "author";
+
+const VIEW_LABELS: Record<ViewMode, { label: string; icon: typeof Clock }> = {
+  latest: { label: "최신순", icon: Clock },
+  category: { label: "유형별", icon: Folder },
+  author: { label: "작성자별", icon: Users },
+};
+
+const CATEGORY_LABEL: Record<string, string> = {
+  general: "기본 분석",
+  "threat-modeling": "위협 모델링",
+  poc: "PoC",
+  mitigation: "완화",
+  "attack-chain": "공격 체인",
+};
 
 export function AnalysisFeed() {
   const { user } = useAuth();
   const [openId, setOpenId] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [view, setView] = useState<ViewMode>("latest");
+  // 그룹 모드에서 특정 키만 보고 싶을 때 클릭 필터 (null = 전체).
+  const [filterKey, setFilterKey] = useState<string | null>(null);
+
   const list = useQuery({
     queryKey: ["community-analyses"],
     queryFn: () => api.listCommunityAnalyses({ limit: 50 }),
     staleTime: 30_000,
   });
 
+  // 그룹화 — view 가 category / author 일 때 사용.
+  const grouped = useMemo(() => {
+    if (!list.data) return [] as { key: string; label: string; items: AnalysisSummary[] }[];
+    const buckets = new Map<string, { label: string; items: AnalysisSummary[] }>();
+    for (const a of list.data.items) {
+      const key =
+        view === "category"
+          ? a.category || "general"
+          : a.author.username;
+      const label =
+        view === "category"
+          ? CATEGORY_LABEL[key] || key
+          : a.author.nickname || a.author.username;
+      if (!buckets.has(key)) buckets.set(key, { label, items: [] });
+      buckets.get(key)!.items.push(a);
+    }
+    // 항목 많은 그룹 우선. 같은 카운트면 label 가나다순.
+    return Array.from(buckets.entries())
+      .map(([key, v]) => ({ key, label: v.label, items: v.items }))
+      .sort((a, b) => b.items.length - a.items.length || a.label.localeCompare(b.label));
+  }, [list.data, view]);
+
+  const filteredGroups = useMemo(
+    () => (filterKey ? grouped.filter((g) => g.key === filterKey) : grouped),
+    [grouped, filterKey],
+  );
+
   // 헤더 — 로그인 사용자에겐 "내 분석 공유하기" 버튼 노출. 비로그인은 그대로 읽기만.
   const header = (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-600 dark:text-neutral-500">
-      <span>공개된 분석은 시간 역순으로 정렬됩니다.</span>
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-600 dark:text-neutral-500">
+      <span>
+        {view === "latest"
+          ? "공개된 분석을 시간 역순으로 보여줍니다."
+          : view === "category"
+            ? "분석 유형별로 묶어서 보여줍니다."
+            : "공유한 작성자별로 묶어서 보여줍니다."}
+      </span>
       {user && (
         <button
           type="button"
@@ -44,10 +108,76 @@ export function AnalysisFeed() {
     </div>
   );
 
+  // 정렬/그룹 모드 토글 + (그룹 모드) 칩 필터.
+  const controls = (
+    <div className="mb-4 space-y-2">
+      <div className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-50 p-1 text-xs dark:border-neutral-800 dark:bg-surface-1">
+        {(Object.keys(VIEW_LABELS) as ViewMode[]).map((m) => {
+          const { label, icon: Icon } = VIEW_LABELS[m];
+          const active = view === m;
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => {
+                setView(m);
+                setFilterKey(null);
+              }}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium transition-colors",
+                active
+                  ? "bg-white text-neutral-900 shadow-sm dark:bg-surface-2 dark:text-neutral-100"
+                  : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
+              )}
+              aria-pressed={active}
+            >
+              <Icon className="h-3 w-3" />
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {view !== "latest" && grouped.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+          <button
+            type="button"
+            onClick={() => setFilterKey(null)}
+            className={cn(
+              "rounded-full border px-2.5 py-0.5 transition-colors",
+              filterKey === null
+                ? "border-violet-400 bg-violet-50 text-violet-800 dark:border-violet-500/50 dark:bg-violet-500/15 dark:text-violet-200"
+                : "border-neutral-300 text-neutral-700 hover:border-violet-300 hover:text-violet-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-violet-500/40 dark:hover:text-violet-200",
+            )}
+          >
+            전체 <span className="tabular-nums opacity-70">({list.data?.items.length ?? 0})</span>
+          </button>
+          {grouped.map((g) => (
+            <button
+              key={g.key}
+              type="button"
+              onClick={() => setFilterKey(g.key === filterKey ? null : g.key)}
+              className={cn(
+                "rounded-full border px-2.5 py-0.5 transition-colors",
+                filterKey === g.key
+                  ? "border-violet-400 bg-violet-50 text-violet-800 dark:border-violet-500/50 dark:bg-violet-500/15 dark:text-violet-200"
+                  : "border-neutral-300 text-neutral-700 hover:border-violet-300 hover:text-violet-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-violet-500/40 dark:hover:text-violet-200",
+              )}
+            >
+              {g.label}{" "}
+              <span className="tabular-nums opacity-70">({g.items.length})</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   if (list.isPending) {
     return (
       <>
         {header}
+        {controls}
         <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <div
@@ -64,6 +194,7 @@ export function AnalysisFeed() {
     return (
       <>
         {header}
+        {controls}
         <ErrorBox
           title="분석 피드를 불러오지 못했습니다"
           message="잠시 후 다시 시도해 주세요."
@@ -76,6 +207,7 @@ export function AnalysisFeed() {
     return (
       <>
         {header}
+        {controls}
         <div className="rounded-xl border border-neutral-200 bg-white px-6 py-12 text-center dark:border-neutral-800 dark:bg-surface-1">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/15 ring-1 ring-violet-400/30">
             <Sparkles className="h-6 w-6 text-violet-700 dark:text-violet-300" />
@@ -93,50 +225,71 @@ export function AnalysisFeed() {
     );
   }
 
+  const renderCard = (a: AnalysisSummary) => (
+    <li key={a.id}>
+      <button
+        type="button"
+        onClick={() => setOpenId(a.id)}
+        className="block w-full rounded-lg border border-neutral-200 bg-white p-4 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md hover:shadow-violet-900/5 active:translate-y-0 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-violet-500/40"
+      >
+        <div className="flex flex-wrap items-baseline gap-x-2 text-xs">
+          <span className="rounded-full bg-violet-100 px-2 py-0.5 font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">
+            {a.cveId}
+          </span>
+          <span className="text-neutral-500 dark:text-neutral-500">·</span>
+          <span className="font-medium text-neutral-800 dark:text-neutral-200">
+            {a.author.nickname || a.author.username}
+          </span>
+          <span className="text-neutral-500 dark:text-neutral-500">·</span>
+          <span className="tabular-nums text-neutral-600 dark:text-neutral-500">
+            {formatRelativeKo(a.createdAt)}
+          </span>
+          {a.category && a.category !== "general" && (
+            <>
+              <span className="text-neutral-500 dark:text-neutral-500">·</span>
+              <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-neutral-700 dark:bg-surface-2 dark:text-neutral-300">
+                {CATEGORY_LABEL[a.category] || a.category}
+              </span>
+            </>
+          )}
+        </div>
+        {a.title && (
+          <h3 className="mt-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            {a.title}
+          </h3>
+        )}
+        <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-neutral-700 dark:text-neutral-400">
+          {a.excerpt}
+        </p>
+      </button>
+    </li>
+  );
+
   return (
     <>
       {header}
-      <ul className="space-y-3">
-        {list.data.items.map((a) => (
-          <li key={a.id}>
-            <button
-              type="button"
-              onClick={() => setOpenId(a.id)}
-              className="block w-full rounded-lg border border-neutral-200 bg-white p-4 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md hover:shadow-violet-900/5 active:translate-y-0 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-violet-500/40"
-            >
-              <div className="flex flex-wrap items-baseline gap-x-2 text-xs">
-                <span className="rounded-full bg-violet-100 px-2 py-0.5 font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">
-                  {a.cveId}
-                </span>
-                <span className="text-neutral-500 dark:text-neutral-500">·</span>
-                <span className="font-medium text-neutral-800 dark:text-neutral-200">
-                  {a.author.nickname || a.author.username}
-                </span>
-                <span className="text-neutral-500 dark:text-neutral-500">·</span>
-                <span className="tabular-nums text-neutral-600 dark:text-neutral-500">
-                  {formatRelativeKo(a.createdAt)}
-                </span>
-                {a.category && a.category !== "general" && (
-                  <>
-                    <span className="text-neutral-500 dark:text-neutral-500">·</span>
-                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-neutral-700 dark:bg-surface-2 dark:text-neutral-300">
-                      {a.category}
-                    </span>
-                  </>
-                )}
-              </div>
-              {a.title && (
-                <h3 className="mt-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                  {a.title}
+      {controls}
+      {view === "latest" ? (
+        <ul className="space-y-3">{list.data.items.map(renderCard)}</ul>
+      ) : (
+        <div className="space-y-6">
+          {filteredGroups.map((g) => {
+            const Icon = view === "category" ? Folder : UserIcon;
+            return (
+              <section key={g.key}>
+                <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
+                  <Icon className="h-3 w-3" />
+                  {g.label}
+                  <span className="tabular-nums font-normal text-neutral-500 dark:text-neutral-500">
+                    · {g.items.length}건
+                  </span>
                 </h3>
-              )}
-              <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-neutral-700 dark:text-neutral-400">
-                {a.excerpt}
-              </p>
-            </button>
-          </li>
-        ))}
-      </ul>
+                <ul className="space-y-3">{g.items.map(renderCard)}</ul>
+              </section>
+            );
+          })}
+        </div>
+      )}
       <AnalysisDetailModal
         analysisId={openId}
         summary={list.data.items.find((a) => a.id === openId) ?? null}
