@@ -62,8 +62,30 @@ class Post(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     view_count: Mapped[int] = mapped_column(default=0)
+    # PR 10-DB — 좋아요 denormalized 카운트 + post_likes 가 source of truth.
+    like_count: Mapped[int] = mapped_column(default=0, server_default="0")
 
     comments: Mapped[list[Comment]] = relationship(back_populates="post", cascade="all, delete-orphan")
+
+
+class PostLike(Base):
+    __tablename__ = "post_likes"
+    __table_args__ = (
+        Index("uq_post_like_user_post", "user_id", "post_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    post_id: Mapped[int] = mapped_column(
+        ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
 
 
 class Comment(Base, TimestampMixin):

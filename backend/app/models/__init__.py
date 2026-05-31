@@ -2,7 +2,7 @@ from app.models.ai_credential import AiCredential
 from app.models.analysis_result import AnalysisResult
 from app.models.base import Base
 from app.models.bookmark import Bookmark
-from app.models.community import Comment, Post, Tag, User, UserRole, Vote, VoteTarget
+from app.models.community import Comment, Post, PostLike, Tag, User, UserRole, Vote, VoteTarget
 from app.models.cve_lab_mapping import CveLabFeedback, CveLabMapping, LabSourceKind
 from app.models.sandbox import SandboxSession, SandboxStatus
 from app.models.settings import AppSettings
@@ -34,6 +34,7 @@ __all__ = [
     "LabSourceKind",
     "OsFamily",
     "Post",
+    "PostLike",
     "RefType",
     "SandboxSession",
     "SandboxStatus",

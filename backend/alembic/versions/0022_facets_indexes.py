@@ -27,37 +27,28 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # severity GROUP BY 가속 — NULL 제외해 size 절감.
-    op.create_index(
-        "ix_vuln_severity_facets",
-        "vulnerabilities",
-        ["severity"],
-        postgresql_where=sa.text("severity IS NOT NULL"),
+    # 일부 인덱스는 이전 마이그레이션 또는 부팅 시 idempotent 코드에서 만들어졌을 수
+    # 있어 IF NOT EXISTS 로 안전하게.
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_vuln_severity_facets "
+        "ON vulnerabilities (severity) WHERE severity IS NOT NULL"
     )
-    # source GROUP BY 가속.
-    op.create_index(
-        "ix_vuln_source_facets",
-        "vulnerabilities",
-        ["source"],
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_vuln_source_facets "
+        "ON vulnerabilities (source)"
     )
-    # domains TEXT[] unnest + filter — GIN array index.
-    op.create_index(
-        "ix_vuln_domains_gin",
-        "vulnerabilities",
-        ["domains"],
-        postgresql_using="gin",
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_vuln_domains_gin "
+        "ON vulnerabilities USING gin (domains)"
     )
-    # affected_products os_family GROUP BY — vulnerability_id 와 함께
-    # DISTINCT 카운트가 빠르게 동작하도록 복합 인덱스.
-    op.create_index(
-        "ix_affected_vuln_os",
-        "affected_products",
-        ["vulnerability_id", "os_family"],
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_affected_vuln_os "
+        "ON affected_products (vulnerability_id, os_family)"
     )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_affected_vuln_os", table_name="affected_products")
-    op.drop_index("ix_vuln_domains_gin", table_name="vulnerabilities")
-    op.drop_index("ix_vuln_source_facets", table_name="vulnerabilities")
-    op.drop_index("ix_vuln_severity_facets", table_name="vulnerabilities")
+    op.execute("DROP INDEX IF EXISTS ix_affected_vuln_os")
+    op.execute("DROP INDEX IF EXISTS ix_vuln_domains_gin")
+    op.execute("DROP INDEX IF EXISTS ix_vuln_source_facets")
+    op.execute("DROP INDEX IF EXISTS ix_vuln_severity_facets")

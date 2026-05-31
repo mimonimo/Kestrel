@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_optional_user
 from app.core.database import get_db
-from app.models import Comment, Post, User, UserRole
+from app.models import Comment, Post, PostLike, User, UserRole
 from app.schemas.vulnerability import CamelModel
 
 router = APIRouter(prefix="/community", tags=["community"])
@@ -52,6 +52,20 @@ def _can_manage(row_user_id, row_client_id: str | None, *, me: User | None, x_cl
     return _is_owner(row_user_id, row_client_id, me=me, x_client_id=x_client_id)
 
 
+async def _liked_post_ids(db: AsyncSession, me: User | None, post_ids: list[int]) -> set[int]:
+    """주어진 사용자가 좋아요한 post_id 집합 — list_posts/get_post 응답 채울 때 사용."""
+    if me is None or not post_ids:
+        return set()
+    rows = (
+        await db.execute(
+            select(PostLike.post_id).where(
+                PostLike.user_id == me.id, PostLike.post_id.in_(post_ids)
+            )
+        )
+    ).all()
+    return {r[0] for r in rows}
+
+
 # ---- Schemas --------------------------------------------------------------
 
 class PostCreate(CamelModel):
@@ -78,6 +92,9 @@ class PostOut(CamelModel):
     is_owner: bool
     # 삭제/수정 권한 — owner 이거나 admin 이면 True. UI 의 삭제 버튼 노출 기준.
     can_manage: bool = False
+    # PR 10-DB — 좋아요.
+    like_count: int = 0
+    is_liked: bool = False  # 현재 사용자가 이 글을 좋아요 했는지
     created_at: datetime
     updated_at: datetime
 
@@ -151,6 +168,7 @@ async def list_posts(
     else:
         comment_counts = {}
 
+    liked = await _liked_post_ids(db, me, [r.id for r in rows])
     items = [
         PostOut(
             id=r.id,
@@ -162,6 +180,8 @@ async def list_posts(
             comment_count=comment_counts.get(r.id, 0),
             is_owner=_is_owner(r.user_id, r.client_id, me=me, x_client_id=x_client_id),
             can_manage=_can_manage(r.user_id, r.client_id, me=me, x_client_id=x_client_id),
+            like_count=int(r.like_count or 0),
+            is_liked=r.id in liked,
             created_at=r.created_at,
             updated_at=r.updated_at,
         )
@@ -203,6 +223,8 @@ async def create_post(
         comment_count=0,
         is_owner=True,
         can_manage=True,
+        like_count=0,
+        is_liked=False,
         created_at=post.created_at,
         updated_at=post.updated_at,
     )
@@ -227,6 +249,7 @@ async def get_post(
         await db.execute(select(func.count(Comment.id)).where(Comment.post_id == post.id))
     ).scalar_one()
     post_view_count = (post.view_count or 0) + 1
+    liked = await _liked_post_ids(db, me, [post.id])
     out = PostOut(
         id=post.id,
         title=post.title,
@@ -237,6 +260,8 @@ async def get_post(
         comment_count=int(cnt),
         is_owner=_is_owner(post.user_id, post.client_id, me=me, x_client_id=x_client_id),
         can_manage=_can_manage(post.user_id, post.client_id, me=me, x_client_id=x_client_id),
+        like_count=int(post.like_count or 0),
+        is_liked=post.id in liked,
         created_at=post.created_at,
         updated_at=post.updated_at,
     )
@@ -269,6 +294,7 @@ async def update_post(
     cnt = (
         await db.execute(select(func.count(Comment.id)).where(Comment.post_id == post.id))
     ).scalar_one()
+    liked = await _liked_post_ids(db, me, [post.id])
     return PostOut(
         id=post.id,
         title=post.title,
@@ -279,9 +305,67 @@ async def update_post(
         comment_count=cnt,
         is_owner=_is_owner(post.user_id, post.client_id, me=me, x_client_id=x_client_id),
         can_manage=True,  # patch 통과했으므로 항상 관리 권한
+        like_count=int(post.like_count or 0),
+        is_liked=post.id in liked,
         created_at=post.created_at,
         updated_at=post.updated_at,
     )
+
+
+# ── 좋아요 (PR 10-DB) ──────────────────────────────────────────
+
+
+class LikeOut(CamelModel):
+    like_count: int
+    is_liked: bool
+
+
+@router.post(
+    "/posts/{post_id}/like",
+    response_model=LikeOut,
+    response_model_by_alias=True,
+)
+async def like_post(
+    post_id: int,
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> LikeOut:
+    post = await db.scalar(select(Post).where(Post.id == post_id))
+    if post is None:
+        raise HTTPException(404, detail="post not found")
+    existing = await db.scalar(
+        select(PostLike).where(PostLike.user_id == me.id, PostLike.post_id == post_id)
+    )
+    if existing is None:
+        db.add(PostLike(user_id=me.id, post_id=post_id))
+        post.like_count = (post.like_count or 0) + 1
+        await db.commit()
+        return LikeOut(like_count=post.like_count, is_liked=True)
+    return LikeOut(like_count=int(post.like_count or 0), is_liked=True)
+
+
+@router.delete(
+    "/posts/{post_id}/like",
+    response_model=LikeOut,
+    response_model_by_alias=True,
+)
+async def unlike_post(
+    post_id: int,
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> LikeOut:
+    post = await db.scalar(select(Post).where(Post.id == post_id))
+    if post is None:
+        raise HTTPException(404, detail="post not found")
+    existing = await db.scalar(
+        select(PostLike).where(PostLike.user_id == me.id, PostLike.post_id == post_id)
+    )
+    if existing is not None:
+        await db.delete(existing)
+        post.like_count = max(0, (post.like_count or 0) - 1)
+        await db.commit()
+        return LikeOut(like_count=post.like_count, is_liked=False)
+    return LikeOut(like_count=int(post.like_count or 0), is_liked=False)
 
 
 @router.delete("/posts/{post_id}", status_code=204)

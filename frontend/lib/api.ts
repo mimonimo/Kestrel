@@ -385,6 +385,14 @@ export const api = {
       headers: clientHeaders(),
       body: JSON.stringify(body),
     }),
+  likePost: (id: number) =>
+    request<{ likeCount: number; isLiked: boolean }>(`/community/posts/${id}/like`, {
+      method: "POST",
+    }),
+  unlikePost: (id: number) =>
+    request<{ likeCount: number; isLiked: boolean }>(`/community/posts/${id}/like`, {
+      method: "DELETE",
+    }),
   deletePost: (id: number) =>
     request<void>(`/community/posts/${id}`, {
       method: "DELETE",
@@ -1233,6 +1241,9 @@ export interface CommunityPost {
   isOwner: boolean;
   // 본인 글이거나 admin 이면 true — 삭제/수정 버튼 노출 기준 (PR 10-CO follow-up).
   canManage: boolean;
+  // PR 10-DB — 좋아요.
+  likeCount: number;
+  isLiked: boolean;
   createdAt: string;
   updatedAt: string;
 }
