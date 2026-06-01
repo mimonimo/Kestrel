@@ -126,7 +126,7 @@ export function TicketControl({ cveId }: Props) {
           </div>
         ) : (
           <>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
               {ALL.map((s) => {
                 const active = (ticket?.status ?? "open") === s && !!ticket;
                 return (

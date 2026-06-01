@@ -225,7 +225,8 @@ export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
 
         {/* ── 푸터 ───────────────────────────────────────── */}
         <footer className="flex items-center justify-between gap-3 border-t border-neutral-200 bg-neutral-50 px-5 py-3 dark:border-neutral-800 dark:bg-surface-2/50">
-          <p className="text-[11px] text-neutral-500 dark:text-neutral-500">
+          {/* 단축키 안내는 데스크탑에서만 — 모바일에선 가용 폭이 좁아 푸터를 두 줄로 밀어내므로 숨김 */}
+          <p className="hidden text-[11px] text-neutral-500 sm:block dark:text-neutral-500">
             <kbd className="rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-[10px] font-mono shadow-sm dark:border-neutral-700 dark:bg-surface-1">
               ⌘ Enter
             </kbd>{" "}
@@ -235,7 +236,7 @@ export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
             </kbd>{" "}
             로 닫기
           </p>
-          <div className="flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2">
             <Button
               type="button"
               variant="outline"

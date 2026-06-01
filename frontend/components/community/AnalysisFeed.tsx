@@ -189,7 +189,7 @@ export function AnalysisFeed() {
           </button>
         )}
       </div>
-      <div className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-50 p-1 text-xs dark:border-neutral-800 dark:bg-surface-1">
+      <div className="inline-flex w-full items-center gap-1 rounded-full border border-neutral-200 bg-neutral-50 p-1 text-xs dark:border-neutral-800 dark:bg-surface-1 sm:w-auto">
         {(Object.keys(VIEW_LABELS) as ViewMode[]).map((m) => {
           const { label, icon: Icon } = VIEW_LABELS[m];
           const active = view === m;
@@ -202,7 +202,7 @@ export function AnalysisFeed() {
                 setFilterKey(null);
               }}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium transition-colors",
+                "inline-flex flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-full px-2 py-1 font-medium transition-colors sm:flex-none sm:px-2.5",
                 active
                   ? "bg-white text-neutral-900 shadow-sm dark:bg-surface-2 dark:text-neutral-100"
                   : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",

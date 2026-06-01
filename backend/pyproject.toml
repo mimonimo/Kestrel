@@ -26,6 +26,8 @@ dependencies = [
     "bcrypt>=4.1.0",
     "python-jose[cryptography]>=3.3.0",
     "email-validator>=2.2.0",
+    # User-Agent 파싱 (PR 10-DK) — 접속 로그에 OS/브라우저/디바이스 상세 노출.
+    "ua-parser>=0.18.0",
 ]
 
 [project.optional-dependencies]

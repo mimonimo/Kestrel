@@ -254,8 +254,8 @@ export function PostModal({ postId, onClose }: Props) {
                 </div>
               </div>
 
-              {/* 헤더 우측 액션 */}
-              <div className="flex shrink-0 items-center gap-1.5">
+              {/* 헤더 우측 액션 — 모바일에서 라벨은 숨기고 아이콘만, sm+ 에서 라벨 노출 */}
+              <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
                 {/* 좋아요 — 비로그인은 클릭 시 /login */}
                 <button
                   type="button"
@@ -263,7 +263,7 @@ export function PostModal({ postId, onClose }: Props) {
                   disabled={like.isPending}
                   title={data.isLiked ? "좋아요 취소" : "좋아요"}
                   className={cn(
-                    "inline-flex h-8 items-center gap-1 rounded-full border px-2.5 text-xs font-medium transition-colors",
+                    "inline-flex h-8 items-center gap-1 rounded-full border px-2 text-xs font-medium transition-colors sm:px-2.5",
                     data.isLiked
                       ? "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-200"
                       : "border-neutral-300 text-neutral-700 hover:border-rose-300 hover:text-rose-700 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-rose-500/40 dark:hover:text-rose-200",
@@ -282,10 +282,11 @@ export function PostModal({ postId, onClose }: Props) {
                     type="button"
                     onClick={() => setEditing(true)}
                     title={data.isOwner ? "수정" : "관리자 권한으로 수정"}
-                    className="inline-flex h-8 items-center gap-1 rounded-full border border-neutral-300 px-2.5 text-xs font-medium text-neutral-700 transition-colors hover:border-sky-300 hover:text-sky-700 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-sky-500/40 dark:hover:text-sky-200"
+                    aria-label="수정"
+                    className="inline-flex h-8 items-center gap-1 rounded-full border border-neutral-300 px-2 text-xs font-medium text-neutral-700 transition-colors hover:border-sky-300 hover:text-sky-700 sm:px-2.5 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-sky-500/40 dark:hover:text-sky-200"
                   >
                     <Edit3 className="h-3.5 w-3.5" />
-                    수정
+                    <span className="hidden sm:inline">수정</span>
                   </button>
                 )}
 
@@ -301,19 +302,20 @@ export function PostModal({ postId, onClose }: Props) {
                     }}
                     disabled={remove.isPending}
                     title={data.isOwner ? "삭제" : "관리자 권한으로 삭제"}
-                    className="inline-flex h-8 items-center gap-1 rounded-full border border-red-300 px-2.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/40"
+                    aria-label="삭제"
+                    className="inline-flex h-8 items-center gap-1 rounded-full border border-red-300 px-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50 sm:px-2.5 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/40"
                   >
                     {remove.isPending ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
                       <Trash2 className="h-3.5 w-3.5" />
                     )}
-                    삭제
+                    <span className="hidden sm:inline">삭제</span>
                   </button>
                 )}
 
                 {!data.isOwner && data.canManage && !editing && (
-                  <span className="inline-flex h-8 items-center gap-1 rounded-full bg-amber-100 px-2 text-[11px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
+                  <span className="hidden h-8 items-center gap-1 rounded-full bg-amber-100 px-2 text-[11px] font-medium text-amber-800 sm:inline-flex dark:bg-amber-500/15 dark:text-amber-200">
                     관리자
                   </span>
                 )}

@@ -42,6 +42,11 @@ interface LoginLog {
   userId: string;
   ip: string | null;
   userAgent: string | null;
+  osName: string | null;
+  osVersion: string | null;
+  browserName: string | null;
+  browserVersion: string | null;
+  deviceKind: string | null;
   createdAt: string;
 }
 
@@ -282,25 +287,63 @@ function LoginLogList({ userId }: { userId: string }) {
     );
   }
   return (
-    <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto border-l-2 border-neutral-200 pl-3 dark:border-neutral-800">
-      {data.items.map((log) => (
-        <li key={log.id} className="text-[10px] text-neutral-600 dark:text-neutral-400">
-          <span className="inline-flex items-center gap-1 text-neutral-700 dark:text-neutral-300">
-            <Clock className="h-2.5 w-2.5" />
-            {formatRelativeKo(log.createdAt)}
-          </span>
-          {log.ip && <span className="ml-2 tabular-nums">{log.ip}</span>}
-          {log.userAgent && (
-            <span
-              className="ml-2 truncate text-neutral-500 dark:text-neutral-500"
-              title={log.userAgent}
-            >
-              · {log.userAgent.slice(0, 60)}
-              {log.userAgent.length > 60 ? "…" : ""}
-            </span>
-          )}
-        </li>
-      ))}
+    <ul className="mt-2 max-h-64 space-y-1.5 overflow-y-auto border-l-2 border-neutral-200 pl-3 dark:border-neutral-800">
+      {data.items.map((log) => {
+        const browser = log.browserName
+          ? `${log.browserName}${log.browserVersion ? " " + log.browserVersion : ""}`
+          : null;
+        const os = log.osName
+          ? `${log.osName}${log.osVersion ? " " + log.osVersion : ""}`
+          : null;
+        const kindTone =
+          log.deviceKind === "mobile"
+            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200"
+            : log.deviceKind === "tablet"
+              ? "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
+              : log.deviceKind === "bot"
+                ? "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200"
+                : "bg-neutral-100 text-neutral-700 dark:bg-surface-2 dark:text-neutral-300";
+        return (
+          <li key={log.id} className="text-[10px] text-neutral-600 dark:text-neutral-400">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 text-neutral-800 dark:text-neutral-200">
+                <Clock className="h-2.5 w-2.5" />
+                {formatRelativeKo(log.createdAt)}
+              </span>
+              {log.deviceKind && (
+                <span
+                  className={`rounded-full px-1.5 py-px text-[9px] font-medium ${kindTone}`}
+                >
+                  {log.deviceKind}
+                </span>
+              )}
+              {browser && (
+                <span className="rounded-full bg-violet-100 px-1.5 py-px text-[9px] font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">
+                  {browser}
+                </span>
+              )}
+              {os && (
+                <span className="rounded-full bg-amber-100 px-1.5 py-px text-[9px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
+                  {os}
+                </span>
+              )}
+              {log.ip && (
+                <span className="tabular-nums text-neutral-700 dark:text-neutral-300">
+                  {log.ip}
+                </span>
+              )}
+            </div>
+            {log.userAgent && (
+              <p
+                className="mt-0.5 truncate text-[9px] text-neutral-500 dark:text-neutral-500"
+                title={log.userAgent}
+              >
+                {log.userAgent}
+              </p>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

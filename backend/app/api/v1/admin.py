@@ -132,12 +132,55 @@ class _LoginLogOut(_PydBaseModel):
     user_id: str
     ip: str | None = None
     user_agent: str | None = None
+    # PR 10-DK — UA 파싱 결과. ua-parser 가 OS/브라우저/디바이스 분리.
+    os_name: str | None = None
+    os_version: str | None = None
+    browser_name: str | None = None
+    browser_version: str | None = None
+    device_kind: str | None = None  # desktop / mobile / tablet / bot / unknown
     created_at: _dt
 
 
 class _LoginLogsList(_PydBaseModel):
     items: list[_LoginLogOut]
     total: int
+
+
+# UA 파싱 — 매 요청 마다 새로 파싱하면 부담이라 lru_cache.
+from functools import lru_cache as _lru_cache
+
+
+@_lru_cache(maxsize=2048)
+def _parse_ua(ua: str | None) -> tuple[str | None, str | None, str | None, str | None, str | None]:
+    """(os_name, os_version, browser_name, browser_version, device_kind)."""
+    if not ua:
+        return None, None, None, None, None
+    try:
+        from ua_parser import user_agent_parser  # type: ignore
+
+        parsed = user_agent_parser.Parse(ua)
+        os_d = parsed.get("os") or {}
+        ua_d = parsed.get("user_agent") or {}
+        dev_d = parsed.get("device") or {}
+        os_name = os_d.get("family") or None
+        os_ver_parts = [str(os_d.get(k)) for k in ("major", "minor", "patch") if os_d.get(k)]
+        os_version = ".".join(os_ver_parts) or None
+        browser_name = ua_d.get("family") or None
+        ua_ver_parts = [str(ua_d.get(k)) for k in ("major", "minor", "patch") if ua_d.get(k)]
+        browser_version = ".".join(ua_ver_parts) or None
+
+        low = ua.lower()
+        if "bot" in low or "crawler" in low or "spider" in low:
+            kind = "bot"
+        elif dev_d.get("family", "").lower() in {"iphone", "android", "windows phone"} or "mobile" in low:
+            kind = "mobile"
+        elif "ipad" in low or "tablet" in low:
+            kind = "tablet"
+        else:
+            kind = "desktop"
+        return os_name, os_version, browser_name, browser_version, kind
+    except Exception:  # noqa: BLE001
+        return None, None, None, None, None
 
 
 class _UsersList(_PydBaseModel):
@@ -192,16 +235,23 @@ async def list_user_login_logs(
             .limit(max(1, min(200, limit)))
         )
     ).scalars().all()
-    items = [
-        _LoginLogOut(
-            id=r.id,
-            user_id=str(r.user_id),
-            ip=r.ip,
-            user_agent=r.user_agent,
-            created_at=r.created_at,
+    items = []
+    for r in rows:
+        os_name, os_ver, br_name, br_ver, kind = _parse_ua(r.user_agent)
+        items.append(
+            _LoginLogOut(
+                id=r.id,
+                user_id=str(r.user_id),
+                ip=r.ip,
+                user_agent=r.user_agent,
+                os_name=os_name,
+                os_version=os_ver,
+                browser_name=br_name,
+                browser_version=br_ver,
+                device_kind=kind,
+                created_at=r.created_at,
+            )
         )
-        for r in rows
-    ]
     return _LoginLogsList(items=items, total=len(items))
 
 
