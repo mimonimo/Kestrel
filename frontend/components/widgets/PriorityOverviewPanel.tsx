@@ -6,10 +6,12 @@
 // Layout, top-to-bottom:
 //   1. Header strip — 3 stat chips for CVSS / EPSS / KEV (always
 //      visible, gives the at-a-glance number for each pillar).
-//   2. Ranked tier list — KEV → EPSS 상위 → CVSS 중간+EPSS 높음 →
-//      CVSS 높음+EPSS 낮음. One row per tier with count + the most
-//      recent example. Click a row to navigate into the CVE matching
-//      that tier (the first row's top item).
+//   2. Three tier blocks side-by-side (좌 KEV 등재 / 중 EPSS 상위+외부
+//      접점 / 우 CVSS 중간+EPSS 높음). Each block shows its TOP 5 CVEs;
+//      the block header (label + count) links to /cves?priority=<key>
+//      for the full bucket, and each listed CVE links to its detail.
+//      The lowest-urgency long-tail tier (CVSS 높음+EPSS 낮음) is
+//      intentionally omitted from this "what to fix first" view.
 //
 // The reference deck the user pointed at is just the conceptual frame
 // (CVSS theory / EPSS prediction / KEV observation). We don't try to
@@ -92,8 +94,8 @@ export function PriorityOverviewPanel() {
     refetchInterval: 60_000,
   });
   const prioritiesQ = useQuery({
-    queryKey: ["dashboard", "priorities", 1],
-    queryFn: () => api.getDashboardPriorities({ perBucket: 1 }),
+    queryKey: ["dashboard", "priorities", 5],
+    queryFn: () => api.getDashboardPriorities({ perBucket: 5 }),
     staleTime: 60_000,
     refetchInterval: 5 * 60_000,
   });
@@ -104,9 +106,12 @@ export function PriorityOverviewPanel() {
   const isLoading = insightsQ.isLoading || prioritiesQ.isLoading;
   const error = (insightsQ.error || prioritiesQ.error) as Error | null;
 
-  // Total used to draw the proportion bar — relative to the biggest
-  // bucket so a long tail (CVSS-only) doesn't crush the urgent rows.
-  const maxCount = buckets.reduce((m, b) => Math.max(m, b.count), 0);
+  // "지금 고칠 것" 3블럭 — 가장 긴급한 세 티어만. 최하위 long-tail
+  // (cvss_high_epss_low) 은 일정 패치 대상이라 이 뷰에서 제외.
+  const byKey = new Map(buckets.map((b) => [b.key, b]));
+  const tierBlocks = (["kev", "epss_high", "cvss_mid_epss_high"] as const)
+    .map((k) => byKey.get(k))
+    .filter((b): b is DashboardPriorityBucket => b != null);
 
   return (
     <WidgetCard
@@ -138,71 +143,81 @@ export function PriorityOverviewPanel() {
         />
       </div>
 
-      {/* Ranked tiers */}
-      <ol className="mt-4 space-y-1.5">
-        {buckets.map((b, idx) => {
-          const meta = TIER_META[b.key];
-          const { Icon } = meta;
-          const top = b.items[0];
-          const pct = maxCount > 0 ? (b.count / maxCount) * 100 : 0;
-          const rowInner = (
-            <div className="flex items-center gap-3 px-2 py-2">
-              <span
-                className={cn(
-                  "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold tabular-nums text-white shadow-sm",
-                  meta.barTint,
-                )}
-              >
-                {idx + 1}
-              </span>
-              <Icon className={cn("h-3.5 w-3.5 shrink-0", meta.tint)} />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-[12px] font-medium text-neutral-900 dark:text-neutral-100">
-                    {b.label}
-                  </span>
-                  <span className="shrink-0 tabular-nums text-[12px] font-semibold text-neutral-900 dark:text-neutral-100">
-                    {b.count.toLocaleString("ko-KR")}
-                    <span className="ml-0.5 text-[10px] text-neutral-500">건</span>
-                  </span>
-                </div>
-                <div className="mt-1 h-1 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
-                  <div
-                    className={cn("h-full rounded-full", meta.barTint)}
-                    style={{ width: `${Math.max(pct, 1.5)}%` }}
-                  />
-                </div>
-                {top && (
-                  <div className="mt-1 flex items-baseline gap-1.5 text-[10px] text-neutral-600 dark:text-neutral-500">
-                    <span className="font-mono text-neutral-800 dark:text-neutral-300">
-                      {top.cveId}
-                    </span>
-                    <span className="truncate">{top.title}</span>
-                  </div>
-                )}
-              </div>
-              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-neutral-400 dark:text-neutral-600" />
-            </div>
-          );
-          // Row click drills into /cves with the tier filter applied
-          // so the user sees the *full* bucket, not just the top item.
-          // The dashboard panel only ever shows the lead CVE; clicking
-          // a row was previously misleading because it routed to that
-          // single CVE's detail page.
-          return (
-            <li key={b.key}>
+      {/* 3 tier blocks — 좌 KEV / 중 EPSS 상위+외부 접점 / 우 CVSS 중간+EPSS 높음 */}
+      <div className="mt-4 grid items-stretch gap-3 lg:grid-cols-3">
+        {tierBlocks.map((b) => (
+          <TierBlock key={b.key} bucket={b} />
+        ))}
+      </div>
+    </WidgetCard>
+  );
+}
+
+function TierBlock({ bucket }: { bucket: DashboardPriorityBucket }) {
+  const meta = TIER_META[bucket.key];
+  const { Icon } = meta;
+  const items = bucket.items.slice(0, 5);
+  return (
+    <div className="flex flex-col overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
+      {/* 블럭 헤더 — 누르면 해당 티어 전체를 취약점 조회에서 봄 */}
+      <Link
+        href={`/cves?priority=${bucket.key}` as Route}
+        className="flex items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-3 py-2 transition-colors hover:bg-neutral-100 dark:border-neutral-800 dark:bg-surface-2 dark:hover:bg-surface-3"
+        title={`${bucket.label} ${bucket.count.toLocaleString("ko-KR")}건 전체 보기`}
+      >
+        <Icon className={cn("h-4 w-4 shrink-0", meta.tint)} />
+        <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-neutral-900 dark:text-neutral-100">
+          {bucket.label}
+        </span>
+        <span className="shrink-0 tabular-nums text-[12px] font-bold text-neutral-900 dark:text-neutral-100">
+          {bucket.count.toLocaleString("ko-KR")}
+          <span className="ml-0.5 text-[10px] font-normal text-neutral-500">건</span>
+        </span>
+        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-neutral-400 dark:text-neutral-600" />
+      </Link>
+
+      {/* TOP 5 — 각 CVE 는 상세로 이동 */}
+      {items.length === 0 ? (
+        <p className="px-3 py-4 text-[11px] text-neutral-500 dark:text-neutral-500">
+          해당 CVE 가 없습니다.
+        </p>
+      ) : (
+        <ol className="flex-1 divide-y divide-neutral-100 dark:divide-neutral-800/60">
+          {items.map((it, i) => (
+            <li key={it.cveId}>
               <Link
-                href={`/cves?priority=${b.key}` as Route}
-                className="block rounded-lg transition-colors hover:bg-neutral-50 dark:hover:bg-surface-2"
-                title={`${b.label} ${b.count.toLocaleString("ko-KR")}건 전체 보기`}
+                href={`/cves/${it.cveId}` as Route}
+                className="flex items-start gap-2 px-3 py-2 transition-colors hover:bg-neutral-50 dark:hover:bg-surface-2"
               >
-                {rowInner}
+                <span
+                  className={cn(
+                    "mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold tabular-nums text-white",
+                    meta.barTint,
+                  )}
+                >
+                  {i + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-1.5">
+                    <span className="truncate font-mono text-[11px] font-semibold text-neutral-900 dark:text-neutral-100">
+                      {it.cveId}
+                    </span>
+                    {it.cvssScore != null && (
+                      <span className="shrink-0 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">
+                        CVSS {it.cvssScore.toFixed(1)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-neutral-600 dark:text-neutral-400">
+                    {it.title}
+                  </p>
+                </div>
               </Link>
             </li>
-          );
-        })}
-      </ol>
-    </WidgetCard>
+          ))}
+        </ol>
+      )}
+    </div>
   );
 }
 
