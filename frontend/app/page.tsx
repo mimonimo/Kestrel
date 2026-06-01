@@ -55,18 +55,16 @@ function Dashboard() {
           (own data fetch, own loader). The layout is just a CSS grid so
           adding a new widget later is "drop a component into the grid";
           nothing higher-level needs to know about it. */}
-      {/* items-start: 카드가 같은 줄 최장 위젯(RecentCritical) 높이에 맞춰
-          stretch 되어 CVSS·TopVendors 아래가 비던 문제 방지 — 각 카드는 자기
-          콘텐츠 높이만 차지. */}
+      {/* items-start: 카드가 같은 줄 최장 위젯 높이에 맞춰 stretch 되지 않도록.
+          가운데 열은 CVSS 점수 분포 + 신규 CVE 추이를 세로로 쌓아, 좌(벤더 Top10)·
+          우(최근 Critical) 의 긴 목록 옆 가운데가 비던 공간을 채운다. */}
       <section className="mb-8 grid items-start gap-5 lg:grid-cols-3">
         <TopVendorsPanel />
-        <CvssBucketsPanel />
-        <RecentCriticalPanel />
-        {/* 신규 CVE 추이 — CVSS 점수 분포 등 요약 위젯 줄 아래에 전체 폭으로.
-            추세 그래프는 좌→우로 길게 읽는 게 자연스러워 한 줄 차지가 맞다. */}
-        <div className="lg:col-span-3">
+        <div className="flex flex-col gap-5">
+          <CvssBucketsPanel />
           <TimelinePanel />
         </div>
+        <RecentCriticalPanel />
       </section>
 
       {/* Compact "어디부터 고칠 것인가" — CVSS/EPSS/KEV chips + a
