@@ -55,14 +55,15 @@ function Dashboard() {
           (own data fetch, own loader). The layout is just a CSS grid so
           adding a new widget later is "drop a component into the grid";
           nothing higher-level needs to know about it. */}
-      {/* items-start: 카드가 같은 줄 최장 위젯 높이에 맞춰 stretch 되지 않도록.
-          가운데 열은 CVSS 점수 분포 + 신규 CVE 추이를 세로로 쌓아, 좌(벤더 Top10)·
-          우(최근 Critical) 의 긴 목록 옆 가운데가 비던 공간을 채운다. */}
-      <section className="mb-8 grid items-start gap-5 lg:grid-cols-3">
+      {/* 세 열을 같은 높이로 (그리드 기본 align stretch). 좌(벤더 Top10)·
+          우(최근 Critical) 카드 틀이 가장 긴 열에 맞춰 늘어나 바닥이 정렬되고,
+          로딩 중 "T자"(가운데만 길던) 도 사라진다. 가운데 열은 CVSS 점수 분포 +
+          신규 CVE 추이 세로 스택이며, 추이 카드를 flex-1 로 늘려 열 바닥까지 채운다. */}
+      <section className="mb-8 grid items-stretch gap-5 lg:grid-cols-3">
         <TopVendorsPanel />
-        <div className="flex flex-col gap-5">
+        <div className="flex h-full flex-col gap-5">
           <CvssBucketsPanel />
-          <TimelinePanel />
+          <TimelinePanel className="flex-1" />
         </div>
         <RecentCriticalPanel />
       </section>

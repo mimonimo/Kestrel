@@ -30,7 +30,7 @@ function formatDayShort(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-export function TimelinePanel() {
+export function TimelinePanel({ className }: { className?: string }) {
   const [days, setDays] = useState<number>(30);
 
   const q = useQuery({
@@ -65,6 +65,7 @@ export function TimelinePanel() {
       description={`최근 ${days}일 일별 등록량 · 심각도별 누적`}
       isLoading={q.isLoading}
       error={q.error as Error | null}
+      className={className}
       actions={
         <div
           role="group"
