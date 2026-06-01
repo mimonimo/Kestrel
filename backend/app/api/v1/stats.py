@@ -18,6 +18,7 @@ from fastapi import APIRouter, Header, Request
 from pydantic import BaseModel
 
 from app.core.redis_client import get_redis
+from app.core.request_ip import client_ip
 
 # 일 방문자 키는 운영자 기준 (KST) 자정에 초기화되어야 한다.
 # 서버는 UTC 라 ``date.today()`` 를 그대로 쓰면 KST 09:00 에 바뀌어 사용자가
@@ -37,7 +38,9 @@ async def visitors(
     request: Request,
     x_client_id: str | None = Header(default=None, alias="X-Client-Id"),
 ) -> VisitorsOut:
-    rid = x_client_id or (request.client.host if request.client else None) or "anon"
+    # Caddy 뒤라 request.client.host 는 항상 동일한 docker bridge IP → 실제
+    # 사용자 구분 못 함. X-Forwarded-For 우선 (PR 10-DM).
+    rid = x_client_id or client_ip(request) or "anon"
     rid = rid[:64]  # bound key size
 
     day_key = f"visitors:day:{datetime.now(_KST).date().isoformat()}"

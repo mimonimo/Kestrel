@@ -295,6 +295,10 @@ function LoginLogList({ userId }: { userId: string }) {
         const os = log.osName
           ? `${log.osName}${log.osVersion ? " " + log.osVersion : ""}`
           : null;
+        // desktop 도 다른 디바이스 칩과 동일한 saturated 톤(slate) 으로 통일.
+        // 이전엔 neutral-100/dark:bg-surface-2 였는데, 라이트에선 회색 칸이 까맣게
+        // 떠 보이고 다크에선 surface 와 같은 색이라 칩이 안 보이는 회귀가 반복됨
+        // ([[feedback_light_dark_parity]]).
         const kindTone =
           log.deviceKind === "mobile"
             ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200"
@@ -302,7 +306,9 @@ function LoginLogList({ userId }: { userId: string }) {
               ? "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
               : log.deviceKind === "bot"
                 ? "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200"
-                : "bg-neutral-100 text-neutral-700 dark:bg-surface-2 dark:text-neutral-300";
+                : log.deviceKind === "desktop"
+                  ? "bg-slate-200 text-slate-800 dark:bg-slate-500/25 dark:text-slate-100"
+                  : "bg-neutral-200 text-neutral-800 dark:bg-neutral-500/25 dark:text-neutral-100";
         return (
           <li key={log.id} className="text-[10px] text-neutral-600 dark:text-neutral-400">
             <div className="flex flex-wrap items-center gap-1.5">

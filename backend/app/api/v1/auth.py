@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import COOKIE_NAME, get_current_user
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.request_ip import client_ip
 from app.core.security import (
     ACCESS_TOKEN_TTL,
     hash_password,
@@ -137,8 +138,10 @@ async def login(
         raise HTTPException(401, detail="이메일 또는 비밀번호가 일치하지 않습니다.")
 
     # PR 10-DE — last_login_at + login_logs 갱신. 운영자 추적용.
+    # PR 10-DM — Caddy 뒤라 request.client.host 는 항상 bridge IP 만 잡혀서
+    # 실제 IP 가 X-Forwarded-For 에 있다. client_ip() 가 leftmost 추출.
     user.last_login_at = datetime.now(timezone.utc)
-    ip = request.client.host if request.client else None
+    ip = client_ip(request)
     ua = (request.headers.get("user-agent") or "")[:512] or None
     db.add(LoginLog(user_id=user.id, ip=ip, user_agent=ua))
     await db.commit()
