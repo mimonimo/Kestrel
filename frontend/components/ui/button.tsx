@@ -19,7 +19,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 // shadow on rest → larger shadow on hover, lift back on press.
 const variants: Record<Variant, string> = {
   default:
-    "bg-sky-600 text-white shadow-sm shadow-sky-600/20 hover:bg-sky-700 hover:shadow-md hover:shadow-sky-600/30 active:scale-[0.98] dark:bg-sky-500 dark:hover:bg-sky-400 dark:shadow-sky-500/30",
+    "bg-sky-500 text-white shadow-sm shadow-sky-500/20 hover:bg-sky-600 hover:shadow-md hover:shadow-sky-500/30 active:scale-[0.98] dark:bg-sky-500 dark:hover:bg-sky-400 dark:shadow-sky-500/30",
   outline:
     "border border-neutral-300 bg-white text-neutral-900 hover:border-neutral-400 hover:bg-neutral-50 active:scale-[0.98] dark:border-neutral-700 dark:bg-transparent dark:text-neutral-100 dark:hover:border-neutral-500 dark:hover:bg-neutral-800",
   ghost:
@@ -37,12 +37,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     <button
       ref={ref}
       className={cn(
-        // rounded-lg base — slightly softer than rounded-md while still
-        // feeling like a button (not a pill). Callers needing a full pill
-        // (`rounded-full`) override via className.
+        // rounded-full base — pill 형태로 통일 (사용자 선호). 검색·로그인·메모
+        // 저장 등 이미 pill 이던 버튼들과 새글·설정 액션 버튼을 한 톤으로.
         // transition-all (not -colors) so scale, shadow, and color animate
         // together for tactile feel.
-        "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-lg font-medium transition-all duration-150",
+        "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full font-medium transition-all duration-150",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-surface-0",
         "disabled:pointer-events-none disabled:opacity-50 disabled:active:scale-100",
         variants[variant],

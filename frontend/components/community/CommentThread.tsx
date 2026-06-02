@@ -104,7 +104,7 @@ export function CommentThread({ postId, vulnerabilityId }: Props) {
                 type="submit"
                 size="sm"
                 disabled={create.isPending || !content.trim()}
-                className="rounded-full bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50 dark:bg-sky-500 dark:hover:bg-sky-400"
+                className="rounded-full bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-50 dark:bg-sky-500 dark:hover:bg-sky-400"
               >
                 {create.isPending ? "등록 중…" : "댓글 등록"}
               </Button>
@@ -182,7 +182,7 @@ function LoginGate({ label, description }: { label: string; description: string 
       <p className="text-xs text-neutral-600 dark:text-neutral-400">{description}</p>
       <Link
         href={`/login${next}` as never}
-        className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-500 dark:bg-sky-500 dark:hover:bg-sky-400"
+        className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-sky-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-600 dark:bg-sky-500 dark:hover:bg-sky-400"
       >
         <LogIn className="h-3 w-3" />
         로그인하기

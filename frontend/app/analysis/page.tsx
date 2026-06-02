@@ -285,7 +285,7 @@ function AnalysisTab() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="CVE ID 또는 공격 기법 본문으로 검색"
-              className="pl-9"
+              className="rounded-full pl-9"
             />
           </div>
           <Button

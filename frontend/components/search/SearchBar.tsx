@@ -45,7 +45,7 @@ export function SearchBar({ initialQuery = "", onSearch, size = "hero" }: Props)
           // without a visible corner clash; sky accent keeps the primary
           // action distinct from the neutral field background.
           className={cn(
-            "absolute right-1.5 h-8 rounded-full bg-sky-600 text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-white dark:hover:bg-sky-400",
+            "absolute right-1.5 h-8 rounded-full bg-sky-500 text-white hover:bg-sky-600 dark:bg-sky-500 dark:text-white dark:hover:bg-sky-400",
           )}
           size="sm"
         >

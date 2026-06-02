@@ -48,7 +48,7 @@ export function UserMenu() {
     return (
       <Link
         href={"/login" as never}
-        className="inline-flex h-8 items-center gap-1.5 rounded-full bg-sky-600 px-3 text-sm font-medium text-white transition-colors hover:bg-sky-500 dark:bg-sky-500 dark:hover:bg-sky-400"
+        className="inline-flex h-8 items-center gap-1.5 rounded-full bg-sky-500 px-3 text-sm font-medium text-white transition-colors hover:bg-sky-600 dark:bg-sky-500 dark:hover:bg-sky-400"
       >
         <LogIn className="h-3.5 w-3.5" />
         로그인

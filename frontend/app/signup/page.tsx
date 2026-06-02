@@ -120,7 +120,7 @@ export default function SignupPage() {
           type="submit"
           disabled={loading}
           className={cn(
-            "inline-flex items-center justify-center gap-2 rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-sky-600/60",
+            "inline-flex items-center justify-center gap-2 rounded-full bg-sky-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-sky-500/60",
             "dark:bg-sky-500 dark:hover:bg-sky-400",
           )}
         >

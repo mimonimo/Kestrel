@@ -168,7 +168,7 @@ export function TicketControl({ cveId }: Props) {
                 size="sm"
                 onClick={() => upsert.mutate({ status: ticket?.status ?? "open", note })}
                 disabled={upsert.isPending || note === (ticket?.note ?? "")}
-                className="rounded-full bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50 dark:bg-sky-500 dark:hover:bg-sky-400"
+                className="rounded-full bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-50 dark:bg-sky-500 dark:hover:bg-sky-400"
               >
                 메모 저장
               </Button>
@@ -192,7 +192,7 @@ function LoginGate({ cveId }: { cveId: string }) {
       </p>
       <Link
         href={`/login?next=${next}` as never}
-        className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-500 dark:bg-sky-500 dark:hover:bg-sky-400"
+        className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-sky-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-600 dark:bg-sky-500 dark:hover:bg-sky-400"
       >
         <LogIn className="h-3 w-3" />
         로그인하기

@@ -51,7 +51,7 @@ export function MyAssetsPanel() {
           </div>
           <Link
             href="/settings"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 text-xs font-medium text-white shadow hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-sky-500 px-3 py-1.5 text-xs font-medium text-white shadow hover:bg-sky-600 dark:bg-sky-500 dark:hover:bg-sky-400"
           >
             <Settings2 className="h-3.5 w-3.5" /> 자산 등록하기
           </Link>

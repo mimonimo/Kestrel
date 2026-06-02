@@ -245,7 +245,7 @@ export function PostModal({ postId, onClose }: Props) {
                     <Link
                       href={`/cve/${data.vulnerabilityId}`}
                       onClick={onClose}
-                      className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-sky-800 hover:bg-sky-200 dark:bg-sky-500/15 dark:text-sky-200 dark:hover:bg-sky-500/25"
+                      className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-sky-800 hover:bg-sky-200 dark:bg-sky-500/15 dark:text-sky-200 dark:hover:bg-sky-600/25"
                     >
                       <ExternalLink className="h-3 w-3" />
                       연결된 CVE
@@ -372,7 +372,7 @@ export function PostModal({ postId, onClose }: Props) {
                         update.mutate();
                       }}
                       disabled={update.isPending}
-                      className="gap-1 bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50 dark:bg-sky-500 dark:hover:bg-sky-400"
+                      className="gap-1 bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-50 dark:bg-sky-500 dark:hover:bg-sky-400"
                     >
                       {update.isPending ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />

@@ -251,7 +251,7 @@ export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
               onClick={submit}
               disabled={!canSubmit}
               size="sm"
-              className="gap-1.5 bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50 dark:bg-sky-500 dark:hover:bg-sky-400"
+              className="gap-1.5 bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-50 dark:bg-sky-500 dark:hover:bg-sky-400"
             >
               {create.isPending ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
