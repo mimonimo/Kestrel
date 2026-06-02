@@ -165,7 +165,7 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
         </p>
       )}
 
-      <form onSubmit={onSubmit} className="flex items-center gap-2">
+      <form onSubmit={onSubmit} className="space-y-2">
         <Input
           type="password"
           value={draft}
