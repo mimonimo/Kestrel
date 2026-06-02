@@ -1,46 +1,83 @@
 "use client";
 
-import { useState } from "react";
-import { Check, Loader2, ShieldCheck, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, KeyRound, Loader2, X } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
-// 비밀번호 변경 — 현재 비밀번호 재확인 + 새 비밀번호(8자+) + 확인 일치.
-// 서버가 현재 비밀번호를 다시 검증하므로, 세션 탈취만으로는 비번을 못 바꾼다.
-// 2단 레이아웃: 좌(폼) / 우(실시간 요구사항 + 보안 팁) 로 공간을 채운다.
+// 비밀번호 변경 — 설정 본문에는 버튼만, 클릭 시 모달로 입력 폼.
+// 서버가 현재 비밀번호를 재검증하므로 세션 탈취만으로는 변경 불가.
 export function PasswordChangePanel() {
+  const [open, setOpen] = useState(false);
+  const [justChanged, setJustChanged] = useState(false);
+
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button type="button" size="sm" onClick={() => setOpen(true)} className="gap-1.5">
+        <KeyRound className="h-3.5 w-3.5" />
+        비밀번호 변경
+      </Button>
+      {justChanged && (
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+          <Check className="h-3.5 w-3.5" /> 변경되었습니다
+        </span>
+      )}
+      {open && (
+        <PasswordChangeModal
+          onClose={() => setOpen(false)}
+          onSuccess={() => {
+            setOpen(false);
+            setJustChanged(true);
+            window.setTimeout(() => setJustChanged(false), 4000);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function PasswordChangeModal({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
 
-  const len8 = next.length >= 8;
-  const differs = next.length > 0 && next !== current;
-  const matches = confirm.length > 0 && next === confirm;
-  const tooShort = next.length > 0 && !len8;
+  const tooShort = next.length > 0 && next.length < 8;
   const mismatch = confirm.length > 0 && next !== confirm;
-  const canSubmit = !!current && len8 && differs && matches && !busy;
+  const canSubmit = !!current && next.length >= 8 && next === confirm && !busy;
+
+  // ESC 닫기 + body 스크롤 잠금
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose, busy]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
     setBusy(true);
     setError(null);
-    setDone(false);
     try {
       await api.changePassword({ currentPassword: current, newPassword: next });
-      setDone(true);
-      setCurrent("");
-      setNext("");
-      setConfirm("");
-      window.setTimeout(() => setDone(false), 4000);
+      onSuccess();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "비밀번호 변경에 실패했어요.");
-    } finally {
       setBusy(false);
     }
   };
@@ -49,133 +86,113 @@ export function PasswordChangePanel() {
     "block w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-sky-500/30";
 
   return (
-    <form
-      onSubmit={submit}
-      className="grid gap-6 rounded-xl border border-neutral-200 bg-white p-5 md:grid-cols-2 dark:border-neutral-800 dark:bg-surface-1"
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="비밀번호 변경"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-neutral-950/60 px-4 py-16 backdrop-blur-sm animate-in fade-in duration-150"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !busy) onClose();
+      }}
     >
-      {/* 좌: 입력 폼 */}
-      <div className="space-y-3">
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-            현재 비밀번호
-          </label>
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={current}
-            onChange={(e) => setCurrent(e.target.value)}
-            className={inputCls}
-            placeholder="현재 비밀번호"
-          />
+      <div
+        className="relative w-full max-w-sm rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/20 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/50 animate-in zoom-in-95 duration-150"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          aria-label="닫기"
+          className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 disabled:opacity-50 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
+        <div className="flex items-center gap-2 border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/15 ring-1 ring-sky-500/30">
+            <KeyRound className="h-4 w-4 text-sky-700 dark:text-sky-300" />
+          </div>
+          <div>
+            <h4 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              비밀번호 변경
+            </h4>
+            <p className="text-[11px] text-neutral-600 dark:text-neutral-500">
+              현재 비밀번호 확인 후 새 비밀번호(8자 이상)로 변경
+            </p>
+          </div>
         </div>
 
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-            새 비밀번호
-          </label>
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={next}
-            onChange={(e) => setNext(e.target.value)}
-            className={inputCls}
-            placeholder="새 비밀번호 (8자 이상)"
-          />
-          {tooShort && (
-            <p className="text-[11px] text-rose-600 dark:text-rose-400">
-              8자 이상이어야 합니다.
+        <form onSubmit={submit} className="space-y-3 px-5 py-4">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+              현재 비밀번호
+            </label>
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+              className={inputCls}
+              placeholder="현재 비밀번호"
+              autoFocus
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+              새 비밀번호
+            </label>
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              className={inputCls}
+              placeholder="새 비밀번호 (8자 이상)"
+            />
+            {tooShort && (
+              <p className="text-[11px] text-rose-600 dark:text-rose-400">
+                8자 이상이어야 합니다.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+              새 비밀번호 확인
+            </label>
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              className={inputCls}
+              placeholder="새 비밀번호 다시 입력"
+            />
+            {mismatch && (
+              <p className="text-[11px] text-rose-600 dark:text-rose-400">
+                새 비밀번호가 일치하지 않습니다.
+              </p>
+            )}
+          </div>
+
+          {error && (
+            <p className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300">
+              {error}
             </p>
           )}
-        </div>
 
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-            새 비밀번호 확인
-          </label>
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            className={inputCls}
-            placeholder="새 비밀번호 다시 입력"
-          />
-          {mismatch && (
-            <p className="text-[11px] text-rose-600 dark:text-rose-400">
-              새 비밀번호가 일치하지 않습니다.
-            </p>
-          )}
-        </div>
-
-        {error && (
-          <p className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300">
-            {error}
-          </p>
-        )}
-
-        <div className="flex items-center gap-2 pt-1">
-          <Button type="submit" size="sm" disabled={!canSubmit}>
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "비밀번호 변경"}
-          </Button>
-          {done && (
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
-              <Check className="h-3.5 w-3.5" /> 변경되었습니다
-            </span>
-          )}
-        </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="outline" size="sm" onClick={onClose} disabled={busy}>
+              취소
+            </Button>
+            <Button type="submit" size="sm" disabled={!canSubmit}>
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "변경"}
+            </Button>
+          </div>
+        </form>
       </div>
-
-      {/* 우: 실시간 요구사항 + 보안 팁 */}
-      <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 dark:border-neutral-800 dark:bg-surface-2/50">
-        <div className="mb-3 flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-sky-700 dark:text-sky-300" />
-          <h4 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-            새 비밀번호 조건
-          </h4>
-        </div>
-        <ul className="space-y-2">
-          <Req ok={len8} label="8자 이상" />
-          <Req ok={differs} label="현재 비밀번호와 다름" />
-          <Req ok={matches} label="확인란과 일치" />
-        </ul>
-
-        <div className="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-500">
-            안전한 비밀번호 팁
-          </p>
-          <ul className="space-y-1 text-[11px] leading-relaxed text-neutral-600 dark:text-neutral-400">
-            <li>· 다른 사이트와 겹치지 않는 고유한 비밀번호를 쓰세요.</li>
-            <li>· 영문 대소문자·숫자·기호를 섞으면 더 안전합니다.</li>
-            <li>· 변경 후에도 현재 기기 로그인은 유지됩니다.</li>
-          </ul>
-        </div>
-      </div>
-    </form>
-  );
-}
-
-function Req({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <li className="flex items-center gap-2 text-xs">
-      <span
-        className={cn(
-          "inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full",
-          ok
-            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
-            : "bg-neutral-200 text-neutral-400 dark:bg-surface-3 dark:text-neutral-500",
-        )}
-      >
-        {ok ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
-      </span>
-      <span
-        className={cn(
-          ok
-            ? "text-neutral-800 dark:text-neutral-200"
-            : "text-neutral-500 dark:text-neutral-500",
-        )}
-      >
-        {label}
-      </span>
-    </li>
+    </div>
   );
 }
