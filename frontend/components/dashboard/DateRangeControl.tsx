@@ -136,10 +136,10 @@ export function DateRangeControl({ fromDate, toDate, onChange }: Props) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-[11px] transition-colors",
+          "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded border px-2 py-0.5 text-[11px] transition-colors",
           active
             ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200 hover:border-amber-400/60"
-            : "border-neutral-800 bg-surface-2 text-neutral-400 hover:border-neutral-600 hover:text-neutral-200",
+            : "border-neutral-300 bg-neutral-50 text-neutral-600 hover:border-neutral-400 hover:text-neutral-900 dark:border-neutral-800 dark:bg-surface-2 dark:text-neutral-400 dark:hover:border-neutral-600 dark:hover:text-neutral-200",
         )}
         title={
           active

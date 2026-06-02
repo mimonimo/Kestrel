@@ -123,7 +123,9 @@ export default function AnalysisPage() {
       </header>
 
       {/* Tab strip — pill-segmented control matching dashboard period control */}
-      <nav className="mb-6 inline-flex rounded-full border border-neutral-200 bg-white p-1 dark:border-neutral-800 dark:bg-surface-1">
+      {/* 모바일에서 5개 탭이 안 들어가면 글자 단위로 깨지던 것 방지 —
+          max-w-full + 가로 스크롤, 버튼은 shrink-0 + whitespace-nowrap. */}
+      <nav className="mb-6 inline-flex max-w-full gap-0.5 overflow-x-auto rounded-full border border-neutral-200 bg-white p-1 [-ms-overflow-style:none] [scrollbar-width:none] dark:border-neutral-800 dark:bg-surface-1 [&::-webkit-scrollbar]:hidden">
         {TABS.map(({ key, label, icon: Icon }) => {
           const active = tab === key;
           return (
@@ -132,7 +134,7 @@ export default function AnalysisPage() {
               type="button"
               onClick={() => setTab(key)}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all duration-150 active:scale-95",
+                "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-medium transition-all duration-150 active:scale-95",
                 active
                   ? "bg-sky-100 text-sky-800 shadow-sm dark:bg-sky-500/20 dark:text-sky-200"
                   : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100",
@@ -655,7 +657,7 @@ function CompareTab() {
                 type="button"
                 onClick={() => setBookmarksOnly((v) => !v)}
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors",
+                  "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors",
                   bookmarksOnly
                     ? "border-amber-400/60 bg-amber-50 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200"
                     : "border-neutral-300 text-neutral-600 hover:border-amber-400 hover:text-amber-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-amber-300",

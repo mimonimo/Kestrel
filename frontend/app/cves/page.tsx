@@ -120,7 +120,7 @@ function CvesList() {
         />
 
         <div className="space-y-4">
-          <div className="flex items-baseline justify-between gap-3 border-b border-neutral-200 pb-3 dark:border-neutral-800">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2 border-b border-neutral-200 pb-3 dark:border-neutral-800">
             <h2 className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-neutral-600 dark:text-neutral-400">
               <span>
                 총{" "}
@@ -162,12 +162,12 @@ function CvesList() {
                 </span>
               )}
             </h2>
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 items-center gap-2">
               <button
                 type="button"
                 onClick={() => setBookmarksOnly((v) => !v)}
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                  "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
                   bookmarksOnly
                     ? "border-amber-400/60 bg-amber-400/20 text-amber-800 dark:bg-amber-400/15 dark:text-amber-200"
                     : "border-neutral-300 text-neutral-700 hover:border-neutral-500 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-500 dark:hover:text-neutral-100",
