@@ -369,6 +369,55 @@ async def list_audit_actions() -> dict:
     return {"actions": ACTION_LABELS}
 
 
+@router.get("/overview")
+async def admin_overview(db: AsyncSession = Depends(get_db)) -> dict:
+    """이용자/활동 개요 — 간단한 시각화용 집계."""
+    from datetime import datetime as _now_dt
+    from datetime import timedelta as _td
+    from datetime import timezone as _tz
+
+    from sqlalchemy import func as _func
+
+    now = _now_dt.now(_tz.utc)
+    since7 = now - _td(days=7)
+
+    async def _count(stmt) -> int:
+        return int((await db.execute(stmt)).scalar_one() or 0)
+
+    total_users = await _count(select(_func.count()).select_from(_User))
+    admin_users = await _count(
+        select(_func.count()).select_from(_User).where(_User.role == _UserRole.ADMIN)
+    )
+    new_users_7d = await _count(
+        select(_func.count()).select_from(_User).where(_User.created_at >= since7)
+    )
+    logins_7d = await _count(
+        select(_func.count()).select_from(_LoginLog).where(_LoginLog.created_at >= since7)
+    )
+    posts = await _count(
+        select(_func.count()).select_from(_Post).where(_Post.user_id.isnot(None))
+    )
+    comments = await _count(
+        select(_func.count()).select_from(_Comment).where(_Comment.user_id.isnot(None))
+    )
+    analyses = await _count(select(_func.count()).select_from(_AnalysisResult))
+    bookmarks = await _count(
+        select(_func.count()).select_from(_Bookmark).where(_Bookmark.user_id.isnot(None))
+    )
+    return {
+        "totalUsers": total_users,
+        "adminUsers": admin_users,
+        "newUsers7d": new_users_7d,
+        "logins7d": logins_7d,
+        "activity": {
+            "post": posts,
+            "comment": comments,
+            "analysis": analyses,
+            "bookmark": bookmarks,
+        },
+    }
+
+
 def _user_label(u: _User | None) -> str | None:
     if u is None:
         return None

@@ -8,64 +8,144 @@ import {
   LogIn,
   ScrollText,
   Loader2,
+  Users as UsersIcon,
   X,
 } from "lucide-react";
 
 import { ApiError } from "@/lib/api";
 import { formatRelativeKo } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { UserManagementPanel } from "@/components/settings/UserManagementPanel";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { credentials: "include", cache: "no-store" });
-  if (!res.ok) throw new ApiError(res.status, `로그를 불러오지 못했습니다 (${res.status})`);
+  if (!res.ok) throw new ApiError(res.status, `불러오지 못했습니다 (${res.status})`);
   return res.json();
 }
 
-type Which = "access" | "activity" | "audit";
+type Which = "users" | "access" | "activity" | "audit";
 
-const META: Record<Which, { label: string; desc: string; icon: typeof LogIn }> = {
-  access: { label: "접속 로그", desc: "전체 사용자 로그인 기록", icon: LogIn },
-  activity: { label: "활동 로그", desc: "글·댓글·분석·즐겨찾기 활동", icon: Activity },
-  audit: { label: "감사 로그", desc: "로그인·가입·권한 변경 등 보안 이벤트", icon: ScrollText },
+const META: Record<Which, { label: string; icon: typeof LogIn }> = {
+  users: { label: "이용자 조회·관리", icon: UsersIcon },
+  access: { label: "접속 로그", icon: LogIn },
+  activity: { label: "활동 로그", icon: Activity },
+  audit: { label: "감사 로그", icon: ScrollText },
 };
 
-export function AdminLogsButtons() {
+export function AdminUsersConsole() {
   const [open, setOpen] = useState<Which | null>(null);
   return (
-    <>
-      <div className="grid gap-3 sm:grid-cols-3">
+    <div className="space-y-6">
+      <Overview />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {(Object.keys(META) as Which[]).map((w) => {
-          const { label, desc, icon: Icon } = META[w];
+          const { label, icon: Icon } = META[w];
           return (
             <button
               key={w}
               type="button"
               onClick={() => setOpen(w)}
-              className="group flex items-center gap-3 rounded-lg border border-neutral-200 bg-white p-4 text-left transition-colors hover:border-sky-400 hover:bg-sky-50/40 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-sky-500/40 dark:hover:bg-surface-2"
+              className="group flex items-center gap-2.5 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-left transition-colors hover:border-sky-400 hover:bg-sky-50/40 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-sky-500/40 dark:hover:bg-surface-2"
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-500/15 text-sky-700 ring-1 ring-sky-500/30 dark:text-sky-300">
                 <Icon className="h-4 w-4" />
               </div>
-              <div className="min-w-0">
-                <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                  {label}
-                </div>
-                <p className="mt-0.5 truncate text-[11px] text-neutral-600 dark:text-neutral-500">
-                  {desc}
-                </p>
-              </div>
+              <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                {label}
+              </span>
             </button>
           );
         })}
       </div>
-      {open && <LogModal which={open} onClose={() => setOpen(null)} />}
-    </>
+      {open && <ConsoleModal which={open} onClose={() => setOpen(null)} />}
+    </div>
   );
 }
 
-function LogModal({ which, onClose }: { which: Which; onClose: () => void }) {
+// ─── 개요 시각화 ─────────────────────────────────────────
+interface Overview {
+  totalUsers: number;
+  adminUsers: number;
+  newUsers7d: number;
+  logins7d: number;
+  activity: { post: number; comment: number; analysis: number; bookmark: number };
+}
+
+const ACTIVITY_BARS: { key: keyof Overview["activity"]; label: string; bar: string }[] = [
+  { key: "post", label: "글", bar: "bg-sky-500" },
+  { key: "comment", label: "댓글", bar: "bg-violet-500" },
+  { key: "analysis", label: "AI 분석", bar: "bg-emerald-500" },
+  { key: "bookmark", label: "즐겨찾기", bar: "bg-amber-500" },
+];
+
+function Overview() {
+  const q = useQuery({
+    queryKey: ["admin-overview"],
+    queryFn: () => getJSON<Overview>("/admin/overview"),
+    staleTime: 60_000,
+  });
+  if (q.isPending)
+    return (
+      <p className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-500">
+        <Loader2 className="h-3 w-3 animate-spin" /> 개요 불러오는 중…
+      </p>
+    );
+  if (q.isError || !q.data) return null;
+  const d = q.data;
+  const maxAct = Math.max(1, ...ACTIVITY_BARS.map((b) => d.activity[b.key]));
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-2 gap-3">
+        <StatCard label="총 이용자" value={d.totalUsers} tint="text-sky-700 dark:text-sky-300" />
+        <StatCard label="관리자" value={d.adminUsers} tint="text-amber-700 dark:text-amber-300" />
+        <StatCard label="최근 7일 신규" value={d.newUsers7d} tint="text-emerald-700 dark:text-emerald-300" />
+        <StatCard label="최근 7일 로그인" value={d.logins7d} tint="text-violet-700 dark:text-violet-300" />
+      </div>
+      <div className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-surface-1">
+        <p className="mb-3 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+          활동 분포 (누적)
+        </p>
+        <div className="space-y-2">
+          {ACTIVITY_BARS.map((b) => {
+            const v = d.activity[b.key];
+            return (
+              <div key={b.key} className="flex items-center gap-2 text-[11px]">
+                <span className="w-14 shrink-0 text-neutral-600 dark:text-neutral-400">{b.label}</span>
+                <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+                  <div
+                    className={cn("h-full rounded-full", b.bar)}
+                    style={{ width: `${Math.max((v / maxAct) * 100, v > 0 ? 4 : 0)}%` }}
+                  />
+                </div>
+                <span className="w-12 shrink-0 text-right tabular-nums font-medium text-neutral-900 dark:text-neutral-100">
+                  {v.toLocaleString("ko-KR")}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, tint }: { label: string; value: number; tint: string }) {
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-surface-1">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-500">
+        {label}
+      </div>
+      <div className={cn("mt-1 text-2xl font-bold tabular-nums", tint)}>
+        {value.toLocaleString("ko-KR")}
+      </div>
+    </div>
+  );
+}
+
+// ─── 모달 ────────────────────────────────────────────────
+function ConsoleModal({ which, onClose }: { which: Which; onClose: () => void }) {
   const { label, icon: Icon } = META[which];
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -87,7 +167,7 @@ function LogModal({ which, onClose }: { which: Which; onClose: () => void }) {
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className="relative w-full max-w-3xl rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/20 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/50 animate-in zoom-in-95 duration-150"
+        className="relative w-full max-w-4xl rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/20 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/50 animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center gap-2 border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
@@ -102,7 +182,8 @@ function LogModal({ which, onClose }: { which: Which; onClose: () => void }) {
             <X className="h-4 w-4" />
           </button>
         </header>
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
+        <div className="max-h-[72vh] overflow-y-auto px-5 py-4">
+          {which === "users" && <UserManagementPanel />}
           {which === "access" && <AccessFeed />}
           {which === "activity" && <ActivityFeed />}
           {which === "audit" && <AuditFeed />}
@@ -162,8 +243,7 @@ function AccessFeed() {
     staleTime: 15_000,
   });
   const items = q.data?.items ?? [];
-  const state = <FeedState q={q} empty={items.length === 0} />;
-  if (q.isPending || q.isError || items.length === 0) return state;
+  if (q.isPending || q.isError || items.length === 0) return <FeedState q={q} empty={items.length === 0} />;
   return (
     <ul className="space-y-1.5">
       {items.map((l) => {
@@ -171,23 +251,15 @@ function AccessFeed() {
         const os = l.osName ? `${l.osName}${l.osVersion ? " " + l.osVersion : ""}` : null;
         return (
           <li key={l.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800">
-            <span className="font-medium text-neutral-900 dark:text-neutral-100">
-              {l.userLabel || "(삭제된 사용자)"}
-            </span>
+            <span className="font-medium text-neutral-900 dark:text-neutral-100">{l.userLabel || "(삭제된 사용자)"}</span>
             {l.deviceKind && (
-              <span className={cn("rounded-full px-1.5 py-px text-[9px] font-medium", deviceTone(l.deviceKind))}>
-                {l.deviceKind}
-              </span>
+              <span className={cn("rounded-full px-1.5 py-px text-[9px] font-medium", deviceTone(l.deviceKind))}>{l.deviceKind}</span>
             )}
             {browser && (
-              <span className="rounded-full bg-violet-100 px-1.5 py-px text-[9px] font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">
-                {browser}
-              </span>
+              <span className="rounded-full bg-violet-100 px-1.5 py-px text-[9px] font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">{browser}</span>
             )}
             {os && (
-              <span className="rounded-full bg-amber-100 px-1.5 py-px text-[9px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
-                {os}
-              </span>
+              <span className="rounded-full bg-amber-100 px-1.5 py-px text-[9px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">{os}</span>
             )}
             {l.ip && <span className="tabular-nums text-neutral-500 dark:text-neutral-500">{l.ip}</span>}
             <span className="ml-auto inline-flex shrink-0 items-center gap-1 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">
@@ -218,7 +290,7 @@ function activityTone(kind: string): string {
   return "bg-slate-200 text-slate-800 dark:bg-slate-500/25 dark:text-slate-100";
 }
 
-const ACTIVITY_FILTERS: { value: string; label: string }[] = [
+const ACTIVITY_FILTERS = [
   { value: "", label: "전체" },
   { value: "post", label: "글 작성" },
   { value: "comment", label: "댓글" },
@@ -230,8 +302,7 @@ function ActivityFeed() {
   const [kind, setKind] = useState("");
   const q = useQuery({
     queryKey: ["admin-activity-logs", kind],
-    queryFn: () =>
-      getJSON<{ items: ActivityLog[] }>(`/admin/activity-logs?limit=150${kind ? `&kind=${kind}` : ""}`),
+    queryFn: () => getJSON<{ items: ActivityLog[] }>(`/admin/activity-logs?limit=150${kind ? `&kind=${kind}` : ""}`),
     staleTime: 15_000,
   });
   const items = q.data?.items ?? [];
@@ -259,12 +330,8 @@ function ActivityFeed() {
         <ul className="space-y-1.5">
           {items.map((a, i) => (
             <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800">
-              <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", activityTone(a.kind))}>
-                {a.kindLabel}
-              </span>
-              <span className="font-medium text-neutral-800 dark:text-neutral-200">
-                {a.actorLabel || "(삭제된 사용자)"}
-              </span>
+              <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", activityTone(a.kind))}>{a.kindLabel}</span>
+              <span className="font-medium text-neutral-800 dark:text-neutral-200">{a.actorLabel || "(삭제된 사용자)"}</span>
               {a.ref && <span className="min-w-0 truncate text-neutral-600 dark:text-neutral-400">{a.ref}</span>}
               <span className="ml-auto inline-flex shrink-0 items-center gap-1 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">
                 <Clock className="h-2.5 w-2.5" />
@@ -309,8 +376,7 @@ function AuditFeed() {
   });
   const q = useQuery({
     queryKey: ["admin-audit-logs", action],
-    queryFn: () =>
-      getJSON<{ items: AuditLog[] }>(`/admin/audit/logs?limit=150${action ? `&action=${action}` : ""}`),
+    queryFn: () => getJSON<{ items: AuditLog[] }>(`/admin/audit/logs?limit=150${action ? `&action=${action}` : ""}`),
     staleTime: 15_000,
   });
   const items = q.data?.items ?? [];
@@ -335,9 +401,7 @@ function AuditFeed() {
         <ul className="space-y-1.5">
           {items.map((l) => (
             <li key={l.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800">
-              <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", auditTone(l.action))}>
-                {l.actionLabel || l.action}
-              </span>
+              <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", auditTone(l.action))}>{l.actionLabel || l.action}</span>
               {l.actorLabel && <span className="font-medium text-neutral-800 dark:text-neutral-200">{l.actorLabel}</span>}
               {l.target && <span className="text-neutral-600 dark:text-neutral-400">→ {l.target}</span>}
               {l.detail && <span className="text-neutral-500 dark:text-neutral-500">({l.detail})</span>}
