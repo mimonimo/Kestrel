@@ -69,10 +69,41 @@ async def record_request(request: Request, status: int, duration_ms: float) -> N
         log.debug("access_log_record_failed", error=str(exc))
 
 
-async def clear() -> None:
-    """웹 접속 로그 + 비회원 방문 로그 전체 삭제."""
+async def _filter_list(redis, key: str, keep_pred) -> None:
+    """list 를 읽어 keep_pred(rec)==True 인 항목만 남기고 재작성(순서 유지)."""
+    raw = await redis.lrange(key, 0, -1)
+    keep: list[str] = []
+    for s in raw:
+        try:
+            rec = json.loads(s)
+        except Exception:  # noqa: BLE001 — 파싱 실패 항목은 그대로 보존
+            keep.append(s)
+            continue
+        if keep_pred(rec):
+            keep.append(s)
+    pipe = redis.pipeline()
+    pipe.delete(key)
+    if keep:
+        pipe.rpush(key, *keep)  # lrange(head→tail) 순서대로 다시 넣어 최신순 유지
+        pipe.expire(key, _TTL)
+    await pipe.execute()
+
+
+async def clear(*, ip: str | None = None, uid: str | None = None) -> None:
+    """접속 로그 삭제. ip/uid 지정 시 해당 항목만, 미지정 시 전체 삭제."""
     redis = await get_redis()
-    await redis.delete(_KEY, "visitors:anon:log")
+    if not ip and not uid:
+        await redis.delete(_KEY, "visitors:anon:log")
+        return
+    # 부분 삭제 — 조건에 맞는 항목만 제외하고 재작성.
+    await _filter_list(
+        redis,
+        _KEY,
+        lambda r: not ((ip and r.get("ip") == ip) or (uid and r.get("uid") == uid)),
+    )
+    if ip:
+        # 비회원 방문 로그도 같은 IP 제외.
+        await _filter_list(redis, "visitors:anon:log", lambda r: r.get("ip") != ip)
 
 
 async def read_recent(limit: int) -> list[dict]:

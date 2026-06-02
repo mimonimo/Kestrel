@@ -346,8 +346,23 @@ function AccessFeed() {
   });
 
   const clearLogs = async () => {
-    if (!confirm("접속 로그(웹·비회원)를 모두 삭제할까요? 되돌릴 수 없습니다.")) return;
-    await fetch(`${BASE}/admin/access-logs`, { method: "DELETE", credentials: "include" });
+    const scoped = drill
+      ? drill.kind === "ip"
+        ? `IP ${drill.label}`
+        : `${drill.label} 회원`
+      : null;
+    const msg = scoped
+      ? `${scoped} 의 접속 로그만 삭제할까요?`
+      : "접속 로그(웹·비회원)를 모두 삭제할까요? 되돌릴 수 없습니다.";
+    if (!confirm(msg)) return;
+    const p = new URLSearchParams();
+    if (drill?.kind === "ip") p.set("ip", drill.key);
+    else if (drill?.kind === "user") p.set("uid", drill.key);
+    const qs = p.toString();
+    await fetch(`${BASE}/admin/access-logs${qs ? `?${qs}` : ""}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
     qc.invalidateQueries({ queryKey: ["admin-access-summary"] });
     qc.invalidateQueries({ queryKey: ["admin-access-drill"] });
   };
@@ -391,7 +406,8 @@ function AccessFeed() {
           onClick={clearLogs}
           className="ml-auto inline-flex items-center gap-1 rounded-full border border-red-300 px-2.5 py-0.5 text-[11px] font-medium text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/40"
         >
-          <Trash2 className="h-3 w-3" /> 로그 비우기
+          <Trash2 className="h-3 w-3" />
+          {drill ? (drill.kind === "ip" ? "이 IP 로그 비우기" : "이 회원 로그 비우기") : "로그 비우기"}
         </button>
       </div>
 
