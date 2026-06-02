@@ -1,8 +1,10 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_DEFAULT_JWT_SECRET = "dev-only-change-me-in-production-please-32chars-min"
 
 
 class Settings(BaseSettings):
@@ -27,7 +29,7 @@ class Settings(BaseSettings):
     # ─── Auth / 세션 ─────────────────────────────────────
     # JWT_SECRET 은 반드시 환경변수에서. 코드/리포에 절대 하드코딩 X.
     # 길이 32+ 권장 (HS256). 운영은 AWS Secrets Manager 에서 주입.
-    jwt_secret: str = "dev-only-change-me-in-production-please-32chars-min"
+    jwt_secret: str = _DEFAULT_JWT_SECRET
     jwt_exp_hours: int = 12
     # 가입 시 이 이메일이면 자동으로 role=ADMIN 부여 (콤마 분리).
     # 예: "owner@example.com,ops@example.com"
@@ -125,6 +127,18 @@ class Settings(BaseSettings):
     otel_enabled: bool = False
     otel_exporter_otlp_endpoint: str | None = None
     otel_service_name: str = "kestrel-backend"
+
+    @model_validator(mode="after")
+    def _enforce_prod_hardening(self) -> "Settings":
+        # 프로덕션에서 기본(공개) JWT 시크릿으로 기동하면 누구나 토큰을 위조할 수
+        # 있으므로 fail-closed. 마찬가지로 prod 에서 debug 가 켜져 있으면 끈다.
+        if self.env == "production":
+            if self.jwt_secret == _DEFAULT_JWT_SECRET or len(self.jwt_secret) < 32:
+                raise ValueError(
+                    "JWT_SECRET must be set to a strong (32+ char) value in production"
+                )
+            object.__setattr__(self, "debug", False)
+        return self
 
 
 @lru_cache

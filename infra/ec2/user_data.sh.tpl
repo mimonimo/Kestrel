@@ -111,6 +111,9 @@ if [ ! -f .env ]; then
   PUBLIC_HOST="$${DOMAIN:-$(imds public-ipv4).nip.io}"
   cat > .env <<EOF
 # 자동 생성 — 운영자 외 접근 금지. chmod 600 .env
+# 프로덕션 표시 — 쿠키 Secure 플래그 활성화 + debug off + 기본 시크릿 가드.
+ENV=production
+DEBUG=false
 POSTGRES_USER=kestrel
 POSTGRES_PASSWORD=$${POSTGRES_PASSWORD}
 POSTGRES_DB=kestrel

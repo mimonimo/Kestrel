@@ -35,6 +35,14 @@ def hash_password(plain: str) -> str:
     return bcrypt.hashpw(encoded, bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)).decode("utf-8")
 
 
+# 사용자 열거(timing) 방어용 더미 해시 — 존재하지 않는 이메일로 로그인 시도해도
+# 동일하게 bcrypt 검증을 1회 돌려, "없는 이메일은 빨리 401" 로 가입 여부가
+# 새어나가지 않게 한다. import 시 1회 생성 (cost 12 동일).
+DUMMY_PASSWORD_HASH = bcrypt.hashpw(
+    b"kestrel-timing-equalizer", bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)
+).decode("utf-8")
+
+
 def verify_password(plain: str, hashed: str) -> bool:
     try:
         return bcrypt.checkpw(plain.encode("utf-8")[:_BCRYPT_MAX], hashed.encode("utf-8"))

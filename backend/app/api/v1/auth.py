@@ -22,9 +22,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import COOKIE_NAME, get_current_user
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.rate_limit import (
+    enforce_login_rate_limit,
+    enforce_signup_rate_limit,
+    record_login_failure,
+    reset_login_failures,
+)
 from app.core.request_ip import client_ip
 from app.core.security import (
     ACCESS_TOKEN_TTL,
+    DUMMY_PASSWORD_HASH,
     hash_password,
     is_admin_email,
     issue_access_token,
@@ -46,6 +53,11 @@ class SignupIn(CamelModel):
 class LoginIn(CamelModel):
     email: EmailStr
     password: str
+
+
+class ChangePasswordIn(CamelModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class MeOut(CamelModel):
@@ -92,9 +104,13 @@ _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_가-힣\-.]{2,64}$")
 @router.post("/signup", response_model=MeOut, response_model_by_alias=True, status_code=201)
 async def signup(
     body: SignupIn,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> MeOut:
+    # 대량 계정 생성/스팸 억제 — IP 기준 시도 제한.
+    await enforce_signup_rate_limit(client_ip(request) or "unknown")
+
     if not _USERNAME_RE.match(body.username):
         raise HTTPException(400, detail="사용자명은 한글·영문·숫자·_-. 만 가능합니다.")
 
@@ -132,18 +148,33 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ) -> MeOut:
     email_norm = body.email.strip().lower()
+    ip = client_ip(request) or "unknown"
+
+    # 브루트포스 방어 — 최근 실패 누적이 임계치를 넘으면 검증 전에 429.
+    await enforce_login_rate_limit(ip, email_norm)
+
     user = await db.scalar(select(User).where(User.email == email_norm))
-    if user is None or not verify_password(body.password, user.password_hash):
+    # 사용자 열거(timing) 방어 — 없는 이메일이어도 bcrypt 1회 동등 수행.
+    if user is None:
+        verify_password(body.password, DUMMY_PASSWORD_HASH)
+        valid = False
+    else:
+        valid = verify_password(body.password, user.password_hash)
+
+    if not valid:
+        await record_login_failure(ip, email_norm)
         # 동일 메시지 — 이메일 존재 여부 노출 방지.
         raise HTTPException(401, detail="이메일 또는 비밀번호가 일치하지 않습니다.")
+
+    # 성공 — 실패 카운터 초기화(정상 사용자 잠김 방지).
+    await reset_login_failures(ip, email_norm)
 
     # PR 10-DE — last_login_at + login_logs 갱신. 운영자 추적용.
     # PR 10-DM — Caddy 뒤라 request.client.host 는 항상 bridge IP 만 잡혀서
     # 실제 IP 가 X-Forwarded-For 에 있다. client_ip() 가 leftmost 추출.
     user.last_login_at = datetime.now(timezone.utc)
-    ip = client_ip(request)
     ua = (request.headers.get("user-agent") or "")[:512] or None
-    db.add(LoginLog(user_id=user.id, ip=ip, user_agent=ua))
+    db.add(LoginLog(user_id=user.id, ip=ip if ip != "unknown" else None, user_agent=ua))
     await db.commit()
 
     role = user.role.value if hasattr(user.role, "value") else str(user.role)
@@ -160,3 +191,29 @@ async def logout(response: Response) -> None:
 @router.get("/me", response_model=MeOut, response_model_by_alias=True)
 async def me(user: User = Depends(get_current_user)) -> MeOut:
     return _to_me(user)
+
+
+@router.post("/change-password", status_code=204)
+async def change_password(
+    body: ChangePasswordIn,
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """로그인 사용자 비밀번호 변경 — 현재 비밀번호 재확인 필수.
+
+    변경 성공 시 새 토큰을 재발급해 현재 세션은 유지하되, 다른 기기/세션은
+    토큰 TTL(12h) 만료 후 자연 무효화된다. (서버측 즉시 폐기는 향후 jti 도입 시.)
+    """
+    if not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(400, detail="현재 비밀번호가 일치하지 않습니다.")
+    if body.new_password == body.current_password:
+        raise HTTPException(400, detail="새 비밀번호가 현재 비밀번호와 같습니다.")
+
+    user.password_hash = hash_password(body.new_password)
+    await db.commit()
+
+    # 비밀번호가 바뀌었으니 현재 쿠키 토큰을 새로 발급해 갱신.
+    role = user.role.value if hasattr(user.role, "value") else str(user.role)
+    token = issue_access_token(user_id=str(user.id), role=role)
+    _set_auth_cookie(response, token)

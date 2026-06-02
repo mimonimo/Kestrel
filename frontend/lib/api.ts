@@ -467,6 +467,11 @@ export const api = {
     request<AuthUser>(`/auth/login`, { method: "POST", body: JSON.stringify(body) }),
   logout: () => request<void>(`/auth/logout`, { method: "POST" }),
   getAuthMe: () => request<AuthUser>(`/auth/me`),
+  changePassword: (body: { currentPassword: string; newPassword: string }) =>
+    request<void>(`/auth/change-password`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   // ─── Profile ─────────────────────────────────────────────────
   getProfile: () => request<Profile>(`/me/profile`),

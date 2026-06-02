@@ -16,6 +16,7 @@ import { ApiKeyField } from "@/components/settings/ApiKeyField";
 import { AssetsManager } from "@/components/settings/AssetsManager";
 import { ClaudeIntegrationPanel } from "@/components/settings/ClaudeIntegrationPanel";
 import { MitreBackfillPanel } from "@/components/settings/MitreBackfillPanel";
+import { PasswordChangePanel } from "@/components/settings/PasswordChangePanel";
 import { ThemeSwitcher } from "@/components/settings/ThemeSwitcher";
 import { UserManagementPanel } from "@/components/settings/UserManagementPanel";
 import { VersionPanel } from "@/components/settings/VersionPanel";
@@ -59,6 +60,12 @@ const CATEGORIES: CategoryDef[] = [
         title: "내 자산",
         description: "사용 중인 벤더·제품을 등록하면 영향받는 CVE 만 추려서 알려드립니다",
         render: () => <AssetsManager />,
+      },
+      {
+        id: "password",
+        title: "비밀번호 변경",
+        description: "현재 비밀번호 확인 후 새 비밀번호로 변경",
+        render: () => <PasswordChangePanel />,
       },
     ],
   },
