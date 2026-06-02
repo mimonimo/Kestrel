@@ -77,8 +77,8 @@ const CATEGORIES: CategoryDef[] = [
     sections: [
       {
         id: "external-keys",
-        title: "외부 데이터 소스 API 키",
-        description: "운영자 전용 — 등록한 키로 모든 사용자의 수집이 동작합니다",
+        title: "외부 데이터 소스 연결 키",
+        description: "NVD·GitHub 에서 데이터를 가져올 때 쓰는 키 — 운영자가 등록하면 전체 서비스에 적용됩니다",
         render: () => (
           <div className="space-y-4">
             <ApiKeyField settingKey="nvdApiKey" />
@@ -88,8 +88,8 @@ const CATEGORIES: CategoryDef[] = [
       },
       {
         id: "mitre-backfill",
-        title: "MITRE 전체 백필",
-        description: "최초 1회 전체 백필 후 자동 델타 수집으로 전환",
+        title: "전체 데이터 가져오기",
+        description: "처음 한 번만 전체 CVE 를 받아오면, 이후엔 자동으로 새 데이터만 갱신됩니다",
         render: () => <MitreBackfillPanel />,
       },
     ],

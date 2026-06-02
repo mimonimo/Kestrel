@@ -46,10 +46,10 @@ export function MitreBackfillPanel() {
           </div>
           <div>
             <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-              MITRE cvelistV5 백필
+              전체 CVE 데이터 가져오기
             </h3>
             <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-500">
-              전체 ~340k CVE 를 한 번에 채웁니다.
+              공식 CVE 목록(약 34만 건)을 한 번에 받아옵니다.
             </p>
           </div>
         </div>
@@ -67,7 +67,7 @@ export function MitreBackfillPanel() {
           ) : (
             <Sparkles className="mr-1 h-4 w-4" />
           )}
-          최근 14일 델타만
+          최근 14일만 갱신
         </Button>
         <Button
           size="md"
@@ -89,7 +89,7 @@ export function MitreBackfillPanel() {
           ) : (
             <Database className="mr-1 h-4 w-4" />
           )}
-          {confirmFull ? "확인하고 전체 백필 실행" : "전체 백필 시작 (~340k)"}
+          {confirmFull ? "확인 — 전체 가져오기 실행" : "전체 가져오기 (약 34만 건)"}
         </Button>
         {confirmFull && !backfill.isPending && (
           <Button
@@ -104,18 +104,17 @@ export function MitreBackfillPanel() {
 
       {confirmFull && !backfill.isPending && (
         <p className="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] text-amber-900 dark:text-amber-200">
-          첫 실행 시 git clone ~5GB + 340k 행 처리로 30~60분이 소요됩니다.
-          백그라운드에서 실행되므로 화면을 닫아도 진행되며, 진행 상황은 위
-          새로고침 막대의 MITRE 행으로 확인할 수 있습니다.
+          처음 가져올 땐 데이터가 커서 30~60분 정도 걸립니다. 백그라운드에서
+          진행되므로 화면을 닫아도 계속되며, 아래 진행 상황에서 확인할 수 있습니다.
         </p>
       )}
 
       {backfill.data && !backfill.error && (
-        <NoticeBox title="백필 시작됨" message={backfill.data.detail} size="sm" />
+        <NoticeBox title="가져오기 시작됨" message={backfill.data.detail} size="sm" />
       )}
       {backfill.error && (
         <ErrorBox
-          title="백필 시작 실패"
+          title="가져오기 시작 실패"
           message={(backfill.error as Error).message}
           size="sm"
         />
@@ -143,7 +142,7 @@ export function MitreBackfillPanel() {
             )}
             <span className="font-medium">
               {mitreRow.status === "running"
-                ? "백필 진행 중"
+                ? "가져오는 중"
                 : mitreRow.status === "failed"
                   ? "마지막 실행 실패"
                   : "마지막 실행 완료"}
