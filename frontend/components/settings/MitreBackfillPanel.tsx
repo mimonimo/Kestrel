@@ -32,17 +32,15 @@ export function MitreBackfillPanel() {
           </div>
           <div>
             <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-              CVE 데이터 갱신
+              MITRE CVE 불러오기
             </h3>
           </div>
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 pt-1">
         <Button
           size="md"
           disabled={backfill.isPending}
           onClick={() => backfill.mutate("delta")}
+          className="shrink-0"
         >
           {backfill.isPending && backfill.variables === "delta" ? (
             <Loader2 className="mr-1 h-4 w-4 animate-spin" />

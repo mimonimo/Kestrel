@@ -39,6 +39,7 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
   const isSet = settingKey === "nvdApiKey" ? list.data?.nvdSet : list.data?.githubSet;
 
   const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState(false); // 등록된 키 재입력 모드
   const [status, setStatus] = useState<"idle" | "submitting" | "saved" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -57,6 +58,7 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
     },
     onSuccess: () => {
       setDraft("");
+      setEditing(false);
       setStatus("saved");
       qc.invalidateQueries({ queryKey: ["admin-external-keys"] });
       qc.invalidateQueries({ queryKey: ["status"] });
@@ -145,6 +147,21 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
             {masked}
           </code>
           <span className="text-[10px] text-neutral-500 dark:text-neutral-500">서버 저장됨</span>
+          {!editing && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setEditing(true);
+                setStatus("idle");
+                setErrorMsg(null);
+              }}
+              className="gap-1"
+            >
+              <Save className="h-3.5 w-3.5" /> 재입력
+            </Button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -165,25 +182,44 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
         </p>
       )}
 
-      <form onSubmit={onSubmit} className="space-y-2">
-        <Input
-          type="password"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={meta.placeholder}
-          autoComplete="off"
-          spellCheck={false}
-          className="font-mono"
-        />
-        <Button type="submit" size="md" disabled={!draft.trim() || saveAndRefresh.isPending}>
-          {saveAndRefresh.isPending ? (
-            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="mr-1 h-4 w-4" />
-          )}
-          {saveAndRefresh.isPending ? "저장 중" : "저장하고 즉시 재수집"}
-        </Button>
-      </form>
+      {/* 키 미등록이거나, 등록돼 있어도 "재입력" 누른 경우에만 입력 폼 표시 */}
+      {(!isSet || editing) && (
+        <form onSubmit={onSubmit} className="space-y-2">
+          <Input
+            type="password"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={meta.placeholder}
+            autoComplete="off"
+            spellCheck={false}
+            className="font-mono"
+            autoFocus={editing}
+          />
+          <div className="flex items-center gap-2">
+            <Button type="submit" size="md" disabled={!draft.trim() || saveAndRefresh.isPending}>
+              {saveAndRefresh.isPending ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-1 h-4 w-4" />
+              )}
+              {saveAndRefresh.isPending ? "저장 중" : "저장하고 즉시 재수집"}
+            </Button>
+            {editing && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="md"
+                onClick={() => {
+                  setEditing(false);
+                  setDraft("");
+                }}
+              >
+                취소
+              </Button>
+            )}
+          </div>
+        </form>
+      )}
 
       {status === "saved" && (
         <p className="text-xs text-emerald-700 dark:text-emerald-400">
