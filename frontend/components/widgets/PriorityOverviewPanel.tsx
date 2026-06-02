@@ -19,6 +19,7 @@
 
 import Link from "next/link";
 import type { Route } from "next";
+import { useState } from "react";
 import {
   AlertOctagon,
   CalendarCheck,
@@ -62,31 +63,35 @@ const PILLAR_META = {
 
 const TIER_META: Record<
   DashboardPriorityBucket["key"],
-  { Icon: React.ComponentType<{ className?: string }>; tint: string; barTint: string }
+  { Icon: React.ComponentType<{ className?: string }>; tint: string; barTint: string; ringTint: string }
 > = {
   kev: {
     Icon: Flame,
     tint: "text-rose-700 dark:text-rose-300",
     barTint: "bg-rose-500",
+    ringTint: "ring-rose-400/60 dark:ring-rose-400/40",
   },
   epss_high: {
     Icon: TrendingUp,
     tint: "text-amber-700 dark:text-amber-300",
     barTint: "bg-amber-500",
+    ringTint: "ring-amber-400/60 dark:ring-amber-400/40",
   },
   cvss_mid_epss_high: {
     Icon: AlertOctagon,
     tint: "text-violet-700 dark:text-violet-300",
     barTint: "bg-violet-500",
+    ringTint: "ring-violet-400/60 dark:ring-violet-400/40",
   },
   cvss_high_epss_low: {
     Icon: CalendarCheck,
     tint: "text-sky-700 dark:text-sky-300",
     barTint: "bg-sky-500",
+    ringTint: "ring-sky-400/60 dark:ring-sky-400/40",
   },
 };
 
-export function PriorityOverviewPanel() {
+export function PriorityOverviewPanel({ className }: { className?: string }) {
   const insightsQ = useQuery({
     queryKey: ["dashboard", "insights", "priority-signals"],
     queryFn: () => api.getDashboardInsights(),
@@ -106,12 +111,9 @@ export function PriorityOverviewPanel() {
   const isLoading = insightsQ.isLoading || prioritiesQ.isLoading;
   const error = (insightsQ.error || prioritiesQ.error) as Error | null;
 
-  // "지금 고칠 것" 3블럭 — 가장 긴급한 세 티어만. 최하위 long-tail
-  // (cvss_high_epss_low) 은 일정 패치 대상이라 이 뷰에서 제외.
-  const byKey = new Map(buckets.map((b) => [b.key, b]));
-  const tierBlocks = (["kev", "epss_high", "cvss_mid_epss_high"] as const)
-    .map((k) => byKey.get(k))
-    .filter((b): b is DashboardPriorityBucket => b != null);
+  // 활성 티어 — 동그란 번호 버튼으로 전환. 기본은 첫(=가장 긴급) 티어.
+  const [activeKey, setActiveKey] = useState<DashboardPriorityBucket["key"] | null>(null);
+  const active = buckets.find((b) => b.key === activeKey) ?? buckets[0] ?? null;
 
   return (
     <WidgetCard
@@ -119,9 +121,10 @@ export function PriorityOverviewPanel() {
       description="CVSS(이론) · EPSS(예측) · KEV(실측) 세 신호를 합쳐 본 조치 순서"
       isLoading={isLoading}
       error={error}
+      className={className}
     >
-      {/* Pillar chips */}
-      <div className="grid gap-2 sm:grid-cols-3">
+      {/* Pillar chips — lg(좁은 열) 에서는 세로로 쌓아 숫자가 잘리지 않게 */}
+      <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
         <PillarChip
           pillar="cvss"
           primary={signals?.cvssCritical}
@@ -143,30 +146,52 @@ export function PriorityOverviewPanel() {
         />
       </div>
 
-      {/* 3 tier blocks — 좌 KEV / 중 EPSS 상위+외부 접점 / 우 CVSS 중간+EPSS 높음 */}
-      <div className="mt-4 grid items-stretch gap-3 lg:grid-cols-3">
-        {tierBlocks.map((b) => (
-          <TierBlock key={b.key} bucket={b} />
-        ))}
+      {/* 순위 탭 — 동그란 색상 번호 버튼. 누르면 아래에 해당 순위 설명 + TOP 5. */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {buckets.map((b, idx) => {
+          const meta = TIER_META[b.key];
+          const isActive = active?.key === b.key;
+          return (
+            <button
+              key={b.key}
+              type="button"
+              onClick={() => setActiveKey(b.key)}
+              title={`${idx + 1}순위 · ${b.label}`}
+              aria-pressed={isActive}
+              aria-label={`${idx + 1}순위 ${b.label}`}
+              className={cn(
+                "inline-flex h-8 w-8 items-center justify-center rounded-full text-[13px] font-bold tabular-nums transition-all",
+                isActive
+                  ? cn(meta.barTint, "text-white shadow-sm ring-2 ring-offset-2 ring-offset-white dark:ring-offset-surface-1", meta.ringTint)
+                  : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200 dark:bg-surface-2 dark:text-neutral-400 dark:hover:bg-surface-3",
+              )}
+            >
+              {idx + 1}
+            </button>
+          );
+        })}
       </div>
+
+      {/* 활성 순위 상세 */}
+      {active && <TierDetail bucket={active} />}
     </WidgetCard>
   );
 }
 
-function TierBlock({ bucket }: { bucket: DashboardPriorityBucket }) {
+function TierDetail({ bucket }: { bucket: DashboardPriorityBucket }) {
   const meta = TIER_META[bucket.key];
   const { Icon } = meta;
   const items = bucket.items.slice(0, 5);
   return (
-    <div className="flex flex-col overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
-      {/* 블럭 헤더 — 누르면 해당 티어 전체를 취약점 조회에서 봄 */}
+    <div className="mt-3 overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
+      {/* 헤더 — 누르면 해당 순위 전체를 취약점 조회에서 봄 */}
       <Link
         href={`/cves?priority=${bucket.key}` as Route}
         className="flex items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-3 py-2 transition-colors hover:bg-neutral-100 dark:border-neutral-800 dark:bg-surface-2 dark:hover:bg-surface-3"
         title={`${bucket.label} ${bucket.count.toLocaleString("ko-KR")}건 전체 보기`}
       >
         <Icon className={cn("h-4 w-4 shrink-0", meta.tint)} />
-        <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-neutral-900 dark:text-neutral-100">
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">
           {bucket.label}
         </span>
         <span className="shrink-0 tabular-nums text-[12px] font-bold text-neutral-900 dark:text-neutral-100">
@@ -176,13 +201,20 @@ function TierBlock({ bucket }: { bucket: DashboardPriorityBucket }) {
         <ChevronRight className="h-3.5 w-3.5 shrink-0 text-neutral-400 dark:text-neutral-600" />
       </Link>
 
+      {/* 설명 */}
+      {bucket.rationale && (
+        <p className="border-b border-neutral-100 px-3 py-2 text-[11px] leading-relaxed text-neutral-600 dark:border-neutral-800/60 dark:text-neutral-400">
+          {bucket.rationale}
+        </p>
+      )}
+
       {/* TOP 5 — 각 CVE 는 상세로 이동 */}
       {items.length === 0 ? (
         <p className="px-3 py-4 text-[11px] text-neutral-500 dark:text-neutral-500">
           해당 CVE 가 없습니다.
         </p>
       ) : (
-        <ol className="flex-1 divide-y divide-neutral-100 dark:divide-neutral-800/60">
+        <ol className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
           {items.map((it, i) => (
             <li key={it.cveId}>
               <Link

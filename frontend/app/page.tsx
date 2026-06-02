@@ -9,7 +9,6 @@ import { RefreshBar } from "@/components/dashboard/RefreshBar";
 import { VulnDistributionPanel } from "@/components/dashboard/VulnDistributionPanel";
 import { CveListSkeleton } from "@/components/cve/CveListSkeleton";
 import { TimelinePanel } from "@/components/widgets/TimelinePanel";
-import { TopVendorsPanel } from "@/components/widgets/TopVendorsPanel";
 import { CvssBucketsPanel } from "@/components/widgets/CvssBucketsPanel";
 import { RecentCriticalPanel } from "@/components/widgets/RecentCriticalPanel";
 import { PriorityOverviewPanel } from "@/components/widgets/PriorityOverviewPanel";
@@ -55,24 +54,18 @@ function Dashboard() {
           (own data fetch, own loader). The layout is just a CSS grid so
           adding a new widget later is "drop a component into the grid";
           nothing higher-level needs to know about it. */}
-      {/* 세 열을 같은 높이로 (그리드 기본 align stretch). 좌(벤더 Top10)·
-          우(최근 Critical) 카드 틀이 가장 긴 열에 맞춰 늘어나 바닥이 정렬되고,
-          로딩 중 "T자"(가운데만 길던) 도 사라진다. 가운데 열은 CVSS 점수 분포 +
-          신규 CVE 추이 세로 스택이며, 추이 카드를 flex-1 로 늘려 열 바닥까지 채운다. */}
-      <section className="mb-8 grid items-stretch gap-5 lg:grid-cols-3">
-        <TopVendorsPanel />
+      {/* 세 열 같은 높이 (그리드 기본 align stretch) → 카드 틀이 가장 긴 열에
+          맞춰 늘어나 바닥 정렬, 로딩 중 "T자" 도 방지.
+          좌: 패치 우선순위(순위 탭 + TOP 5) — 기존 영향 벤더 Top10 자리.
+          중: CVSS 점수 분포 + 신규 CVE 추이 세로 스택 (추이 flex-1 로 열 바닥까지).
+          우: 최근 Critical. */}
+      <section className="mb-10 grid items-stretch gap-5 lg:grid-cols-3">
+        <PriorityOverviewPanel className="h-full" />
         <div className="flex h-full flex-col gap-5">
           <CvssBucketsPanel />
           <TimelinePanel className="flex-1" />
         </div>
         <RecentCriticalPanel />
-      </section>
-
-      {/* Compact "어디부터 고칠 것인가" — CVSS/EPSS/KEV chips + a
-          ranked 4-tier list. Sits at the bottom so the at-a-glance
-          numbers above stay visible without scrolling. */}
-      <section className="mb-10">
-        <PriorityOverviewPanel />
       </section>
     </div>
   );
