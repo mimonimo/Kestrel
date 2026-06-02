@@ -1,7 +1,6 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2, Database, Loader2, Sparkles } from "lucide-react";
-import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
@@ -16,26 +15,13 @@ function formatNumber(n: number): string {
 }
 
 export function MitreBackfillPanel() {
-  const [confirmFull, setConfirmFull] = useState(false);
-
   const backfill = useMutation({
     mutationFn: (mode: "full" | "delta") => api.mitreBackfill({ mode }),
   });
 
-  // Pull the live MITRE row from /status so progress survives navigation
-  // — without this the user loses sight of an in-flight backfill the
-  // moment they switch pages, even though the work continues server-side.
+  // Pull the live MITRE row from /status so progress survives navigation.
   const status = useStatus();
   const mitreRow = status.data?.ingestions?.find((i) => i.source === "mitre");
-
-  const onClickFull = () => {
-    if (!confirmFull) {
-      setConfirmFull(true);
-      return;
-    }
-    setConfirmFull(false);
-    backfill.mutate("full");
-  };
 
   return (
     <div className="space-y-3 rounded-lg border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-surface-1">
@@ -46,11 +32,8 @@ export function MitreBackfillPanel() {
           </div>
           <div>
             <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-              전체 CVE 데이터 가져오기
+              CVE 데이터 갱신
             </h3>
-            <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-500">
-              공식 CVE 목록(약 34만 건)을 한 번에 받아옵니다.
-            </p>
           </div>
         </div>
       </div>
@@ -58,7 +41,6 @@ export function MitreBackfillPanel() {
       <div className="flex flex-wrap items-center gap-2 pt-1">
         <Button
           size="md"
-          variant="outline"
           disabled={backfill.isPending}
           onClick={() => backfill.mutate("delta")}
         >
@@ -67,47 +49,9 @@ export function MitreBackfillPanel() {
           ) : (
             <Sparkles className="mr-1 h-4 w-4" />
           )}
-          최근 14일만 갱신
+          최근 14일 갱신
         </Button>
-        <Button
-          size="md"
-          // Primary action when not in confirm mode (default tone = matches
-          // 저장 등 다른 설정 페이지 primary 버튼). 확인 단계는 위험 신호로
-          // amber outline 으로 전환.
-          variant={confirmFull ? "outline" : "default"}
-          disabled={backfill.isPending}
-          onClick={onClickFull}
-          className={cn(
-            confirmFull &&
-              "border-amber-500/40 text-amber-800 hover:bg-amber-500/10 dark:text-amber-200",
-          )}
-        >
-          {backfill.isPending && backfill.variables === "full" ? (
-            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-          ) : confirmFull ? (
-            <AlertTriangle className="mr-1 h-4 w-4" />
-          ) : (
-            <Database className="mr-1 h-4 w-4" />
-          )}
-          {confirmFull ? "확인 — 전체 가져오기 실행" : "전체 가져오기 (약 34만 건)"}
-        </Button>
-        {confirmFull && !backfill.isPending && (
-          <Button
-            size="md"
-            variant="ghost"
-            onClick={() => setConfirmFull(false)}
-          >
-            취소
-          </Button>
-        )}
       </div>
-
-      {confirmFull && !backfill.isPending && (
-        <p className="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] text-amber-900 dark:text-amber-200">
-          처음 가져올 땐 데이터가 커서 30~60분 정도 걸립니다. 백그라운드에서
-          진행되므로 화면을 닫아도 계속되며, 아래 진행 상황에서 확인할 수 있습니다.
-        </p>
-      )}
 
       {backfill.data && !backfill.error && (
         <NoticeBox title="가져오기 시작됨" message={backfill.data.detail} size="sm" />

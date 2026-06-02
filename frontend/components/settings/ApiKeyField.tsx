@@ -104,8 +104,10 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
         <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{meta.label}</h3>
         <div className="flex shrink-0 items-center gap-2">
           {isSet && (
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => {
                 setStatus("submitting");
                 setErrorMsg(null);
@@ -113,23 +115,23 @@ export function ApiKeyField({ settingKey }: { settingKey: SettingKey }) {
               }}
               disabled={fullResync.isPending}
               title="과거 수집 실패로 누락된 항목이 있을 때만 사용. 처음부터 다시 받아옵니다."
-              className="inline-flex items-center gap-1 rounded border border-amber-500/40 px-2 py-1 text-[11px] text-amber-700 hover:border-amber-500/70 hover:bg-amber-500/10 disabled:opacity-50 dark:text-amber-300"
+              className="gap-1 border-amber-500/40 text-amber-700 hover:border-amber-500/70 hover:bg-amber-500/10 dark:text-amber-300"
             >
               {fullResync.isPending ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <History className="h-3 w-3" />
+                <History className="h-3.5 w-3.5" />
               )}
               전체 다시 받기
-            </button>
+            </Button>
           )}
           <a
             href={meta.docsUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 rounded-full border border-neutral-300 px-2 py-1 text-[11px] text-neutral-700 hover:border-neutral-400 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-neutral-500 dark:hover:text-neutral-200"
+            className="inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-neutral-300 px-3 text-sm font-medium text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-50 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-300 dark:hover:border-neutral-500 dark:hover:bg-neutral-800"
           >
-            <ExternalLink className="h-3 w-3" />
+            <ExternalLink className="h-3.5 w-3.5" />
             발급
           </a>
         </div>

@@ -97,10 +97,10 @@ const CATEGORIES: CategoryDef[] = [
             <div className="space-y-3 border-t border-neutral-200 pt-6 dark:border-neutral-800">
               <div>
                 <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-300">
-                  전체 데이터 가져오기
+                  데이터 갱신
                 </h4>
                 <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-500">
-                  처음 한 번만 전체 CVE 를 받아오면, 이후엔 자동으로 새 데이터만 갱신됩니다
+                  평소엔 자동으로 새 데이터가 갱신됩니다. 필요하면 아래에서 수동으로 갱신하세요
                 </p>
               </div>
               <MitreBackfillPanel />

@@ -38,17 +38,13 @@ interface AdminUser {
   stats: UserStats;
 }
 
-interface LoginLog {
-  id: number;
-  userId: string;
+interface UserRequest {
+  method: string;
+  path: string;
+  status: number;
+  durationMs: number | null;
   ip: string | null;
-  userAgent: string | null;
-  osName: string | null;
-  osVersion: string | null;
-  browserName: string | null;
-  browserVersion: string | null;
-  deviceKind: string | null;
-  createdAt: string;
+  createdAt: number; // epoch seconds
 }
 
 async function fetchUsers(q: string): Promise<{ items: AdminUser[]; total: number }> {
@@ -61,14 +57,28 @@ async function fetchUsers(q: string): Promise<{ items: AdminUser[]; total: numbe
   return res.json();
 }
 
-async function fetchLoginLogs(id: string): Promise<{ items: LoginLog[] }> {
+async function fetchUserRequests(id: string): Promise<{ items: UserRequest[] }> {
   const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
-  const res = await fetch(`${BASE}/admin/users/${encodeURIComponent(id)}/login-logs?limit=20`, {
-    credentials: "include",
-    cache: "no-store",
-  });
+  const res = await fetch(
+    `${BASE}/admin/web-access-log?uid=${encodeURIComponent(id)}&limit=40`,
+    { credentials: "include", cache: "no-store" },
+  );
   if (!res.ok) throw new ApiError(res.status, `접속 로그 로딩 실패 (${res.status})`);
   return res.json();
+}
+
+function reqMethodTone(m: string): string {
+  if (m === "GET") return "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200";
+  if (m === "POST") return "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200";
+  if (m === "PUT" || m === "PATCH") return "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200";
+  if (m === "DELETE") return "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200";
+  return "bg-slate-200 text-slate-800 dark:bg-slate-500/25 dark:text-slate-100";
+}
+function reqStatusTone(s: number): string {
+  if (s >= 500) return "text-rose-700 dark:text-rose-300";
+  if (s >= 400) return "text-amber-700 dark:text-amber-300";
+  if (s >= 300) return "text-sky-700 dark:text-sky-300";
+  return "text-emerald-700 dark:text-emerald-300";
 }
 
 async function deleteUserApi(id: string): Promise<void> {
@@ -259,8 +269,8 @@ export function UserManagementPanel() {
 
 function LoginLogList({ userId }: { userId: string }) {
   const { data, isPending, isError } = useQuery({
-    queryKey: ["admin-user-login-logs", userId],
-    queryFn: () => fetchLoginLogs(userId),
+    queryKey: ["admin-user-requests", userId],
+    queryFn: () => fetchUserRequests(userId),
     staleTime: 30_000,
   });
   if (isPending) {
@@ -280,74 +290,25 @@ function LoginLogList({ userId }: { userId: string }) {
   if (!data || data.items.length === 0) {
     return (
       <p className="mt-2 text-[10px] text-neutral-500 dark:text-neutral-500">
-        기록된 접속이 없어요.
+        최근 요청 기록이 없어요. (요청 로그는 최근 일부만 보관됩니다)
       </p>
     );
   }
   return (
-    <ul className="mt-2 max-h-64 space-y-1.5 overflow-y-auto border-l-2 border-neutral-200 pl-3 dark:border-neutral-800">
-      {data.items.map((log) => {
-        const browser = log.browserName
-          ? `${log.browserName}${log.browserVersion ? " " + log.browserVersion : ""}`
-          : null;
-        const os = log.osName
-          ? `${log.osName}${log.osVersion ? " " + log.osVersion : ""}`
-          : null;
-        // desktop 도 다른 디바이스 칩과 동일한 saturated 톤(slate) 으로 통일.
-        // 이전엔 neutral-100/dark:bg-surface-2 였는데, 라이트에선 회색 칸이 까맣게
-        // 떠 보이고 다크에선 surface 와 같은 색이라 칩이 안 보이는 회귀가 반복됨
-        // ([[feedback_light_dark_parity]]).
-        const kindTone =
-          log.deviceKind === "mobile"
-            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200"
-            : log.deviceKind === "tablet"
-              ? "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
-              : log.deviceKind === "bot"
-                ? "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200"
-                : log.deviceKind === "desktop"
-                  ? "bg-slate-200 text-slate-800 dark:bg-slate-500/25 dark:text-slate-100"
-                  : "bg-neutral-200 text-neutral-800 dark:bg-neutral-500/25 dark:text-neutral-100";
-        return (
-          <li key={log.id} className="text-[10px] text-neutral-600 dark:text-neutral-400">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 text-neutral-800 dark:text-neutral-200">
-                <Clock className="h-2.5 w-2.5" />
-                {formatRelativeKo(log.createdAt)}
-              </span>
-              {log.deviceKind && (
-                <span
-                  className={`rounded-full px-1.5 py-px text-[9px] font-medium ${kindTone}`}
-                >
-                  {log.deviceKind}
-                </span>
-              )}
-              {browser && (
-                <span className="rounded-full bg-violet-100 px-1.5 py-px text-[9px] font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">
-                  {browser}
-                </span>
-              )}
-              {os && (
-                <span className="rounded-full bg-amber-100 px-1.5 py-px text-[9px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
-                  {os}
-                </span>
-              )}
-              {log.ip && (
-                <span className="tabular-nums text-neutral-700 dark:text-neutral-300">
-                  {log.ip}
-                </span>
-              )}
-            </div>
-            {log.userAgent && (
-              <p
-                className="mt-0.5 truncate text-[9px] text-neutral-500 dark:text-neutral-500"
-                title={log.userAgent}
-              >
-                {log.userAgent}
-              </p>
-            )}
-          </li>
-        );
-      })}
+    <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto border-l-2 border-neutral-200 pl-3 font-mono dark:border-neutral-800">
+      {data.items.map((r, i) => (
+        <li key={i} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-neutral-600 dark:text-neutral-400">
+          <span className={`shrink-0 rounded px-1 py-px text-[9px] font-semibold ${reqMethodTone(r.method)}`}>
+            {r.method}
+          </span>
+          <span className={`shrink-0 font-semibold tabular-nums ${reqStatusTone(r.status)}`}>{r.status}</span>
+          <span className="min-w-0 flex-1 truncate text-neutral-800 dark:text-neutral-200">{r.path}</span>
+          <span className="inline-flex shrink-0 items-center gap-1 tabular-nums text-neutral-500 dark:text-neutral-500">
+            <Clock className="h-2.5 w-2.5" />
+            {formatRelativeKo(new Date(r.createdAt * 1000).toISOString())}
+          </span>
+        </li>
+      ))}
     </ul>
   );
 }

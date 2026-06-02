@@ -245,7 +245,7 @@ function ConsoleModal({ which, onClose }: { which: Which; onClose: () => void })
       role="dialog"
       aria-modal="true"
       aria-label={label}
-      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-neutral-950/70 px-4 py-10 backdrop-blur-md animate-in fade-in duration-150"
+      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-neutral-950/45 px-4 py-10 backdrop-blur-sm animate-in fade-in duration-150"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
