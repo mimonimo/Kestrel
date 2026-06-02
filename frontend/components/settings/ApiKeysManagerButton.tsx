@@ -1,0 +1,71 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { KeyRound, X } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { ApiKeyField } from "./ApiKeyField";
+
+// 외부 연결 키(NVD·GitHub) 관리 — 설정 본문엔 버튼만, 클릭 시 모달에서 관리.
+export function ApiKeysManagerButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)} className="gap-1.5">
+        <KeyRound className="h-3.5 w-3.5" /> 외부 연결 키 관리
+      </Button>
+      {open && <KeysModal onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function KeysModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="외부 연결 키 관리"
+      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-neutral-950/45 px-4 py-10 backdrop-blur-sm animate-in fade-in duration-150"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        className="relative flex max-h-[88vh] w-full max-w-2xl flex-col rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/20 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/50 animate-in zoom-in-95 duration-150"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
+          <KeyRound className="h-4 w-4 text-sky-700 dark:text-sky-300" />
+          <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">외부 연결 키 관리</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="닫기"
+            className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          <p className="text-[11px] text-neutral-600 dark:text-neutral-500">
+            NVD·GitHub 에서 데이터를 가져올 때 쓰는 키입니다. 운영자가 등록하면 전체 서비스에 적용됩니다.
+          </p>
+          <ApiKeyField settingKey="nvdApiKey" />
+          <ApiKeyField settingKey="githubToken" />
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}

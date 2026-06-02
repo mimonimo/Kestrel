@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { ApiKeyField } from "@/components/settings/ApiKeyField";
+import { ApiKeysManagerButton } from "@/components/settings/ApiKeysManagerButton";
 import { AssetsManager } from "@/components/settings/AssetsManager";
 import { ClaudeIntegrationPanel } from "@/components/settings/ClaudeIntegrationPanel";
 import { MitreBackfillPanel } from "@/components/settings/MitreBackfillPanel";
@@ -78,23 +78,10 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "ingestion-all",
         title: "데이터 수집 관리",
-        description: "외부 소스 연결 키와 전체 데이터 가져오기를 한 곳에서 관리합니다",
+        description: "데이터 갱신과 외부 소스 연결 키를 관리합니다",
         render: () => (
           <div className="space-y-6">
             <div className="space-y-3">
-              <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-300">
-                  외부 소스 연결 키
-                </h4>
-                <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-500">
-                  NVD·GitHub 에서 데이터를 가져올 때 쓰는 키 (운영자 등록 시 전체 적용)
-                </p>
-              </div>
-              <ApiKeyField settingKey="nvdApiKey" />
-              <ApiKeyField settingKey="githubToken" />
-            </div>
-
-            <div className="space-y-3 border-t border-neutral-200 pt-6 dark:border-neutral-800">
               <div>
                 <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-300">
                   데이터 갱신
@@ -104,6 +91,18 @@ const CATEGORIES: CategoryDef[] = [
                 </p>
               </div>
               <MitreBackfillPanel />
+            </div>
+
+            <div className="space-y-2 border-t border-neutral-200 pt-6 dark:border-neutral-800">
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-300">
+                  외부 소스 연결 키
+                </h4>
+                <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-500">
+                  NVD·GitHub 에서 데이터를 가져올 때 쓰는 키 (운영자 등록 시 전체 적용)
+                </p>
+              </div>
+              <ApiKeysManagerButton />
             </div>
           </div>
         ),
