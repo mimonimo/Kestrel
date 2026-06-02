@@ -69,6 +69,24 @@ app.add_middleware(
     allow_credentials=True,
 )
 
+
+# 웹 접속 로그 (Apache access log 스타일) — 매 요청을 Redis capped list 에 기록.
+# best-effort: 기록 실패가 응답을 막지 않는다 (PR 10-EF).
+@app.middleware("http")
+async def _access_log_middleware(request, call_next):
+    import time as _time
+
+    from app.core.access_log import record_request
+
+    start = _time.monotonic()
+    response = await call_next(request)
+    try:
+        await record_request(request, response.status_code, (_time.monotonic() - start) * 1000)
+    except Exception:  # noqa: BLE001
+        pass
+    return response
+
+
 app.include_router(api_router)
 
 init_otel(app)

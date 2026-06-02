@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   Clock,
+  Globe,
   LogIn,
   ScrollText,
   Loader2,
@@ -25,10 +26,11 @@ async function getJSON<T>(path: string): Promise<T> {
   return res.json();
 }
 
-type Which = "users" | "access" | "activity" | "audit";
+type Which = "users" | "web" | "access" | "activity" | "audit";
 
 const META: Record<Which, { label: string; icon: typeof LogIn }> = {
   users: { label: "이용자 조회·관리", icon: UsersIcon },
+  web: { label: "웹 접속 로그", icon: Globe },
   access: { label: "접속 로그", icon: LogIn },
   activity: { label: "활동 로그", icon: Activity },
   audit: { label: "감사 로그", icon: ScrollText },
@@ -262,6 +264,7 @@ function ConsoleModal({ which, onClose }: { which: Which; onClose: () => void })
         </header>
         <div className="max-h-[72vh] overflow-y-auto px-5 py-4">
           {which === "users" && <UserManagementPanel />}
+          {which === "web" && <WebAccessFeed />}
           {which === "access" && <AccessFeed />}
           {which === "activity" && <ActivityFeed />}
           {which === "audit" && <AuditFeed />}
@@ -563,6 +566,138 @@ function AuditFeed() {
               <span className="ml-auto inline-flex shrink-0 items-center gap-1 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">
                 <Clock className="h-2.5 w-2.5" />
                 {formatRelativeKo(l.createdAt)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ─── 웹 접속 로그 (Apache 스타일) ────────────────────────
+interface WebAccessLog {
+  method: string;
+  path: string;
+  status: number;
+  durationMs: number | null;
+  ip: string | null;
+  userLabel: string | null;
+  deviceKind: string | null;
+  createdAt: number; // epoch seconds
+}
+
+function methodTone(m: string): string {
+  if (m === "GET") return "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200";
+  if (m === "POST") return "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200";
+  if (m === "PUT" || m === "PATCH") return "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200";
+  if (m === "DELETE") return "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200";
+  return "bg-slate-200 text-slate-800 dark:bg-slate-500/25 dark:text-slate-100";
+}
+
+function statusTone(s: number): string {
+  if (s >= 500) return "text-rose-700 dark:text-rose-300";
+  if (s >= 400) return "text-amber-700 dark:text-amber-300";
+  if (s >= 300) return "text-sky-700 dark:text-sky-300";
+  return "text-emerald-700 dark:text-emerald-300";
+}
+
+const METHOD_FILTERS = ["", "GET", "POST", "PUT", "DELETE"];
+const STATUS_FILTERS: { v: string; l: string }[] = [
+  { v: "", l: "전체" },
+  { v: "2xx", l: "2xx" },
+  { v: "3xx", l: "3xx" },
+  { v: "4xx", l: "4xx" },
+  { v: "5xx", l: "5xx" },
+];
+
+function WebAccessFeed() {
+  const [method, setMethod] = useState("");
+  const [statusClass, setStatusClass] = useState("");
+  const [q, setQ] = useState("");
+
+  const query = useQuery({
+    queryKey: ["admin-web-access-log", method, statusClass, q],
+    queryFn: () => {
+      const p = new URLSearchParams({ limit: "300" });
+      if (method) p.set("method", method);
+      if (statusClass) p.set("status_class", statusClass);
+      if (q.trim()) p.set("q", q.trim());
+      return getJSON<{ items: WebAccessLog[] }>(`/admin/web-access-log?${p.toString()}`);
+    },
+    staleTime: 10_000,
+  });
+  const items = query.data?.items ?? [];
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[10px] text-neutral-500 dark:text-neutral-500">
+        모든 API 요청을 시간 역순으로 (최근 5000건). Caddy 가 /api/* 만 백엔드로
+        보내므로 정적 페이지 자체 요청은 제외됩니다.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-1">
+          {METHOD_FILTERS.map((m) => (
+            <button
+              key={m || "all"}
+              type="button"
+              onClick={() => setMethod(m)}
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
+                method === m
+                  ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
+                  : "border-neutral-300 text-neutral-600 hover:border-sky-300 dark:border-neutral-700 dark:text-neutral-400",
+              )}
+            >
+              {m || "전체"}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {STATUS_FILTERS.map((s) => (
+            <button
+              key={s.v || "all"}
+              type="button"
+              onClick={() => setStatusClass(s.v)}
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
+                statusClass === s.v
+                  ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
+                  : "border-neutral-300 text-neutral-600 hover:border-sky-300 dark:border-neutral-700 dark:text-neutral-400",
+              )}
+            >
+              {s.l}
+            </button>
+          ))}
+        </div>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="경로 검색 (예: /search)"
+          className="min-w-[140px] flex-1 rounded-full border border-neutral-300 bg-white px-3 py-1 text-xs text-neutral-900 placeholder:text-neutral-400 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100"
+        />
+      </div>
+      <FeedState q={query} empty={items.length === 0} />
+      {!query.isPending && !query.isError && items.length > 0 && (
+        <ul className="space-y-1 font-mono">
+          {items.map((l, i) => (
+            <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-[11px] dark:border-neutral-800">
+              <span className={cn("shrink-0 rounded px-1.5 py-px text-[9px] font-semibold", methodTone(l.method))}>
+                {l.method}
+              </span>
+              <span className={cn("shrink-0 font-semibold tabular-nums", statusTone(l.status))}>{l.status}</span>
+              <span className="min-w-0 flex-1 truncate text-neutral-800 dark:text-neutral-200">{l.path}</span>
+              {l.durationMs != null && (
+                <span className="shrink-0 tabular-nums text-neutral-500 dark:text-neutral-500">{l.durationMs}ms</span>
+              )}
+              {l.userLabel && (
+                <span className="shrink-0 rounded-full bg-sky-500/10 px-1.5 py-px text-[9px] text-sky-700 dark:text-sky-300">
+                  {l.userLabel}
+                </span>
+              )}
+              {l.ip && <span className="shrink-0 tabular-nums text-neutral-500 dark:text-neutral-500">{l.ip}</span>}
+              <span className="shrink-0 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">
+                {formatRelativeKo(new Date(l.createdAt * 1000).toISOString())}
               </span>
             </li>
           ))}

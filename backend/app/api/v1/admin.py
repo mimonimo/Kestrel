@@ -553,6 +553,90 @@ async def list_anon_access_logs(
     return _AnonAccessLogsList(items=items, total=len(items))
 
 
+class _WebAccessLogOut(_PydBaseModel):
+    model_config = _PydConfigDict(populate_by_name=True, alias_generator=lambda s: "".join(
+        [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
+    ))
+    method: str
+    path: str
+    status: int
+    duration_ms: float | None = None
+    ip: str | None = None
+    user_label: str | None = None
+    os_name: str | None = None
+    browser_name: str | None = None
+    device_kind: str | None = None
+    created_at: float
+
+
+class _WebAccessLogsList(_PydBaseModel):
+    items: list[_WebAccessLogOut]
+    total: int
+
+
+@router.get("/web-access-log", response_model=_WebAccessLogsList, response_model_by_alias=True)
+async def web_access_log(
+    method: str | None = Query(default=None),
+    status_class: str | None = Query(default=None),  # 2xx/3xx/4xx/5xx
+    q: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=200, ge=1, le=2000),
+    db: AsyncSession = Depends(get_db),
+) -> _WebAccessLogsList:
+    """웹 접속 로그(Apache 스타일) — 미들웨어가 적재한 요청별 기록. 최근순.
+    method / status_class(2xx..) / q(경로 부분일치) 필터."""
+    import uuid as _uuid
+
+    from app.core.access_log import read_recent
+
+    recs = await read_recent(2000)
+
+    # 필터
+    if method:
+        m = method.upper()
+        recs = [r for r in recs if (r.get("method") or "").upper() == m]
+    if status_class and status_class[:1].isdigit():
+        head = status_class[0]
+        recs = [r for r in recs if str(r.get("status", "")).startswith(head)]
+    if q:
+        ql = q.lower()
+        recs = [r for r in recs if ql in (r.get("path") or "").lower()]
+    recs = recs[:limit]
+
+    # uid → 사용자 라벨 일괄 조회
+    uids: set[_uuid.UUID] = set()
+    for r in recs:
+        raw = r.get("uid")
+        if raw:
+            try:
+                uids.add(_uuid.UUID(raw))
+            except (ValueError, TypeError):
+                pass
+    labels: dict[str, str] = {}
+    if uids:
+        rows = (await db.execute(select(_User).where(_User.id.in_(uids)))).scalars().all()
+        for u in rows:
+            labels[str(u.id)] = u.nickname or u.username or u.email
+
+    items = []
+    for r in recs:
+        os_name, _osv, br_name, _brv, kind = _parse_ua(r.get("ua"))
+        items.append(
+            _WebAccessLogOut(
+                method=r.get("method") or "",
+                path=r.get("path") or "",
+                status=int(r.get("status") or 0),
+                duration_ms=r.get("ms"),
+                ip=r.get("ip"),
+                user_label=labels.get(r.get("uid") or ""),
+                os_name=os_name,
+                browser_name=br_name,
+                device_kind=kind,
+                created_at=float(r.get("ts") or 0),
+            )
+        )
+    return _WebAccessLogsList(items=items, total=len(items))
+
+
 @router.get("/activity-logs", response_model=_ActivityLogsList, response_model_by_alias=True)
 async def list_activity_logs(
     kind: str | None = Query(default=None),
