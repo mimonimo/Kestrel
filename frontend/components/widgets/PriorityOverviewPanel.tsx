@@ -25,7 +25,6 @@ import {
   CalendarCheck,
   ChevronRight,
   Flame,
-  Gauge,
   TrendingUp,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -36,30 +35,6 @@ import {
   type DashboardPriorityBucket,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
-
-const PILLAR_META = {
-  cvss: {
-    label: "CVSS",
-    sub: "이론",
-    Icon: Gauge,
-    tint: "text-sky-700 dark:text-sky-300",
-    bg: "bg-sky-50 dark:bg-sky-500/10",
-  },
-  epss: {
-    label: "EPSS",
-    sub: "예측",
-    Icon: TrendingUp,
-    tint: "text-amber-700 dark:text-amber-300",
-    bg: "bg-amber-50 dark:bg-amber-500/10",
-  },
-  kev: {
-    label: "KEV",
-    sub: "실측",
-    Icon: AlertOctagon,
-    tint: "text-rose-700 dark:text-rose-300",
-    bg: "bg-rose-50 dark:bg-rose-500/10",
-  },
-} as const;
 
 const TIER_META: Record<
   DashboardPriorityBucket["key"],
@@ -92,12 +67,6 @@ const TIER_META: Record<
 };
 
 export function PriorityOverviewPanel({ className }: { className?: string }) {
-  const insightsQ = useQuery({
-    queryKey: ["dashboard", "insights", "priority-signals"],
-    queryFn: () => api.getDashboardInsights(),
-    staleTime: 60_000,
-    refetchInterval: 60_000,
-  });
   const prioritiesQ = useQuery({
     queryKey: ["dashboard", "priorities", 5],
     queryFn: () => api.getDashboardPriorities({ perBucket: 5 }),
@@ -105,11 +74,10 @@ export function PriorityOverviewPanel({ className }: { className?: string }) {
     refetchInterval: 5 * 60_000,
   });
 
-  const signals = insightsQ.data?.prioritySignals;
   const buckets = prioritiesQ.data?.buckets ?? [];
 
-  const isLoading = insightsQ.isLoading || prioritiesQ.isLoading;
-  const error = (insightsQ.error || prioritiesQ.error) as Error | null;
+  const isLoading = prioritiesQ.isLoading;
+  const error = prioritiesQ.error as Error | null;
 
   // 활성 티어 — 동그란 번호 버튼으로 전환. 기본은 첫(=가장 긴급) 티어.
   const [activeKey, setActiveKey] = useState<DashboardPriorityBucket["key"] | null>(null);
@@ -123,31 +91,8 @@ export function PriorityOverviewPanel({ className }: { className?: string }) {
       error={error}
       className={className}
     >
-      {/* Pillar chips — lg(좁은 열) 에서는 세로로 쌓아 숫자가 잘리지 않게 */}
-      <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
-        <PillarChip
-          pillar="cvss"
-          primary={signals?.cvssCritical}
-          primaryLabel="Critical 9.0+"
-          secondary={signals?.cvssHigh}
-          secondaryLabel="High 7.0+"
-        />
-        <PillarChip
-          pillar="epss"
-          primary={signals?.epssHigh}
-          primaryLabel="≥ 0.5"
-          secondary={signals?.epssTopPercentile}
-          secondaryLabel="상위 5%"
-        />
-        <PillarChip
-          pillar="kev"
-          primary={signals?.kevListed}
-          primaryLabel="현재 등재"
-        />
-      </div>
-
       {/* 순위 탭 — 동그란 색상 번호 버튼. 누르면 아래에 해당 순위 설명 + TOP 5. */}
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {buckets.map((b, idx) => {
           const meta = TIER_META[b.key];
           const isActive = active?.key === b.key;
@@ -163,7 +108,7 @@ export function PriorityOverviewPanel({ className }: { className?: string }) {
                 "inline-flex h-8 w-8 items-center justify-center rounded-full text-[13px] font-bold tabular-nums transition-all",
                 isActive
                   ? cn(meta.barTint, "text-white shadow-sm ring-2 ring-offset-2 ring-offset-white dark:ring-offset-surface-1", meta.ringTint)
-                  : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200 dark:bg-surface-2 dark:text-neutral-400 dark:hover:bg-surface-3",
+                  : "bg-neutral-200 text-neutral-500 hover:bg-neutral-300 hover:text-neutral-700 dark:bg-surface-2 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-200",
               )}
             >
               {idx + 1}
@@ -248,56 +193,6 @@ function TierDetail({ bucket }: { bucket: DashboardPriorityBucket }) {
             </li>
           ))}
         </ol>
-      )}
-    </div>
-  );
-}
-
-interface PillarChipProps {
-  pillar: keyof typeof PILLAR_META;
-  primary?: number;
-  primaryLabel: string;
-  secondary?: number;
-  secondaryLabel?: string;
-}
-
-function PillarChip({
-  pillar,
-  primary,
-  primaryLabel,
-  secondary,
-  secondaryLabel,
-}: PillarChipProps) {
-  const meta = PILLAR_META[pillar];
-  const { Icon } = meta;
-  return (
-    <div className={cn("rounded-lg px-3 py-2", meta.bg)}>
-      <div className="flex items-center justify-between gap-2">
-        <div className={cn("flex items-center gap-1.5 text-[11px] font-semibold", meta.tint)}>
-          <Icon className="h-3.5 w-3.5" />
-          {meta.label}
-        </div>
-        <span className={cn("text-[9px] font-medium uppercase tracking-wider", meta.tint)}>
-          {meta.sub}
-        </span>
-      </div>
-      <div className="mt-1 flex items-baseline justify-between gap-2">
-        <span className="text-[10px] text-neutral-600 dark:text-neutral-400">
-          {primaryLabel}
-        </span>
-        <span className="tabular-nums text-base font-bold text-neutral-900 dark:text-neutral-100">
-          {primary == null ? "—" : primary.toLocaleString("ko-KR")}
-        </span>
-      </div>
-      {secondaryLabel && (
-        <div className="mt-0.5 flex items-baseline justify-between gap-2">
-          <span className="text-[10px] text-neutral-600 dark:text-neutral-400">
-            {secondaryLabel}
-          </span>
-          <span className="tabular-nums text-[11px] font-semibold text-neutral-700 dark:text-neutral-300">
-            {secondary == null ? "—" : secondary.toLocaleString("ko-KR")}
-          </span>
-        </div>
       )}
     </div>
   );
