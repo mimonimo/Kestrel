@@ -65,12 +65,31 @@ export function AdminUsersConsole() {
 }
 
 // ─── 개요 시각화 ─────────────────────────────────────────
+interface VisitDay {
+  date: string;
+  total: number;
+  member: number;
+  anon: number;
+}
+
 interface Overview {
   totalUsers: number;
   adminUsers: number;
   newUsers7d: number;
   logins7d: number;
   activity: { post: number; comment: number; analysis: number; bookmark: number };
+  visits: {
+    total: number;
+    today: number;
+    memberTotal: number;
+    anonTotal: number;
+    daily: VisitDay[];
+  };
+}
+
+function mdLabel(iso: string): string {
+  const [, m, d] = iso.split("-");
+  return `${parseInt(m, 10)}/${parseInt(d, 10)}`;
 }
 
 const ACTIVITY_BARS: { key: keyof Overview["activity"]; label: string; bar: string }[] = [
@@ -96,37 +115,96 @@ function Overview() {
   const d = q.data;
   const maxAct = Math.max(1, ...ACTIVITY_BARS.map((b) => d.activity[b.key]));
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <div className="grid grid-cols-2 gap-3">
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-3">
         <StatCard label="총 이용자" value={d.totalUsers} tint="text-sky-700 dark:text-sky-300" />
-        <StatCard label="관리자" value={d.adminUsers} tint="text-amber-700 dark:text-amber-300" />
         <StatCard label="최근 7일 신규" value={d.newUsers7d} tint="text-emerald-700 dark:text-emerald-300" />
         <StatCard label="최근 7일 로그인" value={d.logins7d} tint="text-violet-700 dark:text-violet-300" />
       </div>
-      <div className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-surface-1">
-        <p className="mb-3 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-          활동 분포 (누적)
-        </p>
-        <div className="space-y-2">
-          {ACTIVITY_BARS.map((b) => {
-            const v = d.activity[b.key];
-            return (
-              <div key={b.key} className="flex items-center gap-2 text-[11px]">
-                <span className="w-14 shrink-0 text-neutral-600 dark:text-neutral-400">{b.label}</span>
-                <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
-                  <div
-                    className={cn("h-full rounded-full", b.bar)}
-                    style={{ width: `${Math.max((v / maxAct) * 100, v > 0 ? 4 : 0)}%` }}
-                  />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-surface-1">
+          <p className="mb-3 text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+            활동 분포 (누적)
+          </p>
+          <div className="space-y-2">
+            {ACTIVITY_BARS.map((b) => {
+              const v = d.activity[b.key];
+              return (
+                <div key={b.key} className="flex items-center gap-2 text-[11px]">
+                  <span className="w-14 shrink-0 text-neutral-600 dark:text-neutral-400">{b.label}</span>
+                  <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+                    <div
+                      className={cn("h-full rounded-full", b.bar)}
+                      style={{ width: `${Math.max((v / maxAct) * 100, v > 0 ? 4 : 0)}%` }}
+                    />
+                  </div>
+                  <span className="w-12 shrink-0 text-right tabular-nums font-medium text-neutral-900 dark:text-neutral-100">
+                    {v.toLocaleString("ko-KR")}
+                  </span>
                 </div>
-                <span className="w-12 shrink-0 text-right tabular-nums font-medium text-neutral-900 dark:text-neutral-100">
-                  {v.toLocaleString("ko-KR")}
-                </span>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
+
+        <VisitTrend visits={d.visits} />
       </div>
+    </div>
+  );
+}
+
+function VisitTrend({ visits }: { visits: Overview["visits"] }) {
+  const daily = visits?.daily ?? [];
+  const maxTotal = Math.max(1, ...daily.map((x) => x.total));
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-surface-1">
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+          방문 추이 (최근 7일 · 순방문자)
+        </p>
+        <span className="text-[11px] text-neutral-500 dark:text-neutral-500">
+          누적{" "}
+          <span className="font-semibold tabular-nums text-neutral-900 dark:text-neutral-100">
+            {(visits?.total ?? 0).toLocaleString("ko-KR")}
+          </span>
+        </span>
+      </div>
+      <div className="mb-2 flex items-center gap-3 text-[10px] text-neutral-500 dark:text-neutral-500">
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-sm bg-sky-500" /> 회원{" "}
+          {(visits?.memberTotal ?? 0).toLocaleString("ko-KR")}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-sm bg-slate-400 dark:bg-slate-500" /> 비회원{" "}
+          {(visits?.anonTotal ?? 0).toLocaleString("ko-KR")}
+        </span>
+      </div>
+      {daily.length === 0 ? (
+        <p className="text-[11px] text-neutral-500 dark:text-neutral-500">방문 데이터가 없습니다.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {daily.map((x) => (
+            <div key={x.date} className="flex items-center gap-2 text-[11px]">
+              <span className="w-8 shrink-0 tabular-nums text-neutral-500 dark:text-neutral-500">
+                {mdLabel(x.date)}
+              </span>
+              <div className="flex h-2.5 flex-1 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+                <div
+                  className="h-full bg-sky-500"
+                  style={{ width: `${(x.member / maxTotal) * 100}%` }}
+                />
+                <div
+                  className="h-full bg-slate-400 dark:bg-slate-500"
+                  style={{ width: `${(x.anon / maxTotal) * 100}%` }}
+                />
+              </div>
+              <span className="w-10 shrink-0 text-right tabular-nums font-medium text-neutral-900 dark:text-neutral-100">
+                {x.total.toLocaleString("ko-KR")}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -381,21 +459,33 @@ function AuditFeed() {
   });
   const items = q.data?.items ?? [];
   const actionMap = actionsQ.data?.actions ?? {};
+  // 필터 버튼 — 역할 변경/사용자 삭제는 제외(운영상 드물어 노이즈).
+  const HIDDEN = new Set(["user.role_change", "user.delete"]);
+  const filterOptions = [
+    { value: "", label: "전체" },
+    ...Object.entries(actionMap)
+      .filter(([code]) => !HIDDEN.has(code))
+      .map(([value, label]) => ({ value, label })),
+  ];
   return (
     <div className="space-y-3">
-      <select
-        value={action}
-        onChange={(e) => setAction(e.target.value)}
-        aria-label="이벤트 종류 필터"
-        className="rounded-full border border-neutral-300 bg-white px-2.5 py-1 text-xs text-neutral-800 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-200"
-      >
-        <option value="">전체 이벤트</option>
-        {Object.entries(actionMap).map(([code, label]) => (
-          <option key={code} value={code}>
-            {label}
-          </option>
+      <div className="flex flex-wrap gap-1.5">
+        {filterOptions.map((f) => (
+          <button
+            key={f.value}
+            type="button"
+            onClick={() => setAction(f.value)}
+            className={cn(
+              "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+              action === f.value
+                ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
+                : "border-neutral-300 text-neutral-600 hover:border-sky-300 hover:text-sky-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-sky-200",
+            )}
+          >
+            {f.label}
+          </button>
         ))}
-      </select>
+      </div>
       <FeedState q={q} empty={items.length === 0} />
       {!q.isPending && !q.isError && items.length > 0 && (
         <ul className="space-y-1.5">

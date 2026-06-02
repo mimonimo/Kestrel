@@ -14,11 +14,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel
 
+from app.api.v1.deps import get_optional_user
 from app.core.redis_client import get_redis
 from app.core.request_ip import client_ip
+from app.models import User
 
 # 일 방문자 키는 운영자 기준 (KST) 자정에 초기화되어야 한다.
 # 서버는 UTC 라 ``date.today()`` 를 그대로 쓰면 KST 09:00 에 바뀌어 사용자가
@@ -37,13 +39,15 @@ class VisitorsOut(BaseModel):
 async def visitors(
     request: Request,
     x_client_id: str | None = Header(default=None, alias="X-Client-Id"),
+    user: User | None = Depends(get_optional_user),
 ) -> VisitorsOut:
     # Caddy 뒤라 request.client.host 는 항상 동일한 docker bridge IP → 실제
     # 사용자 구분 못 함. X-Forwarded-For 우선 (PR 10-DM).
     rid = x_client_id or client_ip(request) or "anon"
     rid = rid[:64]  # bound key size
 
-    day_key = f"visitors:day:{datetime.now(_KST).date().isoformat()}"
+    date = datetime.now(_KST).date().isoformat()
+    day_key = f"visitors:day:{date}"
     all_key = "visitors:all"
 
     redis = await get_redis()
@@ -52,6 +56,14 @@ async def visitors(
     await redis.sadd(all_key, rid)
     # 오늘 키만 7일 후 자동 정리 (heatmap 등 후속 분석 여지 남기되 무한히 안 쌓이게).
     await redis.expire(day_key, 7 * 86400)
+
+    # 회원/비회원 분석을 위해 로그인 사용자는 별도 SET 에도 누적 (PR 10-EA).
+    # 비회원 추정치 = 전체 − 회원. 운영자 감사 콘솔의 방문 추이에서 사용.
+    if user is not None:
+        auth_day = f"visitors:auth:day:{date}"
+        await redis.sadd(auth_day, rid)
+        await redis.sadd("visitors:auth:all", rid)
+        await redis.expire(auth_day, 7 * 86400)
 
     today_n = await redis.scard(day_key)
     total_n = await redis.scard(all_key)

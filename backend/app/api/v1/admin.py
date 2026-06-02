@@ -404,6 +404,44 @@ async def admin_overview(db: AsyncSession = Depends(get_db)) -> dict:
     bookmarks = await _count(
         select(_func.count()).select_from(_Bookmark).where(_Bookmark.user_id.isnot(None))
     )
+
+    # 방문 통계 — Redis SET 기반 순 방문자. 회원/비회원 분리 분석.
+    #   visitors:day:<KST>        전체(회원+비회원)
+    #   visitors:auth:day:<KST>   회원(로그인 상태) — 비회원 추정 = 전체 − 회원
+    # 일별 키는 7일 보존이라 최근 7일 추이까지 분석 가능. Redis 장애 시 0 처리.
+    visits = {"total": 0, "today": 0, "memberTotal": 0, "anonTotal": 0, "daily": []}
+    try:
+        from app.core.redis_client import get_redis as _get_redis
+
+        kst = _tz(_td(hours=9))
+        today = _now_dt.now(kst).date()
+        redis = await _get_redis()
+        daily = []
+        for i in range(6, -1, -1):
+            day = today - _td(days=i)
+            iso = day.isoformat()
+            total_d = int(await redis.scard(f"visitors:day:{iso}") or 0)
+            member_d = int(await redis.scard(f"visitors:auth:day:{iso}") or 0)
+            daily.append(
+                {
+                    "date": iso,
+                    "total": total_d,
+                    "member": member_d,
+                    "anon": max(0, total_d - member_d),
+                }
+            )
+        total = int(await redis.scard("visitors:all") or 0)
+        member_total = int(await redis.scard("visitors:auth:all") or 0)
+        visits = {
+            "total": total,
+            "today": daily[-1]["total"] if daily else 0,
+            "memberTotal": member_total,
+            "anonTotal": max(0, total - member_total),
+            "daily": daily,
+        }
+    except Exception:  # noqa: BLE001 — 방문 통계 실패가 개요 전체를 막지 않도록
+        pass
+
     return {
         "totalUsers": total_users,
         "adminUsers": admin_users,
@@ -415,6 +453,7 @@ async def admin_overview(db: AsyncSession = Depends(get_db)) -> dict:
             "analysis": analyses,
             "bookmark": bookmarks,
         },
+        "visits": visits,
     }
 
 
