@@ -76,21 +76,37 @@ const CATEGORIES: CategoryDef[] = [
     audience: "admin",
     sections: [
       {
-        id: "external-keys",
-        title: "외부 데이터 소스 연결 키",
-        description: "NVD·GitHub 에서 데이터를 가져올 때 쓰는 키 — 운영자가 등록하면 전체 서비스에 적용됩니다",
+        id: "ingestion-all",
+        title: "데이터 수집 관리",
+        description: "외부 소스 연결 키와 전체 데이터 가져오기를 한 곳에서 관리합니다",
         render: () => (
-          <div className="space-y-4">
-            <ApiKeyField settingKey="nvdApiKey" />
-            <ApiKeyField settingKey="githubToken" />
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-300">
+                  외부 소스 연결 키
+                </h4>
+                <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-500">
+                  NVD·GitHub 에서 데이터를 가져올 때 쓰는 키 (운영자 등록 시 전체 적용)
+                </p>
+              </div>
+              <ApiKeyField settingKey="nvdApiKey" />
+              <ApiKeyField settingKey="githubToken" />
+            </div>
+
+            <div className="space-y-3 border-t border-neutral-200 pt-6 dark:border-neutral-800">
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-300">
+                  전체 데이터 가져오기
+                </h4>
+                <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-500">
+                  처음 한 번만 전체 CVE 를 받아오면, 이후엔 자동으로 새 데이터만 갱신됩니다
+                </p>
+              </div>
+              <MitreBackfillPanel />
+            </div>
           </div>
         ),
-      },
-      {
-        id: "mitre-backfill",
-        title: "전체 데이터 가져오기",
-        description: "처음 한 번만 전체 CVE 를 받아오면, 이후엔 자동으로 새 데이터만 갱신됩니다",
-        render: () => <MitreBackfillPanel />,
       },
     ],
   },
