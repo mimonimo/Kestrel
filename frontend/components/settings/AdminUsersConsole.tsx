@@ -314,40 +314,104 @@ function deviceTone(kind: string | null): string {
   return "bg-neutral-200 text-neutral-800 dark:bg-neutral-500/25 dark:text-neutral-100";
 }
 
+interface AnonAccessLog {
+  ip: string | null;
+  osName: string | null;
+  osVersion: string | null;
+  browserName: string | null;
+  browserVersion: string | null;
+  deviceKind: string | null;
+  createdAt: string | null;
+}
+
+function AccessRow({
+  label,
+  log,
+}: {
+  label: string;
+  log: { ip: string | null; osName: string | null; osVersion: string | null; browserName: string | null; browserVersion: string | null; deviceKind: string | null; createdAt: string | null };
+}) {
+  const browser = log.browserName ? `${log.browserName}${log.browserVersion ? " " + log.browserVersion : ""}` : null;
+  const os = log.osName ? `${log.osName}${log.osVersion ? " " + log.osVersion : ""}` : null;
+  return (
+    <li className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800">
+      <span className="font-medium text-neutral-900 dark:text-neutral-100">{label}</span>
+      {log.deviceKind && (
+        <span className={cn("rounded-full px-1.5 py-px text-[9px] font-medium", deviceTone(log.deviceKind))}>{log.deviceKind}</span>
+      )}
+      {browser && (
+        <span className="rounded-full bg-violet-100 px-1.5 py-px text-[9px] font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">{browser}</span>
+      )}
+      {os && (
+        <span className="rounded-full bg-amber-100 px-1.5 py-px text-[9px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">{os}</span>
+      )}
+      {log.ip && <span className="tabular-nums text-neutral-500 dark:text-neutral-500">{log.ip}</span>}
+      {log.createdAt && (
+        <span className="ml-auto inline-flex shrink-0 items-center gap-1 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">
+          <Clock className="h-2.5 w-2.5" />
+          {formatRelativeKo(log.createdAt)}
+        </span>
+      )}
+    </li>
+  );
+}
+
 function AccessFeed() {
-  const q = useQuery({
+  const [who, setWho] = useState<"member" | "anon">("member");
+  const memberQ = useQuery({
     queryKey: ["admin-access-logs"],
     queryFn: () => getJSON<{ items: AccessLog[] }>("/admin/access-logs?limit=150"),
     staleTime: 15_000,
+    enabled: who === "member",
   });
+  const anonQ = useQuery({
+    queryKey: ["admin-anon-access-logs"],
+    queryFn: () => getJSON<{ items: AnonAccessLog[] }>("/admin/anon-access-logs?limit=150"),
+    staleTime: 15_000,
+    enabled: who === "anon",
+  });
+  const q = who === "member" ? memberQ : anonQ;
   const items = q.data?.items ?? [];
-  if (q.isPending || q.isError || items.length === 0) return <FeedState q={q} empty={items.length === 0} />;
   return (
-    <ul className="space-y-1.5">
-      {items.map((l) => {
-        const browser = l.browserName ? `${l.browserName}${l.browserVersion ? " " + l.browserVersion : ""}` : null;
-        const os = l.osName ? `${l.osName}${l.osVersion ? " " + l.osVersion : ""}` : null;
-        return (
-          <li key={l.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800">
-            <span className="font-medium text-neutral-900 dark:text-neutral-100">{l.userLabel || "(삭제된 사용자)"}</span>
-            {l.deviceKind && (
-              <span className={cn("rounded-full px-1.5 py-px text-[9px] font-medium", deviceTone(l.deviceKind))}>{l.deviceKind}</span>
+    <div className="space-y-3">
+      <div className="flex gap-1.5">
+        {([
+          { v: "member", l: "회원 접속" },
+          { v: "anon", l: "비회원 접속" },
+        ] as const).map((t) => (
+          <button
+            key={t.v}
+            type="button"
+            onClick={() => setWho(t.v)}
+            className={cn(
+              "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+              who === t.v
+                ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
+                : "border-neutral-300 text-neutral-600 hover:border-sky-300 hover:text-sky-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-sky-200",
             )}
-            {browser && (
-              <span className="rounded-full bg-violet-100 px-1.5 py-px text-[9px] font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">{browser}</span>
-            )}
-            {os && (
-              <span className="rounded-full bg-amber-100 px-1.5 py-px text-[9px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">{os}</span>
-            )}
-            {l.ip && <span className="tabular-nums text-neutral-500 dark:text-neutral-500">{l.ip}</span>}
-            <span className="ml-auto inline-flex shrink-0 items-center gap-1 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">
-              <Clock className="h-2.5 w-2.5" />
-              {formatRelativeKo(l.createdAt)}
-            </span>
-          </li>
-        );
-      })}
-    </ul>
+          >
+            {t.l}
+          </button>
+        ))}
+      </div>
+      {who === "anon" && (
+        <p className="text-[10px] text-neutral-500 dark:text-neutral-500">
+          비로그인 방문자의 &lsquo;오늘 첫 방문&rsquo; 만 기록 (최근 1000건). 회원 식별 정보는 없습니다.
+        </p>
+      )}
+      <FeedState q={q} empty={items.length === 0} />
+      {!q.isPending && !q.isError && items.length > 0 && (
+        <ul className="space-y-1.5">
+          {who === "member"
+            ? (items as AccessLog[]).map((l) => (
+                <AccessRow key={l.id} label={l.userLabel || "(삭제된 사용자)"} log={l} />
+              ))
+            : (items as AnonAccessLog[]).map((l, i) => (
+                <AccessRow key={i} label="비회원" log={l} />
+              ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

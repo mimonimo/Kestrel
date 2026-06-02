@@ -111,10 +111,10 @@ function AssetRegisterModal({ onClose }: { onClose: () => void }) {
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className="relative w-full max-w-2xl rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/20 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/50 animate-in zoom-in-95 duration-150"
+        className="relative flex max-h-[88vh] w-full max-w-2xl flex-col rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/20 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/50 animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center gap-2 border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
+        <header className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
           <Plus className="h-4 w-4 text-sky-700 dark:text-sky-300" />
           <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">자산 등록</h3>
           <button
@@ -126,7 +126,7 @@ function AssetRegisterModal({ onClose }: { onClose: () => void }) {
             <X className="h-4 w-4" />
           </button>
         </header>
-        <div className="space-y-4 px-5 py-4">
+        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <p className="text-[11px] text-neutral-600 dark:text-neutral-500">
             사용 중인 벤더·제품을 등록하면 영향받는 CVE 만 추려서 알려드립니다.
           </p>

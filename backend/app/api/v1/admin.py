@@ -499,6 +499,60 @@ async def list_access_logs(
     return _AccessLogsList(items=items, total=len(items))
 
 
+class _AnonAccessLogOut(_PydBaseModel):
+    model_config = _PydConfigDict(populate_by_name=True, alias_generator=lambda s: "".join(
+        [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
+    ))
+    ip: str | None = None
+    os_name: str | None = None
+    os_version: str | None = None
+    browser_name: str | None = None
+    browser_version: str | None = None
+    device_kind: str | None = None
+    created_at: str | None = None
+
+
+class _AnonAccessLogsList(_PydBaseModel):
+    items: list[_AnonAccessLogOut]
+    total: int
+
+
+@router.get("/anon-access-logs", response_model=_AnonAccessLogsList, response_model_by_alias=True)
+async def list_anon_access_logs(
+    limit: int = Query(default=150, ge=1, le=1000),
+) -> _AnonAccessLogsList:
+    """비회원(비로그인) 접속 로그 — /stats/visitors 가 비회원 '오늘 첫 방문' 을
+    Redis capped list 에 적재한 것. 최근순."""
+    import json as _json
+
+    from app.core.redis_client import get_redis as _get_redis
+
+    items: list[_AnonAccessLogOut] = []
+    try:
+        redis = await _get_redis()
+        raw = await redis.lrange("visitors:anon:log", 0, limit - 1)
+        for s in raw:
+            try:
+                rec = _json.loads(s)
+            except Exception:  # noqa: BLE001
+                continue
+            os_name, os_ver, br_name, br_ver, kind = _parse_ua(rec.get("ua"))
+            items.append(
+                _AnonAccessLogOut(
+                    ip=rec.get("ip"),
+                    os_name=os_name,
+                    os_version=os_ver,
+                    browser_name=br_name,
+                    browser_version=br_ver,
+                    device_kind=kind,
+                    created_at=rec.get("ts"),
+                )
+            )
+    except Exception:  # noqa: BLE001 — Redis 장애 시 빈 목록
+        pass
+    return _AnonAccessLogsList(items=items, total=len(items))
+
+
 @router.get("/activity-logs", response_model=_ActivityLogsList, response_model_by_alias=True)
 async def list_activity_logs(
     kind: str | None = Query(default=None),

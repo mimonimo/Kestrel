@@ -51,8 +51,8 @@ async def visitors(
     all_key = "visitors:all"
 
     redis = await get_redis()
-    # 멱등 — SADD 는 이미 있으면 no-op.
-    await redis.sadd(day_key, rid)
+    # 멱등 — SADD 는 이미 있으면 no-op. 반환값(신규 추가 수)으로 "오늘 첫 방문" 판별.
+    added_today = await redis.sadd(day_key, rid)
     await redis.sadd(all_key, rid)
     # 오늘 키만 7일 후 자동 정리 (heatmap 등 후속 분석 여지 남기되 무한히 안 쌓이게).
     await redis.expire(day_key, 7 * 86400)
@@ -64,6 +64,21 @@ async def visitors(
         await redis.sadd(auth_day, rid)
         await redis.sadd("visitors:auth:all", rid)
         await redis.expire(auth_day, 7 * 86400)
+    elif added_today:
+        # 비회원의 "오늘 첫 방문" 만 개별 로그로 캡처 (PR 10-EE). 매 요청이 아니라
+        # 일 1회/식별자 라 볼륨이 작다. capped list(최근 1000건) + 30일 만료.
+        import json as _json
+
+        entry = _json.dumps(
+            {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "ip": client_ip(request),
+                "ua": (request.headers.get("user-agent") or "")[:512] or None,
+            }
+        )
+        await redis.lpush("visitors:anon:log", entry)
+        await redis.ltrim("visitors:anon:log", 0, 999)
+        await redis.expire("visitors:anon:log", 30 * 86400)
 
     today_n = await redis.scard(day_key)
     total_n = await redis.scard(all_key)
