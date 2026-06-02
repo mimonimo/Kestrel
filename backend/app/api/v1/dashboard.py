@@ -197,7 +197,8 @@ async def dashboard_insights(
     recent_limit: int = Query(default=5, ge=1, le=20),
 ) -> InsightsResponse:
     """Bundled dashboard metrics with a short TTL cache."""
-    cache_key = f"v3|{days}|{vendor_limit}|{recent_limit}"
+    # v4: CVSS 점수 분포가 days 윈도우(published_at)를 타도록 변경 — 캐시 무효화.
+    cache_key = f"v4|{days}|{vendor_limit}|{recent_limit}"
     now_mono = time.monotonic()
     cached = _CACHE.get(cache_key)
     if cached and now_mono - cached[0] < _CACHE_TTL:
@@ -294,6 +295,15 @@ async def _compute(
         VendorBucket(vendor=_display_vendor(k), count=c) for k, c in top
     ]
 
+    # ── CVSS 점수 분포 ──────────────────────────────────────────────
+    # days 윈도우(최근 N일 published) 안의 CVE 만 대상으로 한다 — 패널의
+    # 7/30/90일 토글이 여기에 매핑된다. published_at 이 비어있는 행은 기간을
+    # 알 수 없으므로 제외.
+    scored_window = (
+        Vulnerability.published_at.isnot(None),
+        Vulnerability.published_at >= since,
+    )
+
     # ── CVSS buckets (legacy 4-tier) ────────────────────────────────
     buckets_def = [
         ("0.0–3.9 (Low)", 0.0, 3.9),
@@ -311,6 +321,7 @@ async def _compute(
                     Vulnerability.cvss_score.isnot(None),
                     Vulnerability.cvss_score >= lo,
                     Vulnerability.cvss_score <= hi,
+                    *scored_window,
                 )
             )
         ).scalar_one()
@@ -326,7 +337,7 @@ async def _compute(
     hist_rows = (
         await db.execute(
             select(width_expr, func.count())
-            .where(Vulnerability.cvss_score.isnot(None))
+            .where(Vulnerability.cvss_score.isnot(None), *scored_window)
             .group_by("bin")
             .order_by("bin")
         )
@@ -353,7 +364,7 @@ async def _compute(
                 func.percentile_cont(0.5).within_group(Vulnerability.cvss_score.asc()),
                 func.percentile_cont(0.9).within_group(Vulnerability.cvss_score.asc()),
                 func.count(),
-            ).where(Vulnerability.cvss_score.isnot(None))
+            ).where(Vulnerability.cvss_score.isnot(None), *scored_window)
         )
     ).first()
     unscored_count = int(
@@ -361,7 +372,11 @@ async def _compute(
             await db.execute(
                 select(func.count())
                 .select_from(Vulnerability)
-                .where(Vulnerability.cvss_score.is_(None))
+                .where(
+                    Vulnerability.cvss_score.is_(None),
+                    Vulnerability.published_at.isnot(None),
+                    Vulnerability.published_at >= since,
+                )
             )
         ).scalar_one()
         or 0

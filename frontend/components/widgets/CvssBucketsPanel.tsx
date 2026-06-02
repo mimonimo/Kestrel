@@ -16,6 +16,12 @@ import { WidgetCard } from "./WidgetCard";
 import { api, type DashboardCvssDistribution } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+const RANGES = [
+  { value: 7, label: "7일" },
+  { value: 30, label: "30일" },
+  { value: 90, label: "90일" },
+] as const;
+
 // Severity band coloring per bin index (1..10). Matches the standard
 // CVSS v3 buckets so a bin's color tells the user which severity it
 // rolls up into.
@@ -31,9 +37,11 @@ function severityHref(severity: "low" | "medium" | "high" | "critical"): Route {
 }
 
 export function CvssBucketsPanel() {
+  const [days, setDays] = useState<number>(30);
+
   const q = useQuery({
-    queryKey: ["dashboard", "insights", "cvss"],
-    queryFn: () => api.getDashboardInsights(),
+    queryKey: ["dashboard", "insights", "cvss", days],
+    queryFn: () => api.getDashboardInsights({ days }),
     staleTime: 60_000,
     refetchInterval: 5 * 60_000,
   });
@@ -43,13 +51,37 @@ export function CvssBucketsPanel() {
   return (
     <WidgetCard
       title="CVSS 점수 분포"
-      description="0–10 점을 10개 구간으로. 막대 클릭 시 해당 심각도 검색으로 이동"
+      description={`최근 ${days}일 등록분 · 0–10 점 10개 구간 · 막대 클릭 시 심각도 검색`}
       isLoading={q.isLoading}
       error={q.error as Error | null}
+      actions={
+        <div
+          role="group"
+          aria-label="기간"
+          className="inline-flex overflow-hidden rounded-full border border-neutral-300 bg-white text-[11px] dark:border-neutral-800 dark:bg-surface-2"
+        >
+          {RANGES.map((r) => (
+            <button
+              key={r.value}
+              type="button"
+              onClick={() => setDays(r.value)}
+              className={cn(
+                "px-2.5 py-1 transition-colors",
+                days === r.value
+                  ? "bg-sky-100 font-medium text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"
+                  : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-100",
+              )}
+              aria-pressed={days === r.value}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      }
     >
       {!dist || dist.total === 0 ? (
         <p className="text-xs text-neutral-600 dark:text-neutral-500">
-          점수가 채워진 CVE 가 아직 없습니다.
+          이 기간에 점수가 채워진 CVE 가 없습니다.
         </p>
       ) : (
         <>
