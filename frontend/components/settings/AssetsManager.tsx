@@ -160,7 +160,7 @@ export function AssetsManager() {
                             {g.osFamilies.map((os) => (
                               <span
                                 key={os}
-                                className="rounded-full bg-neutral-100 px-1.5 py-px text-[9px] font-medium text-neutral-600 dark:bg-surface-3 dark:text-neutral-300"
+                                className="rounded-full bg-slate-200 px-1.5 py-px text-[9px] font-medium text-slate-800 dark:bg-slate-500/25 dark:text-slate-100"
                               >
                                 {OS_LABEL[os] ?? os}
                               </span>
