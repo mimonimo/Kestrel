@@ -91,8 +91,12 @@ from datetime import datetime as _dt
 
 from app.core.audit import ACTION_LABELS, AuditAction, record_audit
 from app.core.security import is_admin_email
+from app.models import AnalysisResult as _AnalysisResult
 from app.models import AuditLog as _AuditLog
+from app.models import Bookmark as _Bookmark
+from app.models import Comment as _Comment
 from app.models import LoginLog as _LoginLog
+from app.models import Post as _Post
 from app.models import User as _User
 from app.models import UserRole as _UserRole
 
@@ -166,6 +170,52 @@ class _AuditLogOut(_PydBaseModel):
 class _AuditLogsList(_PydBaseModel):
     items: list[_AuditLogOut]
     total: int
+
+
+class _AccessLogOut(_PydBaseModel):
+    model_config = _PydConfigDict(populate_by_name=True, alias_generator=lambda s: "".join(
+        [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
+    ))
+    id: int
+    user_id: str
+    user_label: str | None = None
+    ip: str | None = None
+    os_name: str | None = None
+    os_version: str | None = None
+    browser_name: str | None = None
+    browser_version: str | None = None
+    device_kind: str | None = None
+    created_at: _dt
+
+
+class _AccessLogsList(_PydBaseModel):
+    items: list[_AccessLogOut]
+    total: int
+
+
+class _ActivityLogOut(_PydBaseModel):
+    model_config = _PydConfigDict(populate_by_name=True, alias_generator=lambda s: "".join(
+        [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
+    ))
+    kind: str          # post / comment / analysis / bookmark
+    kind_label: str
+    actor_label: str | None = None
+    actor_user_id: str | None = None
+    ref: str | None = None       # cveId / 제목 등
+    created_at: _dt
+
+
+class _ActivityLogsList(_PydBaseModel):
+    items: list[_ActivityLogOut]
+    total: int
+
+
+_ACTIVITY_LABELS = {
+    "post": "글 작성",
+    "comment": "댓글",
+    "analysis": "AI 분석",
+    "bookmark": "즐겨찾기",
+}
 
 
 # UA 파싱 — 매 요청 마다 새로 파싱하면 부담이라 lru_cache.
@@ -317,6 +367,115 @@ async def list_audit_logs(
 async def list_audit_actions() -> dict:
     """필터 UI 용 — 액션 코드→라벨 매핑."""
     return {"actions": ACTION_LABELS}
+
+
+def _user_label(u: _User | None) -> str | None:
+    if u is None:
+        return None
+    return u.nickname or u.username or u.email
+
+
+@router.get("/access-logs", response_model=_AccessLogsList, response_model_by_alias=True)
+async def list_access_logs(
+    limit: int = Query(default=100, ge=1, le=300),
+    db: AsyncSession = Depends(get_db),
+) -> _AccessLogsList:
+    """전역 접속(로그인 성공) 로그 — 전체 사용자, 시간 역순. UA 파싱 + 사용자 라벨."""
+    from sqlalchemy import desc as _desc
+
+    rows = (
+        await db.execute(
+            select(_LoginLog, _User)
+            .join(_User, _User.id == _LoginLog.user_id, isouter=True)
+            .order_by(_desc(_LoginLog.created_at))
+            .limit(limit)
+        )
+    ).all()
+    items = []
+    for log_row, user_row in rows:
+        os_name, os_ver, br_name, br_ver, kind = _parse_ua(log_row.user_agent)
+        items.append(
+            _AccessLogOut(
+                id=log_row.id,
+                user_id=str(log_row.user_id),
+                user_label=_user_label(user_row),
+                ip=log_row.ip,
+                os_name=os_name,
+                os_version=os_ver,
+                browser_name=br_name,
+                browser_version=br_ver,
+                device_kind=kind,
+                created_at=log_row.created_at,
+            )
+        )
+    return _AccessLogsList(items=items, total=len(items))
+
+
+@router.get("/activity-logs", response_model=_ActivityLogsList, response_model_by_alias=True)
+async def list_activity_logs(
+    kind: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=300),
+    db: AsyncSession = Depends(get_db),
+) -> _ActivityLogsList:
+    """전역 활동 로그 — 글·댓글·AI분석·즐겨찾기 생성 이벤트를 시간순 병합.
+
+    기존 데이터에서 직접 조회하므로 과거 활동도 소급 표시. 각 테이블에서 최근
+    limit 건씩 가져와 created_at 기준 병합 후 상위 limit 건만 반환.
+    """
+    from sqlalchemy import desc as _desc
+
+    merged: list[_ActivityLogOut] = []
+
+    async def _collect(stmt, kind_code: str, ref_fn) -> None:
+        rows = (await db.execute(stmt)).all()
+        for entity, user_row in rows:
+            merged.append(
+                _ActivityLogOut(
+                    kind=kind_code,
+                    kind_label=_ACTIVITY_LABELS[kind_code],
+                    actor_label=_user_label(user_row),
+                    actor_user_id=str(entity.user_id) if entity.user_id else None,
+                    ref=ref_fn(entity),
+                    created_at=entity.created_at,
+                )
+            )
+
+    wanted = {kind} if kind else {"post", "comment", "analysis", "bookmark"}
+
+    if "post" in wanted:
+        await _collect(
+            select(_Post, _User)
+            .join(_User, _User.id == _Post.user_id, isouter=True)
+            .where(_Post.user_id.isnot(None))
+            .order_by(_desc(_Post.created_at)).limit(limit),
+            "post", lambda e: e.title,
+        )
+    if "comment" in wanted:
+        await _collect(
+            select(_Comment, _User)
+            .join(_User, _User.id == _Comment.user_id, isouter=True)
+            .where(_Comment.user_id.isnot(None))
+            .order_by(_desc(_Comment.created_at)).limit(limit),
+            "comment", lambda e: (e.content or "")[:60],
+        )
+    if "analysis" in wanted:
+        await _collect(
+            select(_AnalysisResult, _User)
+            .join(_User, _User.id == _AnalysisResult.user_id, isouter=True)
+            .order_by(_desc(_AnalysisResult.created_at)).limit(limit),
+            "analysis", lambda e: e.cve_id,
+        )
+    if "bookmark" in wanted:
+        await _collect(
+            select(_Bookmark, _User)
+            .join(_User, _User.id == _Bookmark.user_id, isouter=True)
+            .where(_Bookmark.user_id.isnot(None))
+            .order_by(_desc(_Bookmark.created_at)).limit(limit),
+            "bookmark", lambda e: e.cve_id,
+        )
+
+    merged.sort(key=lambda x: x.created_at, reverse=True)
+    return _ActivityLogsList(items=merged[:limit], total=len(merged[:limit]))
 
 
 @router.get("/users", response_model=_UsersList, response_model_by_alias=True)

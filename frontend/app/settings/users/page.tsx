@@ -3,11 +3,11 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 
 import { UserManagementPanel } from "@/components/settings/UserManagementPanel";
-import { AuditLogPanel } from "@/components/settings/AuditLogPanel";
+import { AdminLogsButtons } from "@/components/settings/AdminLogsButtons";
 
 export const metadata: Metadata = {
   title: "이용자 조회 및 감사 — Kestrel",
-  description: "가입 사용자 조회·관리와 보안 감사 로그를 한 화면에서 확인합니다.",
+  description: "가입 사용자 조회·관리와 접속·활동·보안 감사 로그를 한 화면에서 확인합니다.",
 };
 
 export default function UsersAdminPage() {
@@ -24,24 +24,24 @@ export default function UsersAdminPage() {
           이용자 조회 및 감사
         </h1>
         <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-500">
-          가입한 사용자의 활동·접속 기록을 조회하고 계정을 관리합니다. 아래 감사 로그에서는
-          로그인·가입·권한 변경 등 보안 이벤트 이력을 확인할 수 있습니다.
+          가입한 사용자의 활동·접속 기록을 조회하고 계정을 관리합니다. 아래 로그 버튼으로
+          접속·활동·보안 감사 이력을 팝업에서 확인할 수 있습니다.
         </p>
       </header>
 
       <div className="space-y-10">
         <section className="space-y-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-400">
-            이용자 조회 및 관리
+            로그 조회
           </h2>
-          <UserManagementPanel />
+          <AdminLogsButtons />
         </section>
 
         <section className="space-y-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-400">
-            로깅 감사
+            이용자 조회 및 관리
           </h2>
-          <AuditLogPanel />
+          <UserManagementPanel />
         </section>
       </div>
     </div>
