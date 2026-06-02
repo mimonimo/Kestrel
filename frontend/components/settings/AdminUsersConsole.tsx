@@ -612,6 +612,145 @@ const STATUS_FILTERS: { v: string; l: string }[] = [
 ];
 
 function WebAccessFeed() {
+  const [view, setView] = useState<"summary" | "detail">("summary");
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-1.5">
+        {([
+          { v: "summary", l: "출처(IP) 요약" },
+          { v: "detail", l: "요청 상세" },
+        ] as const).map((t) => (
+          <button
+            key={t.v}
+            type="button"
+            onClick={() => setView(t.v)}
+            className={cn(
+              "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+              view === t.v
+                ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
+                : "border-neutral-300 text-neutral-600 hover:border-sky-300 hover:text-sky-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-sky-200",
+            )}
+          >
+            {t.l}
+          </button>
+        ))}
+      </div>
+      {view === "summary" ? <AccessSummaryFeed /> : <AccessDetailFeed />}
+    </div>
+  );
+}
+
+interface AccessSummary {
+  ip: string;
+  requestCount: number;
+  distinctPaths: number;
+  isAnon: boolean;
+  memberLabels: string[];
+  topPath: string | null;
+  osName: string | null;
+  browserName: string | null;
+  deviceKind: string | null;
+  lastAt: number;
+}
+
+function countTone(n: number): string {
+  if (n >= 300) return "text-rose-700 dark:text-rose-300";
+  if (n >= 80) return "text-amber-700 dark:text-amber-300";
+  return "text-neutral-900 dark:text-neutral-100";
+}
+
+function AccessSummaryFeed() {
+  const [who, setWho] = useState("");
+  const [q, setQ] = useState("");
+  const query = useQuery({
+    queryKey: ["admin-access-summary", who, q],
+    queryFn: () => {
+      const p = new URLSearchParams({ limit: "300" });
+      if (who) p.set("who", who);
+      if (q.trim()) p.set("q", q.trim());
+      return getJSON<{ items: AccessSummary[] }>(`/admin/access-summary?${p.toString()}`);
+    },
+    staleTime: 10_000,
+  });
+  const items = query.data?.items ?? [];
+  return (
+    <div className="space-y-3">
+      <p className="text-[10px] text-neutral-500 dark:text-neutral-500">
+        출처 IP 별 요청 횟수 — 요청 많은 순. 모르는 외부/비회원 IP, 특정 출처의 과다 요청을
+        한눈에. (폴링·헬스체크 제외)
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex gap-1">
+          {([
+            { v: "", l: "전체" },
+            { v: "anon", l: "비회원" },
+            { v: "member", l: "회원" },
+          ] as const).map((t) => (
+            <button
+              key={t.v || "all"}
+              type="button"
+              onClick={() => setWho(t.v)}
+              className={cn(
+                "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+                who === t.v
+                  ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
+                  : "border-neutral-300 text-neutral-600 hover:border-sky-300 dark:border-neutral-700 dark:text-neutral-400",
+              )}
+            >
+              {t.l}
+            </button>
+          ))}
+        </div>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="IP 검색"
+          className="min-w-[120px] flex-1 rounded-full border border-neutral-300 bg-white px-3 py-1 text-xs text-neutral-900 placeholder:text-neutral-400 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100"
+        />
+      </div>
+      <FeedState q={query} empty={items.length === 0} />
+      {!query.isPending && !query.isError && items.length > 0 && (
+        <ul className="space-y-1.5">
+          {items.map((s) => {
+            const browser = s.browserName ?? null;
+            return (
+              <li key={s.ip} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800">
+                <span className="font-mono font-medium text-neutral-900 dark:text-neutral-100">{s.ip}</span>
+                {s.isAnon ? (
+                  <span className="rounded-full bg-slate-200 px-1.5 py-px text-[9px] font-medium text-slate-800 dark:bg-slate-500/25 dark:text-slate-100">
+                    비회원
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-sky-100 px-1.5 py-px text-[9px] font-medium text-sky-800 dark:bg-sky-500/15 dark:text-sky-200">
+                    {s.memberLabels[0] || "회원"}
+                    {s.memberLabels.length > 1 ? ` 외 ${s.memberLabels.length - 1}` : ""}
+                  </span>
+                )}
+                {s.deviceKind && (
+                  <span className={cn("rounded-full px-1.5 py-px text-[9px] font-medium", deviceTone(s.deviceKind))}>{s.deviceKind}</span>
+                )}
+                {browser && (
+                  <span className="rounded-full bg-violet-100 px-1.5 py-px text-[9px] font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">{browser}</span>
+                )}
+                {s.topPath && (
+                  <span className="min-w-0 truncate font-mono text-[10px] text-neutral-500 dark:text-neutral-500">{s.topPath}</span>
+                )}
+                <span className="ml-auto inline-flex shrink-0 items-center gap-2">
+                  <span className="text-[10px] text-neutral-500 dark:text-neutral-500">경로 {s.distinctPaths}</span>
+                  <span className={cn("tabular-nums font-semibold", countTone(s.requestCount))}>
+                    {s.requestCount.toLocaleString("ko-KR")}건
+                  </span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function AccessDetailFeed() {
   const [method, setMethod] = useState("");
   const [statusClass, setStatusClass] = useState("");
   const [q, setQ] = useState("");

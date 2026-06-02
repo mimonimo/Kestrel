@@ -24,8 +24,15 @@ _KEY = "web:access:log"
 _CAP = 5000
 _TTL = 7 * 86400
 
-# self-noise 방지 — 로그 조회 엔드포인트 자신은 기록하지 않음.
-_SKIP_PREFIXES = ("/api/v1/admin/web-access-log",)
+# self-noise 방지 + 내부 폴링 제외 — 로그 조회 엔드포인트 자신, 방문자 카운터
+# (매 페이지 폴링), 헬스체크는 기록하지 않는다(사용자 접속 분석에 노이즈).
+_SKIP_PREFIXES = (
+    "/api/v1/admin/web-access-log",
+    "/api/v1/admin/access-summary",
+    "/api/v1/stats/visitors",
+    "/api/v1/healthz",
+    "/healthz",
+)
 
 
 def _uid_from_cookie(request: Request) -> str | None:

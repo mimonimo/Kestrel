@@ -637,6 +637,119 @@ async def web_access_log(
     return _WebAccessLogsList(items=items, total=len(items))
 
 
+class _AccessSummaryOut(_PydBaseModel):
+    model_config = _PydConfigDict(populate_by_name=True, alias_generator=lambda s: "".join(
+        [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
+    ))
+    ip: str
+    request_count: int
+    distinct_paths: int
+    is_anon: bool
+    member_labels: list[str] = []
+    top_path: str | None = None
+    os_name: str | None = None
+    browser_name: str | None = None
+    device_kind: str | None = None
+    first_at: float = 0
+    last_at: float = 0
+
+
+class _AccessSummaryList(_PydBaseModel):
+    items: list[_AccessSummaryOut]
+    total: int
+
+
+@router.get("/access-summary", response_model=_AccessSummaryList, response_model_by_alias=True)
+async def access_summary(
+    who: str | None = Query(default=None),  # member / anon / None(전체)
+    q: str | None = Query(default=None, max_length=200),  # IP 부분일치
+    min_count: int = Query(default=1, ge=1, le=100000),
+    limit: int = Query(default=200, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db),
+) -> _AccessSummaryList:
+    """출처(IP)별 접속 요약 — 누가(특히 모르는 외부/비회원 IP) 얼마나 요청했는지.
+    요청 많은 순. who(member/anon)·IP검색·최소요청수 필터로 의심 트래픽 추적."""
+    import uuid as _uuid
+    from collections import Counter
+
+    from app.core.access_log import read_recent
+
+    recs = await read_recent(5000)
+
+    agg: dict[str, dict] = {}
+    for r in recs:
+        uid = r.get("uid")
+        if who == "member" and not uid:
+            continue
+        if who == "anon" and uid:
+            continue
+        ip = r.get("ip") or "unknown"
+        a = agg.get(ip)
+        if a is None:
+            a = {
+                "count": 0,
+                "paths": Counter(),
+                "uids": set(),
+                "first": r.get("ts") or 0,
+                "last": r.get("ts") or 0,
+                "ua": r.get("ua"),
+            }
+            agg[ip] = a
+        a["count"] += 1
+        if r.get("path"):
+            a["paths"][r["path"]] += 1
+        if uid:
+            a["uids"].add(uid)
+        ts = r.get("ts") or 0
+        a["first"] = min(a["first"], ts) if a["first"] else ts
+        a["last"] = max(a["last"], ts)
+
+    # IP 부분일치 필터
+    if q:
+        ql = q.lower()
+        agg = {ip: a for ip, a in agg.items() if ql in ip.lower()}
+
+    # uid → 라벨
+    all_uids: set[_uuid.UUID] = set()
+    for a in agg.values():
+        for raw in a["uids"]:
+            try:
+                all_uids.add(_uuid.UUID(raw))
+            except (ValueError, TypeError):
+                pass
+    labels: dict[str, str] = {}
+    if all_uids:
+        rows = (await db.execute(select(_User).where(_User.id.in_(all_uids)))).scalars().all()
+        for u in rows:
+            labels[str(u.id)] = u.nickname or u.username or u.email
+
+    items = []
+    for ip, a in agg.items():
+        if a["count"] < min_count:
+            continue
+        os_name, _v, br_name, _b, kind = _parse_ua(a["ua"])
+        top_path = a["paths"].most_common(1)[0][0] if a["paths"] else None
+        member_labels = [labels.get(u, "회원") for u in a["uids"]]
+        items.append(
+            _AccessSummaryOut(
+                ip=ip,
+                request_count=a["count"],
+                distinct_paths=len(a["paths"]),
+                is_anon=len(a["uids"]) == 0,
+                member_labels=member_labels[:5],
+                top_path=top_path,
+                os_name=os_name,
+                browser_name=br_name,
+                device_kind=kind,
+                first_at=float(a["first"] or 0),
+                last_at=float(a["last"] or 0),
+            )
+        )
+    items.sort(key=lambda x: x.request_count, reverse=True)
+    items = items[:limit]
+    return _AccessSummaryList(items=items, total=len(items))
+
+
 @router.get("/activity-logs", response_model=_ActivityLogsList, response_model_by_alias=True)
 async def list_activity_logs(
     kind: str | None = Query(default=None),
