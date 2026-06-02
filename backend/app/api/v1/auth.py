@@ -126,14 +126,20 @@ async def signup(
         raise HTTPException(409, detail="이미 사용 중인 이메일 또는 사용자명입니다.")
 
     role = UserRole.ADMIN if is_admin_email(email_norm) else UserRole.USER
+    now = datetime.now(timezone.utc)
     user = User(
         id=uuid.uuid4(),
         email=email_norm,
         username=body.username,
         password_hash=hash_password(body.password),
         role=role,
+        last_login_at=now,
     )
     db.add(user)
+    # 가입은 곧 첫 로그인(세션 시작) — 접속 로그에도 남긴다 (PR 10-EP).
+    ip = client_ip(request)
+    ua = (request.headers.get("user-agent") or "")[:512] or None
+    db.add(LoginLog(user_id=user.id, ip=ip, user_agent=ua))
     await db.commit()
 
     await record_audit(
