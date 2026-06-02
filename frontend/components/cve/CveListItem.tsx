@@ -44,7 +44,7 @@ export function CveListItem({ vuln }: { vuln: Item }) {
               <SourceBadgeCluster sources={vuln.sources ?? [vuln.source]} />
               <TicketBadge cveId={vuln.cveId} />
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1">
               {vuln.severity && (
                 <SeverityBadge severity={vuln.severity} score={vuln.cvssScore ?? undefined} />
               )}

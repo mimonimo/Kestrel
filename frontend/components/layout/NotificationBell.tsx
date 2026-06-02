@@ -112,7 +112,10 @@ export function NotificationBell() {
       {open && (
         <div
           ref={popoverRef}
-          className="absolute right-0 top-full z-50 mt-1.5 w-[min(92vw,22rem)] overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg dark:border-neutral-800 dark:bg-surface-1"
+          // 모바일: 종 버튼 기준 right-0 으로 두면 92vw 너비가 화면 왼쪽으로
+          // 넘쳐 잘리던 문제 → viewport 기준 fixed(헤더 h-14 아래, 좌우 여백).
+          // sm+ 에선 기존처럼 종 버튼에 붙는 absolute 드롭다운.
+          className="fixed left-3 right-3 top-14 z-50 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-1.5 sm:w-[min(92vw,22rem)] dark:border-neutral-800 dark:bg-surface-1"
         >
           <div className="flex items-center justify-between gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
             <span className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">

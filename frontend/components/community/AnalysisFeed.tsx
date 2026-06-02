@@ -344,7 +344,7 @@ export function AnalysisFeed() {
         onClick={() => setOpenId(a.id)}
         className="block w-full rounded-lg border border-neutral-200 bg-white p-4 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md hover:shadow-violet-900/5 active:translate-y-0 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-violet-500/40"
       >
-        <div className="flex flex-wrap items-baseline gap-x-2 text-xs">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
           <span className="rounded-full bg-violet-100 px-2 py-0.5 font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">
             {a.cveId}
           </span>

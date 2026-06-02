@@ -40,12 +40,12 @@ export function SeverityBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-bold tracking-wide",
+        "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded px-2 py-0.5 text-xs font-bold tracking-wide",
         style,
       )}
     >
       {label}
-      {scoreLabel && <span className="font-mono opacity-90">· {scoreLabel}</span>}
+      {scoreLabel && <span className="whitespace-nowrap font-mono opacity-90">· {scoreLabel}</span>}
     </span>
   );
 }

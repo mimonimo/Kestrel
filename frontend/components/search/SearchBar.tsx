@@ -32,7 +32,7 @@ export function SearchBar({ initialQuery = "", onSearch, size = "hero" }: Props)
         <Input
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="CVE ID · 제품명 · 설명 · 취약점 유형으로 검색"
+          placeholder="CVE ID · 제품명 · 키워드 검색"
           className={
             hero
               ? "h-11 rounded-full border-neutral-300 bg-white pl-10 pr-24 text-sm dark:border-neutral-800 dark:bg-surface-1"
