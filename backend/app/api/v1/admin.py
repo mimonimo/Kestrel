@@ -127,6 +127,7 @@ class _UserOut(_PydBaseModel):
     created_at: _dt
     updated_at: _dt
     last_login_at: _dt | None = None
+    last_active_at: _dt | None = None  # 최근 활동(요청) 시각 — 웹 접속 로그 기반
     stats: _UserStats = _UserStats()
 
 
@@ -264,7 +265,9 @@ class _RoleUpdate(_PydBaseModel):
     role: str  # "user" | "expert" | "admin"
 
 
-def _to_user_out(u: _User, stats: _UserStats | None = None) -> _UserOut:
+def _to_user_out(
+    u: _User, stats: _UserStats | None = None, last_active_at: _dt | None = None
+) -> _UserOut:
     role_val = u.role.value if hasattr(u.role, "value") else str(u.role)
     return _UserOut(
         id=str(u.id),
@@ -276,6 +279,7 @@ def _to_user_out(u: _User, stats: _UserStats | None = None) -> _UserOut:
         created_at=u.created_at,
         updated_at=u.updated_at,
         last_login_at=u.last_login_at,
+        last_active_at=last_active_at,
         stats=stats or _UserStats(),
     )
 
@@ -579,16 +583,18 @@ async def web_access_log(
     method: str | None = Query(default=None),
     status_class: str | None = Query(default=None),  # 2xx/3xx/4xx/5xx
     q: str | None = Query(default=None, max_length=200),
+    uid: str | None = Query(default=None),  # 특정 회원의 요청만 (drill-down)
+    ip: str | None = Query(default=None),   # 특정 IP 의 요청만 (drill-down)
     limit: int = Query(default=200, ge=1, le=2000),
     db: AsyncSession = Depends(get_db),
 ) -> _WebAccessLogsList:
     """웹 접속 로그(Apache 스타일) — 미들웨어가 적재한 요청별 기록. 최근순.
-    method / status_class(2xx..) / q(경로 부분일치) 필터."""
+    method / status_class / q(경로) / uid(회원) / ip 필터."""
     import uuid as _uuid
 
     from app.core.access_log import read_recent
 
-    recs = await read_recent(2000)
+    recs = await read_recent(5000)
 
     # 필터
     if method:
@@ -600,6 +606,10 @@ async def web_access_log(
     if q:
         ql = q.lower()
         recs = [r for r in recs if ql in (r.get("path") or "").lower()]
+    if uid:
+        recs = [r for r in recs if r.get("uid") == uid]
+    if ip:
+        recs = [r for r in recs if (r.get("ip") or "") == ip]
     recs = recs[:limit]
 
     # uid → 사용자 라벨 일괄 조회
@@ -641,7 +651,9 @@ class _AccessSummaryOut(_PydBaseModel):
     model_config = _PydConfigDict(populate_by_name=True, alias_generator=lambda s: "".join(
         [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
     ))
-    ip: str
+    ip: str = ""
+    user_id: str | None = None       # group=user 일 때 회원 id (drill-down)
+    label: str = ""                  # 화면 표시용 (IP 또는 회원 라벨)
     request_count: int
     distinct_paths: int
     is_anon: bool
@@ -661,40 +673,40 @@ class _AccessSummaryList(_PydBaseModel):
 
 @router.get("/access-summary", response_model=_AccessSummaryList, response_model_by_alias=True)
 async def access_summary(
-    who: str | None = Query(default=None),  # member / anon / None(전체)
-    q: str | None = Query(default=None, max_length=200),  # IP 부분일치
+    group: str = Query(default="ip"),       # ip(출처별) / user(회원별)
+    who: str | None = Query(default=None),  # member / anon / None — group=ip 일 때만
+    q: str | None = Query(default=None, max_length=200),
     min_count: int = Query(default=1, ge=1, le=100000),
-    limit: int = Query(default=200, ge=1, le=1000),
+    limit: int = Query(default=300, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
 ) -> _AccessSummaryList:
-    """출처(IP)별 접속 요약 — 누가(특히 모르는 외부/비회원 IP) 얼마나 요청했는지.
-    요청 많은 순. who(member/anon)·IP검색·최소요청수 필터로 의심 트래픽 추적."""
+    """접속 요약 — group=ip: 출처(IP)별(모르는 외부/비회원·과다 요청 추적),
+    group=user: 회원별(최근 활동=요청 시간). 요청 많은 순. who·검색·최소요청수 필터."""
     import uuid as _uuid
     from collections import Counter
 
     from app.core.access_log import read_recent
 
     recs = await read_recent(5000)
+    by_user = group == "user"
 
     agg: dict[str, dict] = {}
     for r in recs:
         uid = r.get("uid")
-        if who == "member" and not uid:
-            continue
-        if who == "anon" and uid:
-            continue
-        ip = r.get("ip") or "unknown"
-        a = agg.get(ip)
+        if by_user:
+            if not uid:
+                continue
+            key = uid
+        else:
+            if who == "member" and not uid:
+                continue
+            if who == "anon" and uid:
+                continue
+            key = r.get("ip") or "unknown"
+        a = agg.get(key)
         if a is None:
-            a = {
-                "count": 0,
-                "paths": Counter(),
-                "uids": set(),
-                "first": r.get("ts") or 0,
-                "last": r.get("ts") or 0,
-                "ua": r.get("ua"),
-            }
-            agg[ip] = a
+            a = {"count": 0, "paths": Counter(), "uids": set(), "first": 0, "last": 0, "ua": r.get("ua")}
+            agg[key] = a
         a["count"] += 1
         if r.get("path"):
             a["paths"][r["path"]] += 1
@@ -704,50 +716,80 @@ async def access_summary(
         a["first"] = min(a["first"], ts) if a["first"] else ts
         a["last"] = max(a["last"], ts)
 
-    # IP 부분일치 필터
-    if q:
-        ql = q.lower()
-        agg = {ip: a for ip, a in agg.items() if ql in ip.lower()}
-
     # uid → 라벨
     all_uids: set[_uuid.UUID] = set()
-    for a in agg.values():
-        for raw in a["uids"]:
+    if by_user:
+        for k in agg:
             try:
-                all_uids.add(_uuid.UUID(raw))
+                all_uids.add(_uuid.UUID(k))
             except (ValueError, TypeError):
                 pass
+    else:
+        for a in agg.values():
+            for raw in a["uids"]:
+                try:
+                    all_uids.add(_uuid.UUID(raw))
+                except (ValueError, TypeError):
+                    pass
     labels: dict[str, str] = {}
     if all_uids:
         rows = (await db.execute(select(_User).where(_User.id.in_(all_uids)))).scalars().all()
         for u in rows:
             labels[str(u.id)] = u.nickname or u.username or u.email
 
+    ql = q.lower() if q else None
     items = []
-    for ip, a in agg.items():
+    for key, a in agg.items():
         if a["count"] < min_count:
             continue
         os_name, _v, br_name, _b, kind = _parse_ua(a["ua"])
         top_path = a["paths"].most_common(1)[0][0] if a["paths"] else None
-        member_labels = [labels.get(u, "회원") for u in a["uids"]]
-        items.append(
-            _AccessSummaryOut(
-                ip=ip,
-                request_count=a["count"],
-                distinct_paths=len(a["paths"]),
-                is_anon=len(a["uids"]) == 0,
-                member_labels=member_labels[:5],
-                top_path=top_path,
-                os_name=os_name,
-                browser_name=br_name,
-                device_kind=kind,
-                first_at=float(a["first"] or 0),
-                last_at=float(a["last"] or 0),
+        if by_user:
+            label = labels.get(key, "(삭제된 사용자)")
+            if ql and ql not in label.lower():
+                continue
+            items.append(
+                _AccessSummaryOut(
+                    user_id=key, label=label, request_count=a["count"],
+                    distinct_paths=len(a["paths"]), is_anon=False,
+                    member_labels=[label], top_path=top_path,
+                    os_name=os_name, browser_name=br_name, device_kind=kind,
+                    first_at=float(a["first"] or 0), last_at=float(a["last"] or 0),
+                )
             )
-        )
+        else:
+            if ql and ql not in key.lower():
+                continue
+            member_labels = [labels.get(u, "회원") for u in a["uids"]]
+            items.append(
+                _AccessSummaryOut(
+                    ip=key, label=key, request_count=a["count"],
+                    distinct_paths=len(a["paths"]), is_anon=len(a["uids"]) == 0,
+                    member_labels=member_labels[:5], top_path=top_path,
+                    os_name=os_name, browser_name=br_name, device_kind=kind,
+                    first_at=float(a["first"] or 0), last_at=float(a["last"] or 0),
+                )
+            )
     items.sort(key=lambda x: x.request_count, reverse=True)
     items = items[:limit]
     return _AccessSummaryList(items=items, total=len(items))
+
+
+@router.delete("/access-logs", status_code=204)
+async def clear_access_logs(
+    request: Request,
+    me=Depends(require_admin),
+) -> None:
+    """웹 접속 로그 + 비회원 방문 로그 비우기. 감사 로그에 기록(별도 commit)."""
+    from app.core.access_log import clear as _clear
+
+    await _clear()
+    # 운영자가 로그를 비운 행위 자체는 감사에 남긴다.
+    async with SessionLocal() as _db:  # type: ignore[misc]
+        await record_audit(
+            _db, action="access_logs.clear", actor=me, request=request,
+            detail="웹/비회원 접속 로그 삭제",
+        )
 
 
 @router.get("/activity-logs", response_model=_ActivityLogsList, response_model_by_alias=True)
@@ -873,6 +915,25 @@ async def list_users(
     last_comment = await _max_created_by_user(Comment)
     last_bookmark = await _max_created_by_user(Bookmark)
 
+    # 웹 접속 로그 기반 회원별 마지막 요청(활동) 시각.
+    from datetime import timezone as _utc
+
+    from app.core.access_log import read_recent as _read_access
+
+    last_req: dict[str, _dt] = {}
+    try:
+        for r in await _read_access(5000):
+            ruid = r.get("uid")
+            ts = r.get("ts")
+            if not ruid or not ts:
+                continue
+            cur = last_req.get(ruid)
+            dt = _dt.fromtimestamp(float(ts), tz=_utc.utc)
+            if cur is None or dt > cur:
+                last_req[ruid] = dt
+    except Exception:  # noqa: BLE001
+        last_req = {}
+
     items: list[_UserOut] = []
     for u in users:
         candidates = [
@@ -890,7 +951,7 @@ async def list_users(
             bookmarks=int(bookmarks_by.get(u.id, 0)),
             last_activity_at=last,
         )
-        items.append(_to_user_out(u, stats))
+        items.append(_to_user_out(u, stats, last_active_at=last_req.get(str(u.id))))
     return _UsersList(items=items, total=len(items))
 
 

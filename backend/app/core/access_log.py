@@ -69,6 +69,12 @@ async def record_request(request: Request, status: int, duration_ms: float) -> N
         log.debug("access_log_record_failed", error=str(exc))
 
 
+async def clear() -> None:
+    """웹 접속 로그 + 비회원 방문 로그 전체 삭제."""
+    redis = await get_redis()
+    await redis.delete(_KEY, "visitors:anon:log")
+
+
 async def read_recent(limit: int) -> list[dict]:
     try:
         redis = await get_redis()

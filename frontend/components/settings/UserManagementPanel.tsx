@@ -34,6 +34,7 @@ interface AdminUser {
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;
+  lastActiveAt: string | null;
   stats: UserStats;
 }
 
@@ -194,12 +195,12 @@ export function UserManagementPanel() {
                     <Stat label="즐겨찾기" value={u.stats.bookmarks} />
                   </dl>
                   <p className="mt-1.5 text-[10px] tabular-nums text-neutral-500 dark:text-neutral-500">
-                    가입 {formatRelativeKo(u.createdAt)} · 마지막 활동{" "}
-                    {u.stats.lastActivityAt
-                      ? formatRelativeKo(u.stats.lastActivityAt)
-                      : "없음"}
-                    {" · "} 마지막 로그인{" "}
-                    {u.lastLoginAt ? formatRelativeKo(u.lastLoginAt) : "없음"}
+                    가입 {formatRelativeKo(u.createdAt)} · 최근 활동{" "}
+                    {u.lastActiveAt
+                      ? formatRelativeKo(u.lastActiveAt)
+                      : u.stats.lastActivityAt
+                        ? formatRelativeKo(u.stats.lastActivityAt)
+                        : "없음"}
                   </p>
                   <button
                     type="button"

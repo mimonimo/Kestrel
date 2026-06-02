@@ -28,6 +28,7 @@ class AuditAction:
     USER_ROLE_CHANGE = "user.role_change"
     USER_DELETE = "user.delete"
     ADMIN_KEYS_UPDATE = "admin.keys_update"
+    ACCESS_LOGS_CLEAR = "access_logs.clear"
 
 
 # 화면 표시용 한국어 라벨 (프론트와 별개로 API 에도 노출해 일관성).
@@ -39,6 +40,7 @@ ACTION_LABELS: dict[str, str] = {
     AuditAction.USER_ROLE_CHANGE: "역할 변경",
     AuditAction.USER_DELETE: "사용자 삭제",
     AuditAction.ADMIN_KEYS_UPDATE: "외부 키 변경",
+    AuditAction.ACCESS_LOGS_CLEAR: "접속 로그 삭제",
 }
 
 

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { createPortal } from "react-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   Clock,
@@ -9,6 +10,7 @@ import {
   LogIn,
   ScrollText,
   Loader2,
+  Trash2,
   Users as UsersIcon,
   X,
 } from "lucide-react";
@@ -26,12 +28,11 @@ async function getJSON<T>(path: string): Promise<T> {
   return res.json();
 }
 
-type Which = "users" | "web" | "access" | "activity" | "audit";
+type Which = "users" | "access" | "activity" | "audit";
 
 const META: Record<Which, { label: string; icon: typeof LogIn }> = {
   users: { label: "이용자 조회·관리", icon: UsersIcon },
-  web: { label: "웹 접속 로그", icon: Globe },
-  access: { label: "접속 로그", icon: LogIn },
+  access: { label: "접속 로그", icon: Globe },
   activity: { label: "활동 로그", icon: Activity },
   audit: { label: "감사 로그", icon: ScrollText },
 };
@@ -238,19 +239,20 @@ function ConsoleModal({ which, onClose }: { which: Which; onClose: () => void })
     };
   }, [onClose]);
 
-  return (
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label={label}
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-neutral-950/60 px-4 py-10 backdrop-blur-sm animate-in fade-in duration-150"
+      className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-neutral-950/70 px-4 py-10 backdrop-blur-md animate-in fade-in duration-150"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className="relative w-full max-w-4xl rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/20 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/50 animate-in zoom-in-95 duration-150"
+        className="relative flex max-h-[88vh] w-full max-w-4xl flex-col rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/20 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/50 animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center gap-2 border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
+        <header className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
           <Icon className="h-4 w-4 text-sky-700 dark:text-sky-300" />
           <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{label}</h3>
           <button
@@ -262,15 +264,15 @@ function ConsoleModal({ which, onClose }: { which: Which; onClose: () => void })
             <X className="h-4 w-4" />
           </button>
         </header>
-        <div className="max-h-[72vh] overflow-y-auto px-5 py-4">
+        <div className="flex-1 overflow-y-auto px-5 py-4">
           {which === "users" && <UserManagementPanel />}
-          {which === "web" && <WebAccessFeed />}
           {which === "access" && <AccessFeed />}
           {which === "activity" && <ActivityFeed />}
           {which === "audit" && <AuditFeed />}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -296,19 +298,7 @@ function FeedState({ q, empty }: { q: { isPending: boolean; isError: boolean; er
   return null;
 }
 
-// ─── 접속 로그 ───────────────────────────────────────────
-interface AccessLog {
-  id: number;
-  userLabel: string | null;
-  ip: string | null;
-  osName: string | null;
-  osVersion: string | null;
-  browserName: string | null;
-  browserVersion: string | null;
-  deviceKind: string | null;
-  createdAt: string;
-}
-
+// ─── 접속 로그 (요청 기반: 회원=사용자별 / 비회원=IP별 + 드릴다운) ────────
 function deviceTone(kind: string | null): string {
   if (kind === "mobile") return "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200";
   if (kind === "tablet") return "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200";
@@ -317,102 +307,157 @@ function deviceTone(kind: string | null): string {
   return "bg-neutral-200 text-neutral-800 dark:bg-neutral-500/25 dark:text-neutral-100";
 }
 
-interface AnonAccessLog {
-  ip: string | null;
-  osName: string | null;
-  osVersion: string | null;
-  browserName: string | null;
-  browserVersion: string | null;
-  deviceKind: string | null;
-  createdAt: string | null;
+function relFromEpoch(sec: number): string {
+  return formatRelativeKo(new Date(sec * 1000).toISOString());
 }
 
-function AccessRow({
-  label,
-  log,
-}: {
-  label: string;
-  log: { ip: string | null; osName: string | null; osVersion: string | null; browserName: string | null; browserVersion: string | null; deviceKind: string | null; createdAt: string | null };
-}) {
-  const browser = log.browserName ? `${log.browserName}${log.browserVersion ? " " + log.browserVersion : ""}` : null;
-  const os = log.osName ? `${log.osName}${log.osVersion ? " " + log.osVersion : ""}` : null;
-  return (
-    <li className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800">
-      <span className="font-medium text-neutral-900 dark:text-neutral-100">{label}</span>
-      {log.deviceKind && (
-        <span className={cn("rounded-full px-1.5 py-px text-[9px] font-medium", deviceTone(log.deviceKind))}>{log.deviceKind}</span>
-      )}
-      {browser && (
-        <span className="rounded-full bg-violet-100 px-1.5 py-px text-[9px] font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">{browser}</span>
-      )}
-      {os && (
-        <span className="rounded-full bg-amber-100 px-1.5 py-px text-[9px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">{os}</span>
-      )}
-      {log.ip && <span className="tabular-nums text-neutral-500 dark:text-neutral-500">{log.ip}</span>}
-      {log.createdAt && (
-        <span className="ml-auto inline-flex shrink-0 items-center gap-1 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">
-          <Clock className="h-2.5 w-2.5" />
-          {formatRelativeKo(log.createdAt)}
-        </span>
-      )}
-    </li>
-  );
-}
+type Drill = { kind: "user" | "ip"; key: string; label: string };
 
 function AccessFeed() {
+  const qc = useQueryClient();
   const [who, setWho] = useState<"member" | "anon">("member");
-  const memberQ = useQuery({
-    queryKey: ["admin-access-logs"],
-    queryFn: () => getJSON<{ items: AccessLog[] }>("/admin/access-logs?limit=150"),
-    staleTime: 15_000,
-    enabled: who === "member",
+  const [drill, setDrill] = useState<Drill | null>(null);
+
+  const summaryQ = useQuery({
+    queryKey: ["admin-access-summary", who],
+    queryFn: () => {
+      const p = new URLSearchParams({ limit: "300" });
+      if (who === "member") p.set("group", "user");
+      else {
+        p.set("group", "ip");
+        p.set("who", "anon");
+      }
+      return getJSON<{ items: AccessSummary[] }>(`/admin/access-summary?${p.toString()}`);
+    },
+    staleTime: 10_000,
+    enabled: !drill,
   });
-  const anonQ = useQuery({
-    queryKey: ["admin-anon-access-logs"],
-    queryFn: () => getJSON<{ items: AnonAccessLog[] }>("/admin/anon-access-logs?limit=150"),
-    staleTime: 15_000,
-    enabled: who === "anon",
+
+  const drillQ = useQuery({
+    queryKey: ["admin-access-drill", drill?.kind, drill?.key],
+    queryFn: () => {
+      const p = new URLSearchParams({ limit: "200" });
+      if (drill?.kind === "user") p.set("uid", drill.key);
+      else if (drill?.kind === "ip") p.set("ip", drill.key);
+      return getJSON<{ items: WebAccessLog[] }>(`/admin/web-access-log?${p.toString()}`);
+    },
+    enabled: !!drill,
+    staleTime: 10_000,
   });
-  const q = who === "member" ? memberQ : anonQ;
-  const items = q.data?.items ?? [];
+
+  const clearLogs = async () => {
+    if (!confirm("접속 로그(웹·비회원)를 모두 삭제할까요? 되돌릴 수 없습니다.")) return;
+    await fetch(`${BASE}/admin/access-logs`, { method: "DELETE", credentials: "include" });
+    qc.invalidateQueries({ queryKey: ["admin-access-summary"] });
+    qc.invalidateQueries({ queryKey: ["admin-access-drill"] });
+  };
+
+  const summary = summaryQ.data?.items ?? [];
+  const drillItems = drillQ.data?.items ?? [];
+
   return (
     <div className="space-y-3">
-      <div className="flex gap-1.5">
-        {([
-          { v: "member", l: "회원 접속" },
-          { v: "anon", l: "비회원 접속" },
-        ] as const).map((t) => (
+      <div className="flex flex-wrap items-center gap-1.5">
+        {!drill &&
+          ([
+            { v: "member", l: "회원별" },
+            { v: "anon", l: "비회원(IP)" },
+          ] as const).map((t) => (
+            <button
+              key={t.v}
+              type="button"
+              onClick={() => setWho(t.v)}
+              className={cn(
+                "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+                who === t.v
+                  ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
+                  : "border-neutral-300 text-neutral-600 hover:border-sky-300 hover:text-sky-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-sky-200",
+              )}
+            >
+              {t.l}
+            </button>
+          ))}
+        {drill && (
           <button
-            key={t.v}
             type="button"
-            onClick={() => setWho(t.v)}
-            className={cn(
-              "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
-              who === t.v
-                ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
-                : "border-neutral-300 text-neutral-600 hover:border-sky-300 hover:text-sky-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-sky-200",
-            )}
+            onClick={() => setDrill(null)}
+            className="inline-flex items-center gap-1 text-[11px] text-neutral-500 hover:text-sky-700 dark:hover:text-sky-300"
           >
-            {t.l}
+            ← 목록 · <span className="font-mono text-neutral-700 dark:text-neutral-300">{drill.label}</span>
           </button>
-        ))}
+        )}
+        <button
+          type="button"
+          onClick={clearLogs}
+          className="ml-auto inline-flex items-center gap-1 rounded-full border border-red-300 px-2.5 py-0.5 text-[11px] font-medium text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/40"
+        >
+          <Trash2 className="h-3 w-3" /> 로그 비우기
+        </button>
       </div>
-      {who === "anon" && (
-        <p className="text-[10px] text-neutral-500 dark:text-neutral-500">
-          비로그인 방문자의 &lsquo;오늘 첫 방문&rsquo; 만 기록 (최근 1000건). 회원 식별 정보는 없습니다.
-        </p>
-      )}
-      <FeedState q={q} empty={items.length === 0} />
-      {!q.isPending && !q.isError && items.length > 0 && (
-        <ul className="space-y-1.5">
-          {who === "member"
-            ? (items as AccessLog[]).map((l) => (
-                <AccessRow key={l.id} label={l.userLabel || "(삭제된 사용자)"} log={l} />
-              ))
-            : (items as AnonAccessLog[]).map((l, i) => (
-                <AccessRow key={i} label="비회원" log={l} />
+
+      {/* 드릴다운: 특정 회원/IP 의 요청 기록 */}
+      {drill ? (
+        <>
+          <FeedState q={drillQ} empty={drillItems.length === 0} />
+          {!drillQ.isPending && !drillQ.isError && drillItems.length > 0 && (
+            <ul className="space-y-1 font-mono">
+              {drillItems.map((l, i) => (
+                <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-[11px] dark:border-neutral-800">
+                  <span className={cn("shrink-0 rounded px-1.5 py-px text-[9px] font-semibold", methodTone(l.method))}>{l.method}</span>
+                  <span className={cn("shrink-0 font-semibold tabular-nums", statusTone(l.status))}>{l.status}</span>
+                  <span className="min-w-0 flex-1 truncate text-neutral-800 dark:text-neutral-200">{l.path}</span>
+                  {l.ip && <span className="shrink-0 tabular-nums text-neutral-500 dark:text-neutral-500">{l.ip}</span>}
+                  <span className="shrink-0 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">{relFromEpoch(l.createdAt)}</span>
+                </li>
               ))}
-        </ul>
+            </ul>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="text-[10px] text-neutral-500 dark:text-neutral-500">
+            {who === "member"
+              ? "회원별 요청 요약 — 행을 누르면 해당 회원의 요청 기록을 봅니다. 시간은 마지막 요청(활동) 기준."
+              : "모르는 외부/비회원 IP 별 요청 — 요청 많은 순. 행을 누르면 해당 IP 요청 기록."}
+          </p>
+          <FeedState q={summaryQ} empty={summary.length === 0} />
+          {!summaryQ.isPending && !summaryQ.isError && summary.length > 0 && (
+            <ul className="space-y-1.5">
+              {summary.map((s) => (
+                <li key={s.userId || s.ip}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDrill(
+                        who === "member"
+                          ? { kind: "user", key: s.userId || "", label: s.label }
+                          : { kind: "ip", key: s.ip, label: s.ip },
+                      )
+                    }
+                    className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-left text-xs transition-colors hover:border-sky-300 hover:bg-sky-50/40 dark:border-neutral-800 dark:hover:border-sky-500/40 dark:hover:bg-surface-2"
+                  >
+                    <span className="font-medium text-neutral-900 dark:text-neutral-100">{s.label}</span>
+                    {s.deviceKind && (
+                      <span className={cn("rounded-full px-1.5 py-px text-[9px] font-medium", deviceTone(s.deviceKind))}>{s.deviceKind}</span>
+                    )}
+                    {s.browserName && (
+                      <span className="rounded-full bg-violet-100 px-1.5 py-px text-[9px] font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">{s.browserName}</span>
+                    )}
+                    {s.topPath && (
+                      <span className="min-w-0 truncate font-mono text-[10px] text-neutral-500 dark:text-neutral-500">{s.topPath}</span>
+                    )}
+                    <span className="ml-auto inline-flex shrink-0 items-center gap-2">
+                      {s.lastAt > 0 && (
+                        <span className="tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">{relFromEpoch(s.lastAt)}</span>
+                      )}
+                      <span className={cn("tabular-nums font-semibold", countTone(s.requestCount))}>{s.requestCount.toLocaleString("ko-KR")}건</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </div>
   );
@@ -602,46 +647,10 @@ function statusTone(s: number): string {
   return "text-emerald-700 dark:text-emerald-300";
 }
 
-const METHOD_FILTERS = ["", "GET", "POST", "PUT", "DELETE"];
-const STATUS_FILTERS: { v: string; l: string }[] = [
-  { v: "", l: "전체" },
-  { v: "2xx", l: "2xx" },
-  { v: "3xx", l: "3xx" },
-  { v: "4xx", l: "4xx" },
-  { v: "5xx", l: "5xx" },
-];
-
-function WebAccessFeed() {
-  const [view, setView] = useState<"summary" | "detail">("summary");
-  return (
-    <div className="space-y-3">
-      <div className="flex gap-1.5">
-        {([
-          { v: "summary", l: "출처(IP) 요약" },
-          { v: "detail", l: "요청 상세" },
-        ] as const).map((t) => (
-          <button
-            key={t.v}
-            type="button"
-            onClick={() => setView(t.v)}
-            className={cn(
-              "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
-              view === t.v
-                ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
-                : "border-neutral-300 text-neutral-600 hover:border-sky-300 hover:text-sky-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-sky-200",
-            )}
-          >
-            {t.l}
-          </button>
-        ))}
-      </div>
-      {view === "summary" ? <AccessSummaryFeed /> : <AccessDetailFeed />}
-    </div>
-  );
-}
-
 interface AccessSummary {
   ip: string;
+  userId: string | null;
+  label: string;
   requestCount: number;
   distinctPaths: number;
   isAnon: boolean;
@@ -657,191 +666,4 @@ function countTone(n: number): string {
   if (n >= 300) return "text-rose-700 dark:text-rose-300";
   if (n >= 80) return "text-amber-700 dark:text-amber-300";
   return "text-neutral-900 dark:text-neutral-100";
-}
-
-function AccessSummaryFeed() {
-  const [who, setWho] = useState("");
-  const [q, setQ] = useState("");
-  const query = useQuery({
-    queryKey: ["admin-access-summary", who, q],
-    queryFn: () => {
-      const p = new URLSearchParams({ limit: "300" });
-      if (who) p.set("who", who);
-      if (q.trim()) p.set("q", q.trim());
-      return getJSON<{ items: AccessSummary[] }>(`/admin/access-summary?${p.toString()}`);
-    },
-    staleTime: 10_000,
-  });
-  const items = query.data?.items ?? [];
-  return (
-    <div className="space-y-3">
-      <p className="text-[10px] text-neutral-500 dark:text-neutral-500">
-        출처 IP 별 요청 횟수 — 요청 많은 순. 모르는 외부/비회원 IP, 특정 출처의 과다 요청을
-        한눈에. (폴링·헬스체크 제외)
-      </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex gap-1">
-          {([
-            { v: "", l: "전체" },
-            { v: "anon", l: "비회원" },
-            { v: "member", l: "회원" },
-          ] as const).map((t) => (
-            <button
-              key={t.v || "all"}
-              type="button"
-              onClick={() => setWho(t.v)}
-              className={cn(
-                "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
-                who === t.v
-                  ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
-                  : "border-neutral-300 text-neutral-600 hover:border-sky-300 dark:border-neutral-700 dark:text-neutral-400",
-              )}
-            >
-              {t.l}
-            </button>
-          ))}
-        </div>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="IP 검색"
-          className="min-w-[120px] flex-1 rounded-full border border-neutral-300 bg-white px-3 py-1 text-xs text-neutral-900 placeholder:text-neutral-400 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100"
-        />
-      </div>
-      <FeedState q={query} empty={items.length === 0} />
-      {!query.isPending && !query.isError && items.length > 0 && (
-        <ul className="space-y-1.5">
-          {items.map((s) => {
-            const browser = s.browserName ?? null;
-            return (
-              <li key={s.ip} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800">
-                <span className="font-mono font-medium text-neutral-900 dark:text-neutral-100">{s.ip}</span>
-                {s.isAnon ? (
-                  <span className="rounded-full bg-slate-200 px-1.5 py-px text-[9px] font-medium text-slate-800 dark:bg-slate-500/25 dark:text-slate-100">
-                    비회원
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-sky-100 px-1.5 py-px text-[9px] font-medium text-sky-800 dark:bg-sky-500/15 dark:text-sky-200">
-                    {s.memberLabels[0] || "회원"}
-                    {s.memberLabels.length > 1 ? ` 외 ${s.memberLabels.length - 1}` : ""}
-                  </span>
-                )}
-                {s.deviceKind && (
-                  <span className={cn("rounded-full px-1.5 py-px text-[9px] font-medium", deviceTone(s.deviceKind))}>{s.deviceKind}</span>
-                )}
-                {browser && (
-                  <span className="rounded-full bg-violet-100 px-1.5 py-px text-[9px] font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">{browser}</span>
-                )}
-                {s.topPath && (
-                  <span className="min-w-0 truncate font-mono text-[10px] text-neutral-500 dark:text-neutral-500">{s.topPath}</span>
-                )}
-                <span className="ml-auto inline-flex shrink-0 items-center gap-2">
-                  <span className="text-[10px] text-neutral-500 dark:text-neutral-500">경로 {s.distinctPaths}</span>
-                  <span className={cn("tabular-nums font-semibold", countTone(s.requestCount))}>
-                    {s.requestCount.toLocaleString("ko-KR")}건
-                  </span>
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function AccessDetailFeed() {
-  const [method, setMethod] = useState("");
-  const [statusClass, setStatusClass] = useState("");
-  const [q, setQ] = useState("");
-
-  const query = useQuery({
-    queryKey: ["admin-web-access-log", method, statusClass, q],
-    queryFn: () => {
-      const p = new URLSearchParams({ limit: "300" });
-      if (method) p.set("method", method);
-      if (statusClass) p.set("status_class", statusClass);
-      if (q.trim()) p.set("q", q.trim());
-      return getJSON<{ items: WebAccessLog[] }>(`/admin/web-access-log?${p.toString()}`);
-    },
-    staleTime: 10_000,
-  });
-  const items = query.data?.items ?? [];
-
-  return (
-    <div className="space-y-3">
-      <p className="text-[10px] text-neutral-500 dark:text-neutral-500">
-        모든 API 요청을 시간 역순으로 (최근 5000건). Caddy 가 /api/* 만 백엔드로
-        보내므로 정적 페이지 자체 요청은 제외됩니다.
-      </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex flex-wrap gap-1">
-          {METHOD_FILTERS.map((m) => (
-            <button
-              key={m || "all"}
-              type="button"
-              onClick={() => setMethod(m)}
-              className={cn(
-                "rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
-                method === m
-                  ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
-                  : "border-neutral-300 text-neutral-600 hover:border-sky-300 dark:border-neutral-700 dark:text-neutral-400",
-              )}
-            >
-              {m || "전체"}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {STATUS_FILTERS.map((s) => (
-            <button
-              key={s.v || "all"}
-              type="button"
-              onClick={() => setStatusClass(s.v)}
-              className={cn(
-                "rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
-                statusClass === s.v
-                  ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
-                  : "border-neutral-300 text-neutral-600 hover:border-sky-300 dark:border-neutral-700 dark:text-neutral-400",
-              )}
-            >
-              {s.l}
-            </button>
-          ))}
-        </div>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="경로 검색 (예: /search)"
-          className="min-w-[140px] flex-1 rounded-full border border-neutral-300 bg-white px-3 py-1 text-xs text-neutral-900 placeholder:text-neutral-400 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100"
-        />
-      </div>
-      <FeedState q={query} empty={items.length === 0} />
-      {!query.isPending && !query.isError && items.length > 0 && (
-        <ul className="space-y-1 font-mono">
-          {items.map((l, i) => (
-            <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-[11px] dark:border-neutral-800">
-              <span className={cn("shrink-0 rounded px-1.5 py-px text-[9px] font-semibold", methodTone(l.method))}>
-                {l.method}
-              </span>
-              <span className={cn("shrink-0 font-semibold tabular-nums", statusTone(l.status))}>{l.status}</span>
-              <span className="min-w-0 flex-1 truncate text-neutral-800 dark:text-neutral-200">{l.path}</span>
-              {l.durationMs != null && (
-                <span className="shrink-0 tabular-nums text-neutral-500 dark:text-neutral-500">{l.durationMs}ms</span>
-              )}
-              {l.userLabel && (
-                <span className="shrink-0 rounded-full bg-sky-500/10 px-1.5 py-px text-[9px] text-sky-700 dark:text-sky-300">
-                  {l.userLabel}
-                </span>
-              )}
-              {l.ip && <span className="shrink-0 tabular-nums text-neutral-500 dark:text-neutral-500">{l.ip}</span>}
-              <span className="shrink-0 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">
-                {formatRelativeKo(new Date(l.createdAt * 1000).toISOString())}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
 }
