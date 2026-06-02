@@ -80,20 +80,20 @@ const CATEGORIES: CategoryDef[] = [
         title: "데이터 수집 관리",
         description: "데이터 갱신과 외부 소스 연결 키를 관리합니다",
         render: () => (
-          <div className="space-y-6">
+          <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
             <div className="space-y-3">
               <div>
                 <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-300">
                   데이터 갱신
                 </h4>
                 <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-500">
-                  평소엔 자동으로 새 데이터가 갱신됩니다. 필요하면 아래에서 수동으로 갱신하세요
+                  평소엔 자동으로 새 데이터가 갱신됩니다. 필요하면 수동으로 갱신하세요
                 </p>
               </div>
               <MitreBackfillPanel />
             </div>
 
-            <div className="space-y-2 border-t border-neutral-200 pt-6 dark:border-neutral-800">
+            <div className="space-y-3 border-t border-neutral-200 pt-6 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0 dark:border-neutral-800">
               <div>
                 <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-300">
                   외부 소스 연결 키
