@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from sqlalchemy import select
@@ -89,7 +89,9 @@ async def get_external_keys(db: AsyncSession = Depends(get_db)) -> ExternalKeysO
 
 from datetime import datetime as _dt
 
+from app.core.audit import ACTION_LABELS, AuditAction, record_audit
 from app.core.security import is_admin_email
+from app.models import AuditLog as _AuditLog
 from app.models import LoginLog as _LoginLog
 from app.models import User as _User
 from app.models import UserRole as _UserRole
@@ -143,6 +145,26 @@ class _LoginLogOut(_PydBaseModel):
 
 class _LoginLogsList(_PydBaseModel):
     items: list[_LoginLogOut]
+    total: int
+
+
+class _AuditLogOut(_PydBaseModel):
+    model_config = _PydConfigDict(populate_by_name=True, alias_generator=lambda s: "".join(
+        [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
+    ))
+    id: int
+    action: str
+    action_label: str | None = None
+    actor_label: str | None = None
+    actor_user_id: str | None = None
+    target: str | None = None
+    detail: str | None = None
+    ip: str | None = None
+    created_at: _dt
+
+
+class _AuditLogsList(_PydBaseModel):
+    items: list[_AuditLogOut]
     total: int
 
 
@@ -255,6 +277,48 @@ async def list_user_login_logs(
     return _LoginLogsList(items=items, total=len(items))
 
 
+@router.get("/audit/logs", response_model=_AuditLogsList, response_model_by_alias=True)
+async def list_audit_logs(
+    action: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+) -> _AuditLogsList:
+    """전역 감사 피드 — 로그인 성공/실패·가입·비번 변경·역할 변경·삭제·키 변경 등을
+    시간 역순으로. ``action`` 으로 특정 이벤트만 필터."""
+    from sqlalchemy import desc as _desc
+
+    stmt = select(_AuditLog).order_by(_desc(_AuditLog.created_at)).limit(limit)
+    if action:
+        stmt = (
+            select(_AuditLog)
+            .where(_AuditLog.action == action)
+            .order_by(_desc(_AuditLog.created_at))
+            .limit(limit)
+        )
+    rows = (await db.execute(stmt)).scalars().all()
+    items = [
+        _AuditLogOut(
+            id=r.id,
+            action=r.action,
+            action_label=ACTION_LABELS.get(r.action),
+            actor_label=r.actor_label,
+            actor_user_id=str(r.actor_user_id) if r.actor_user_id else None,
+            target=r.target,
+            detail=r.detail,
+            ip=r.ip,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
+    return _AuditLogsList(items=items, total=len(items))
+
+
+@router.get("/audit/actions")
+async def list_audit_actions() -> dict:
+    """필터 UI 용 — 액션 코드→라벨 매핑."""
+    return {"actions": ACTION_LABELS}
+
+
 @router.get("/users", response_model=_UsersList, response_model_by_alias=True)
 async def list_users(
     q: str | None = None,
@@ -336,6 +400,7 @@ async def list_users(
 async def update_user_role(
     user_id: str,
     body: _RoleUpdate,
+    request: Request,
     me=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> _UserOut:
@@ -354,16 +419,22 @@ async def update_user_role(
         new_role = _UserRole(body.role)
     except ValueError:
         raise HTTPException(400, detail="허용되지 않은 role 입니다.") from None
+    old_role = target.role.value if hasattr(target.role, "value") else str(target.role)
     target.role = new_role
     await db.commit()
     await db.refresh(target)
     log.info("admin.user_role_changed", target_id=str(target.id), new_role=new_role.value)
+    await record_audit(
+        db, action=AuditAction.USER_ROLE_CHANGE, actor=me, request=request,
+        target=target.email, detail=f"{old_role} → {new_role.value}",
+    )
     return _to_user_out(target)
 
 
 @router.delete("/users/{user_id}", status_code=204)
 async def delete_user(
     user_id: str,
+    request: Request,
     me=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> None:
@@ -387,9 +458,14 @@ async def delete_user(
                 "환경변수에서 먼저 제외한 뒤 삭제하세요."
             ),
         )
+    target_email = target.email
     await db.delete(target)
     await db.commit()
     log.info("admin.user_deleted", target_id=str(target.id))
+    await record_audit(
+        db, action=AuditAction.USER_DELETE, actor=me, request=request,
+        target=target_email,
+    )
 
 
 @router.put(
@@ -398,7 +474,10 @@ async def delete_user(
     response_model_by_alias=True,
 )
 async def put_external_keys(
-    body: ExternalKeysUpdate, db: AsyncSession = Depends(get_db)
+    body: ExternalKeysUpdate,
+    request: Request,
+    me=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
 ) -> ExternalKeysOut:
     row = await db.scalar(select(AppSettings).where(AppSettings.id == 1))
     if row is None:
@@ -426,6 +505,10 @@ async def put_external_keys(
     # 토큰 자체는 로깅 X — 누가 어떤 액션을 했는지만.
     if actions:
         log.info("admin.external_keys_updated", actions=actions)
+        await record_audit(
+            db, action=AuditAction.ADMIN_KEYS_UPDATE, actor=me, request=request,
+            detail=", ".join(actions),
+        )
     return await get_external_keys(db)
 
 

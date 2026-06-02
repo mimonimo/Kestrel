@@ -20,6 +20,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import COOKIE_NAME, get_current_user
+from app.core.audit import AuditAction, record_audit
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.rate_limit import (
@@ -135,6 +136,11 @@ async def signup(
     db.add(user)
     await db.commit()
 
+    await record_audit(
+        db, action=AuditAction.SIGNUP, actor=user, request=request,
+        detail=f"role={role.value}",
+    )
+
     token = issue_access_token(user_id=str(user.id), role=role.value)
     _set_auth_cookie(response, token)
     return _to_me(user)
@@ -163,6 +169,14 @@ async def login(
 
     if not valid:
         await record_login_failure(ip, email_norm)
+        await record_audit(
+            db,
+            action=AuditAction.LOGIN_FAILURE,
+            actor=user,
+            actor_label=email_norm,
+            request=request,
+            detail="존재하지 않는 계정" if user is None else "비밀번호 불일치",
+        )
         # 동일 메시지 — 이메일 존재 여부 노출 방지.
         raise HTTPException(401, detail="이메일 또는 비밀번호가 일치하지 않습니다.")
 
@@ -176,6 +190,8 @@ async def login(
     ua = (request.headers.get("user-agent") or "")[:512] or None
     db.add(LoginLog(user_id=user.id, ip=ip if ip != "unknown" else None, user_agent=ua))
     await db.commit()
+
+    await record_audit(db, action=AuditAction.LOGIN_SUCCESS, actor=user, request=request)
 
     role = user.role.value if hasattr(user.role, "value") else str(user.role)
     token = issue_access_token(user_id=str(user.id), role=role)
@@ -196,6 +212,7 @@ async def me(user: User = Depends(get_current_user)) -> MeOut:
 @router.post("/change-password", status_code=204)
 async def change_password(
     body: ChangePasswordIn,
+    request: Request,
     response: Response,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -212,6 +229,8 @@ async def change_password(
 
     user.password_hash = hash_password(body.new_password)
     await db.commit()
+
+    await record_audit(db, action=AuditAction.PASSWORD_CHANGE, actor=user, request=request)
 
     # 비밀번호가 바뀌었으니 현재 쿠키 토큰을 새로 발급해 갱신.
     role = user.role.value if hasattr(user.role, "value") else str(user.role)

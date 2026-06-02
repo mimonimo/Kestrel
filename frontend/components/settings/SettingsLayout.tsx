@@ -9,6 +9,7 @@ import {
   Server,
   Sparkles,
   User,
+  Users,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -18,7 +19,6 @@ import { ClaudeIntegrationPanel } from "@/components/settings/ClaudeIntegrationP
 import { MitreBackfillPanel } from "@/components/settings/MitreBackfillPanel";
 import { PasswordChangePanel } from "@/components/settings/PasswordChangePanel";
 import { ThemeSwitcher } from "@/components/settings/ThemeSwitcher";
-import { UserManagementPanel } from "@/components/settings/UserManagementPanel";
 import { VersionPanel } from "@/components/settings/VersionPanel";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
@@ -118,8 +118,28 @@ const CATEGORIES: CategoryDef[] = [
       {
         id: "users",
         title: "사용자 추적",
-        description: "가입한 사용자의 활동 통계와 마지막 활동 시각",
-        render: () => <UserManagementPanel />,
+        description: "이용자 조회·관리와 보안 감사 로그",
+        render: () => (
+          <Link
+            href="/settings/users"
+            className="group flex items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-white p-4 transition-colors hover:border-sky-400 hover:bg-sky-50/40 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-sky-500/40 dark:hover:bg-surface-2"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-500/15 text-sky-700 ring-1 ring-sky-500/30 dark:text-sky-300">
+                <Users className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  이용자 조회 및 감사 화면 열기
+                </div>
+                <p className="mt-0.5 text-xs text-neutral-600 dark:text-neutral-500">
+                  가입자 활동·접속 기록 조회·관리 + 로그인/가입/권한 변경 감사 로그
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-neutral-500 transition-transform group-hover:translate-x-0.5 group-hover:text-neutral-700 dark:group-hover:text-neutral-200" />
+          </Link>
+        ),
       },
       {
         id: "resources",
