@@ -24,6 +24,17 @@ from app.schemas.vulnerability import CamelModel, VulnerabilityListItem
 router = APIRouter(prefix="/assets", tags=["assets"])
 
 
+def _to_ilike(pattern: str) -> str:
+    """사용자 자산 패턴 → SQL ILIKE 패턴.
+
+    와일드카드 ``*`` 를 SQL ``%`` 로 변환해 ``goo*`` 같은 접두 매칭을 지원한다.
+    리터럴 ``%``/``_`` 는 이스케이프(우리 카탈로그 벤더/제품엔 거의 없지만 안전).
+    ``*`` 가 없으면 정확 일치(기존 동작 유지).
+    """
+    escaped = pattern.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return escaped.replace("*", "%")
+
+
 class AssetInput(CamelModel):
     vendor: str = Field(min_length=1, max_length=120)
     product: str = Field(min_length=1, max_length=200)
@@ -136,17 +147,89 @@ async def asset_catalog(
     )
 
 
+class VendorEntry(CamelModel):
+    vendor: str
+    cve_count: int
+
+
+class VendorsResponse(CamelModel):
+    items: list[VendorEntry]
+
+
+class ProductEntry(CamelModel):
+    product: str
+    cve_count: int
+    os_families: list[str] = []
+
+
+class ProductsResponse(CamelModel):
+    items: list[ProductEntry]
+
+
+@router.get("/vendors", response_model=VendorsResponse, response_model_by_alias=True)
+async def list_vendors(
+    starts_with: str = Query(..., min_length=1, max_length=2),
+    limit: int = Query(default=300, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db),
+) -> VendorsResponse:
+    """A-Z 브라우즈 — 첫 글자별 벤더 목록(정규화 lower 기준 그룹). CVE 많은 순.
+
+    ``starts_with`` 가 알파벳이면 해당 글자로 시작하는 벤더, ``#`` 등이면
+    알파벳으로 시작하지 않는(숫자·기호) 벤더.
+    """
+    letter = starts_with.strip().lower()[:1]
+    vlower = func.lower(AffectedProduct.vendor)
+    cve_count = func.count(func.distinct(AffectedProduct.vulnerability_id)).label("cve_count")
+    base = select(vlower.label("v"), func.min(AffectedProduct.vendor).label("disp"), cve_count)
+    if letter.isalpha():
+        base = base.where(vlower.like(f"{letter}%"))
+    else:
+        base = base.where(vlower.op("~")("^[^a-z]"))
+    base = base.group_by("v").order_by(desc(cve_count)).limit(limit)
+    rows = (await db.execute(base)).all()
+    return VendorsResponse(
+        items=[VendorEntry(vendor=r.disp, cve_count=int(r.cve_count)) for r in rows]
+    )
+
+
+@router.get("/products", response_model=ProductsResponse, response_model_by_alias=True)
+async def list_products(
+    vendor: str = Query(..., min_length=1, max_length=200),
+    limit: int = Query(default=300, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db),
+) -> ProductsResponse:
+    """선택한 벤더(대소문자 무시)의 제품 목록 — 정규화 lower 기준 그룹, CVE 많은 순.
+    각 제품의 OS 패밀리도 함께."""
+    plower = func.lower(AffectedProduct.product)
+    cve_count = func.count(func.distinct(AffectedProduct.vulnerability_id)).label("cve_count")
+    os_agg = func.array_agg(func.distinct(AffectedProduct.os_family)).label("os")
+    base = (
+        select(plower.label("p"), func.min(AffectedProduct.product).label("disp"), cve_count, os_agg)
+        .where(func.lower(AffectedProduct.vendor) == vendor.strip().lower())
+        .group_by("p")
+        .order_by(desc(cve_count))
+        .limit(limit)
+    )
+    rows = (await db.execute(base)).all()
+    items = []
+    for r in rows:
+        fams = [str(getattr(o, "value", o)) for o in (r.os or []) if o is not None]
+        items.append(ProductEntry(product=r.disp, cve_count=int(r.cve_count), os_families=fams))
+    return ProductsResponse(items=items)
+
+
 @router.post("/match", response_model=SearchResponse, response_model_by_alias=True)
 async def match_assets(req: MatchRequest, db: AsyncSession = Depends(get_db)) -> SearchResponse:
     if not req.assets:
         return SearchResponse(items=[], total=0, page=1, page_size=req.limit)
 
     # Build an OR of (vendor ILIKE ? AND product ILIKE ?) clauses.
+    # ``*`` 와일드카드 지원 — _to_ilike 가 % 로 변환(goo* → goo%).
     clauses = []
     for a in req.assets:
         clauses.append(
-            (AffectedProduct.vendor.ilike(a.vendor))
-            & (AffectedProduct.product.ilike(a.product))
+            (AffectedProduct.vendor.ilike(_to_ilike(a.vendor), escape="\\"))
+            & (AffectedProduct.product.ilike(_to_ilike(a.product), escape="\\"))
         )
 
     sub = select(AffectedProduct.vulnerability_id).where(or_(*clauses)).distinct()
@@ -195,8 +278,8 @@ async def asset_notifications(
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=req.since_days)
     clauses = [
-        (AffectedProduct.vendor.ilike(a.vendor))
-        & (AffectedProduct.product.ilike(a.product))
+        (AffectedProduct.vendor.ilike(_to_ilike(a.vendor), escape="\\"))
+        & (AffectedProduct.product.ilike(_to_ilike(a.product), escape="\\"))
         for a in req.assets
     ]
     sub = select(AffectedProduct.vulnerability_id).where(or_(*clauses)).distinct()

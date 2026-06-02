@@ -80,8 +80,17 @@ export function AssetsManager() {
   );
 }
 
+type RegisterMode = "search" | "browse" | "manual";
+
+const MODE_TABS: { value: RegisterMode; label: string }[] = [
+  { value: "search", label: "검색" },
+  { value: "browse", label: "A-Z 둘러보기" },
+  { value: "manual", label: "수동 입력" },
+];
+
 function AssetRegisterModal({ onClose }: { onClose: () => void }) {
   const { add } = useAssets();
+  const [mode, setMode] = useState<RegisterMode>("search");
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
@@ -121,8 +130,26 @@ function AssetRegisterModal({ onClose }: { onClose: () => void }) {
           <p className="text-[11px] text-neutral-600 dark:text-neutral-500">
             사용 중인 벤더·제품을 등록하면 영향받는 CVE 만 추려서 알려드립니다.
           </p>
-          <CatalogSearch add={add} />
-          <ManualEntry add={add} />
+          <div className="inline-flex flex-wrap gap-1.5">
+            {MODE_TABS.map((t) => (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => setMode(t.value)}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                  mode === t.value
+                    ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
+                    : "border-neutral-300 text-neutral-600 hover:border-sky-300 hover:text-sky-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-sky-200",
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          {mode === "search" && <CatalogSearch add={add} />}
+          {mode === "browse" && <BrowseEntry add={add} />}
+          {mode === "manual" && <ManualEntry add={add} />}
         </div>
       </div>
     </div>
@@ -323,23 +350,33 @@ function CatalogSearch({ add }: { add: AddFn }) {
   );
 }
 
-// ─── 직접 입력(정규화 식) ────────────────────────────────
+// ─── 수동 입력 ───────────────────────────────────────────
 function ManualEntry({ add }: { add: AddFn }) {
   const [manual, setManual] = useState("");
   const parts = manual.split(":").map((s) => s.trim()).filter(Boolean);
-  const valid = parts.length >= 2;
+  // 최소 1개 토큰(벤더)만 있으면 OK — 제품 생략 시 모든 제품(*) 으로 간주.
+  const valid = parts.length >= 1;
+
+  // 미리보기 — 실제 등록될 vendor:product 형태.
+  const preview = valid
+    ? `${parts[0]}:${parts[1] ?? "*"}${parts[2] ? ` (버전 ${parts.slice(2).join(":")})` : ""}`
+    : null;
 
   const onAdd = () => {
     if (!valid) return;
     const [vendor, product, ...rest] = parts;
-    add({ vendor, product, version: rest.length > 0 ? rest.join(":") : undefined });
+    add({
+      vendor,
+      product: product ?? "*",
+      version: rest.length > 0 ? rest.join(":") : undefined,
+    });
     setManual("");
   };
 
   return (
     <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 dark:border-neutral-800 dark:bg-surface-2/50">
       <p className="mb-2 text-[11px] font-medium text-neutral-700 dark:text-neutral-300">
-        직접 입력 (정규화 식)
+        수동 입력
       </p>
       <div className="flex gap-2">
         <Input
@@ -351,16 +388,188 @@ function ManualEntry({ add }: { add: AddFn }) {
               onAdd();
             }
           }}
-          placeholder="vendor:product[:version] (예: google:chrome, nginx:nginx:1.24)"
+          placeholder="vendor:product[:version] — 예: google:chrome, goo*, nginx:nginx:1.24"
           autoComplete="off"
         />
         <Button type="button" onClick={onAdd} disabled={!valid} variant="outline">
           <Plus className="mr-1 h-4 w-4" /> 추가
         </Button>
       </div>
-      <p className="mt-1.5 text-[10px] text-neutral-500 dark:text-neutral-500">
-        콜론(:)으로 구분 — 카탈로그에 없는 자산을 소문자 정규화 형태로 직접 등록합니다.
+      {preview && (
+        <p className="mt-1.5 text-[11px] text-sky-700 dark:text-sky-300">
+          등록 예정: <span className="font-mono">{preview}</span>
+        </p>
+      )}
+      <ul className="mt-2 space-y-0.5 text-[10px] leading-relaxed text-neutral-500 dark:text-neutral-500">
+        <li>· 형식: <span className="font-mono">벤더:제품</span> 또는 <span className="font-mono">벤더:제품:버전</span> (콜론 구분)</li>
+        <li>· 와일드카드 <span className="font-mono">*</span> 지원 — <span className="font-mono">goo*</span> = goo 로 시작하는 모든 벤더, <span className="font-mono">google:chr*</span> = chr 로 시작하는 제품</li>
+        <li>· 제품 생략 시 해당 벤더의 <span className="font-mono">모든 제품(*)</span> 으로 등록 (예: <span className="font-mono">apache</span> → <span className="font-mono">apache:*</span>)</li>
+        <li>· 대소문자는 매칭 시 무시됩니다 — 카탈로그에 없는 사내 제품도 등록 가능</li>
+      </ul>
+    </div>
+  );
+}
+
+// ─── A-Z 둘러보기 (벤더 → 제품) ──────────────────────────
+const AZ_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").concat(["#"]);
+
+function BrowseEntry({ add }: { add: AddFn }) {
+  const [letter, setLetter] = useState<string>("A");
+  const [vendor, setVendor] = useState<string | null>(null);
+  const [added, setAdded] = useState<string | null>(null);
+
+  const vendorsQ = useQuery({
+    queryKey: ["asset-vendors", letter],
+    queryFn: () => api.listAssetVendors(letter),
+    enabled: !vendor,
+    staleTime: 5 * 60_000,
+  });
+  const productsQ = useQuery({
+    queryKey: ["asset-products", vendor],
+    queryFn: () => api.listAssetProducts(vendor as string),
+    enabled: !!vendor,
+    staleTime: 5 * 60_000,
+  });
+
+  const onPickProduct = (product: string) => {
+    if (!vendor) return;
+    add({ vendor, product });
+    setAdded(`${vendor}:${product}`);
+    window.setTimeout(() => setAdded(null), 2500);
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* A-Z */}
+      <div className="flex flex-wrap gap-1">
+        {AZ_LETTERS.map((l) => (
+          <button
+            key={l}
+            type="button"
+            onClick={() => {
+              setLetter(l);
+              setVendor(null);
+            }}
+            className={cn(
+              "h-6 w-6 rounded text-[11px] font-medium tabular-nums transition-colors",
+              letter === l && !vendor
+                ? "bg-sky-500 text-white"
+                : "bg-neutral-200 text-neutral-600 hover:bg-neutral-300 dark:bg-surface-2 dark:text-neutral-400 dark:hover:bg-surface-3",
+            )}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {added && (
+        <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
+          <span className="font-mono">{added}</span> 등록됨
+        </p>
+      )}
+
+      {!vendor ? (
+        <BrowseList
+          q={vendorsQ}
+          empty="이 글자로 시작하는 벤더가 없습니다."
+          render={(items: { vendor: string; cveCount: number }[]) => (
+            <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
+              {items.map((v) => (
+                <li key={v.vendor}>
+                  <button
+                    type="button"
+                    onClick={() => setVendor(v.vendor)}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-neutral-100 dark:hover:bg-surface-3"
+                  >
+                    <span className="truncate font-mono text-neutral-900 dark:text-neutral-100">
+                      {v.vendor}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-neutral-500">
+                      CVE {v.cveCount.toLocaleString("ko-KR")}건
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        />
+      ) : (
+        <div>
+          <button
+            type="button"
+            onClick={() => setVendor(null)}
+            className="mb-2 inline-flex items-center gap-1 text-[11px] text-neutral-500 hover:text-sky-700 dark:hover:text-sky-300"
+          >
+            ← 벤더 목록 · <span className="font-mono text-neutral-700 dark:text-neutral-300">{vendor}</span>
+          </button>
+          <BrowseList
+            q={productsQ}
+            empty="제품이 없습니다."
+            render={(items: { product: string; cveCount: number; osFamilies: string[] }[]) => (
+              <ul className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                {items.map((p) => (
+                  <li key={p.product}>
+                    <button
+                      type="button"
+                      onClick={() => onPickProduct(p.product)}
+                      className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-neutral-100 dark:hover:bg-surface-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate font-mono text-neutral-900 dark:text-neutral-100">
+                          {p.product}
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          {p.osFamilies.map((os) => (
+                            <span
+                              key={os}
+                              className="rounded-full bg-slate-200 px-1.5 py-px text-[9px] font-medium text-slate-800 dark:bg-slate-500/25 dark:text-slate-100"
+                            >
+                              {OS_LABEL[os] ?? os}
+                            </span>
+                          ))}
+                          <span className="text-[11px] text-neutral-500">
+                            CVE {p.cveCount.toLocaleString("ko-KR")}건
+                          </span>
+                        </div>
+                      </div>
+                      <span className="shrink-0 rounded bg-sky-500/10 px-1.5 py-0.5 text-[11px] text-sky-700 dark:text-sky-300">
+                        추가
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BrowseList<T>({
+  q,
+  empty,
+  render,
+}: {
+  q: { isPending: boolean; isError: boolean; data?: { items: T[] } };
+  empty: string;
+  render: (items: T[]) => React.ReactNode;
+}) {
+  const items = q.data?.items ?? [];
+  if (q.isPending)
+    return (
+      <p className="flex items-center gap-2 px-1 py-4 text-xs text-neutral-500">
+        <Loader2 className="h-3 w-3 animate-spin" /> 불러오는 중…
       </p>
+    );
+  if (q.isError)
+    return <p className="px-1 py-4 text-xs text-rose-700 dark:text-rose-300">불러오지 못했습니다.</p>;
+  if (items.length === 0)
+    return <p className="px-1 py-4 text-xs text-neutral-500">{empty}</p>;
+  return (
+    <div className="max-h-72 overflow-y-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
+      {render(items)}
     </div>
   );
 }

@@ -138,6 +138,22 @@ export interface AssetCatalogResponse {
   items: AssetCatalogEntry[];
 }
 
+export interface AssetVendorEntry {
+  vendor: string;
+  cveCount: number;
+}
+export interface AssetVendorsResponse {
+  items: AssetVendorEntry[];
+}
+export interface AssetProductEntry {
+  product: string;
+  cveCount: number;
+  osFamilies: string[];
+}
+export interface AssetProductsResponse {
+  items: AssetProductEntry[];
+}
+
 // ─── Auth / Profile (PR 10-CN) ───────────────────────────────────────
 export interface AuthUser {
   id: string;
@@ -287,6 +303,14 @@ export const api = {
     if (q) params.set("q", q);
     return request<AssetCatalogResponse>(`/assets/catalog?${params.toString()}`);
   },
+  listAssetVendors: (startsWith: string, limit = 300) =>
+    request<AssetVendorsResponse>(
+      `/assets/vendors?starts_with=${encodeURIComponent(startsWith)}&limit=${limit}`,
+    ),
+  listAssetProducts: (vendor: string, limit = 300) =>
+    request<AssetProductsResponse>(
+      `/assets/products?vendor=${encodeURIComponent(vendor)}&limit=${limit}`,
+    ),
 
   listTickets: (status?: TicketStatus) => {
     const params = new URLSearchParams();
