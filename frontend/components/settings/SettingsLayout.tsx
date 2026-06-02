@@ -146,17 +146,6 @@ const CATEGORIES: CategoryDef[] = [
         description: "현재 빌드와 DB 마이그레이션 상태",
         render: () => <VersionPanel />,
       },
-      {
-        id: "storage-notes",
-        title: "설정 저장 위치",
-        description: "각 설정이 어디에 저장되는지 안내",
-        render: () => (
-          <ul className="list-disc space-y-1 pl-5 text-xs text-neutral-600 dark:text-neutral-500">
-            <li>화면 테마 · 외부 API 키 — 이 기기의 브라우저에만 저장</li>
-            <li>AI 인증 · 등록 자산 — 서버에 저장 (모든 기기에서 공유)</li>
-          </ul>
-        ),
-      },
     ],
   },
 ];

@@ -1,9 +1,6 @@
 "use client";
 
 import { Suspense } from "react";
-import Link from "next/link";
-import type { Route } from "next";
-import { ListFilter } from "lucide-react";
 
 import { RefreshBar } from "@/components/dashboard/RefreshBar";
 import { VulnDistributionPanel } from "@/components/dashboard/VulnDistributionPanel";
@@ -15,33 +12,21 @@ import { PriorityOverviewPanel } from "@/components/widgets/PriorityOverviewPane
 
 // 메인 대시보드 — 용도: 한눈에 보는 시각화 + 수집 상태.
 // 키워드 검색·세부 필터·CVE 리스트는 전부 `/cves` 탭으로 옮겨 책임이
-// 명확히 분리됩니다. 여기서는 우측 상단 "취약점 조회로 이동" 버튼이
-// 유일한 진입점.
+// 명확히 분리됩니다 (상단 글로벌 네비의 "취약점 조회" 탭이 진입점).
 function Dashboard() {
   return (
     <div className="mx-auto max-w-7xl px-6">
       <section className="pt-8 pb-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <div>
-            <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-              대시보드
-            </h1>
-            <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-500">
-              수집 현황과 위협 추세를 한눈에. 키워드·세부 필터로 좁혀 보려면 상단의
-              <span className="font-medium text-neutral-800 dark:text-neutral-300">
-                {" "}취약점 조회{" "}
-              </span>
-              탭을 이용해 주세요.
-            </p>
-          </div>
-          <Link
-            href={"/cves" as Route}
-            className="inline-flex items-center gap-1.5 rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-sky-400 hover:text-sky-700 dark:border-neutral-700 dark:bg-surface-1 dark:text-neutral-300 dark:hover:border-sky-500/60 dark:hover:text-sky-200"
-          >
-            <ListFilter className="h-3.5 w-3.5" />
-            취약점 조회로 이동
-          </Link>
-        </div>
+        <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+          대시보드
+        </h1>
+        <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-500">
+          수집 현황과 위협 추세를 한눈에. 키워드·세부 필터로 좁혀 보려면 상단의
+          <span className="font-medium text-neutral-800 dark:text-neutral-300">
+            {" "}취약점 조회{" "}
+          </span>
+          탭을 이용해 주세요.
+        </p>
       </section>
 
       <div className="mb-6">
