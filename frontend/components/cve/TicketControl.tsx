@@ -181,7 +181,7 @@ export function TicketControl({ cveId }: Props) {
 }
 
 function LoginGate({ cveId }: { cveId: string }) {
-  const next = encodeURIComponent(`/cves/${cveId}`);
+  const next = encodeURIComponent(`/cve/${cveId}`);
   return (
     <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-neutral-300 bg-neutral-50 p-4 dark:border-neutral-700 dark:bg-surface-2">
       <p className="text-sm text-neutral-800 dark:text-neutral-200">

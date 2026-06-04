@@ -656,7 +656,7 @@ function FollowUpThread({ cveId, prior }: { cveId: string; prior: AiAnalysisResp
 // 단순히 버튼을 숨기는 대신 "왜 로그인이 필요한지" 한 줄 설명까지 — 보안
 // 운영자가 분석을 본인 계정에 영구 저장한다는 가치 제안을 함께 전달.
 function AiAnalysisLoginGate({ cveId }: { cveId: string }) {
-  const next = encodeURIComponent(`/cves/${cveId}`);
+  const next = encodeURIComponent(`/cve/${cveId}`);
   return (
     <div className="flex w-full flex-col items-start gap-2 rounded-lg border border-dashed border-violet-300 bg-violet-50/60 p-4 dark:border-violet-500/40 dark:bg-violet-500/10">
       <p className="text-sm text-neutral-900 dark:text-neutral-100">

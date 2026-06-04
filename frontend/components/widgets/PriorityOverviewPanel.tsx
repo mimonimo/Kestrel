@@ -163,7 +163,7 @@ function TierDetail({ bucket }: { bucket: DashboardPriorityBucket }) {
           {items.map((it, i) => (
             <li key={it.cveId}>
               <Link
-                href={`/cves/${it.cveId}` as Route}
+                href={`/cve/${it.cveId}` as Route}
                 className="flex items-start gap-2 px-3 py-2 transition-colors hover:bg-neutral-50 dark:hover:bg-surface-2"
               >
                 <span
