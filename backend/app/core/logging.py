@@ -34,6 +34,14 @@ def configure_logging(debug: bool = False) -> None:
     level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=level)
 
+    # root 가 INFO 면 SQLAlchemy 의 ``sqlalchemy.engine`` 로거가 이를 상속받아
+    # echo=False 여도 모든 쿼리를 INFO 로 토해낸다(대량 수집 시 로그 폭증·오버헤드).
+    # echo 는 database.py 의 ``settings.debug and env==development`` 가 제어하므로,
+    # 여기선 엔진/풀 로거를 WARNING 으로 눌러 의도치 않은 SQL echo 를 차단한다.
+    # debug 모드에서 정말 SQL 을 보고 싶으면 echo=True 가 직접 INFO 로 올린다.
+    for noisy in ("sqlalchemy.engine", "sqlalchemy.pool", "sqlalchemy.dialects"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
