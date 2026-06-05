@@ -1309,6 +1309,16 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-EX — 대시보드 "출처" → "소스별 커버리지"(sources 배열 facet) ✅
+
+> 사용자: GHSA 570(0%) 차트 보고 "불러온거 맞음?" + GitHub Advisory 화면(reviewed 31,300 / unreviewed 306,380) 보고 "이거 다 수집되고 있는거 맞지?"
+
+- **진단**: 출처 차트가 주 소스(`Vulnerability.source`) 1개만 집계 → MITRE(캐노니컬 33.8만)가 거의 모든 CVE 주 소스를 차지해 GHSA 570(0%)·NVD 2% 로 보임. 실제론 GHSA 가 27,569 CVE 에 기여(sources 배열에 다 있음, 27,002건은 MITRE/NVD 와 겹쳐 주 소스가 그쪽).
+- **수정** (`search.py`/`VulnDistributionPanel.tsx`): source facet 을 `unnest(Vulnerability.sources)` 커버리지 기준으로, cross-filter 도 `sources.any()`. 타이틀 "출처"→"소스별 커버리지". 검증: facet API github_advisory **27,569**(이전 570).
+- **GHSA 수집 완전성 (사용자 답변)**: GitHub GraphQL `securityAdvisories` 는 *reviewed* 만 반환(unreviewed 는 GraphQL 미지원 — GitHub 제약). reviewed 31,300 중 CVE 있는 27,569 수집(나머지 ~3,700 은 CVE 없는 멀웨어/패키지 어드바이저리, CVE-keyed 라 스킵). unreviewed 306,380 은 CVE 목록 미러 = MITRE(338k)/NVD 로 이미 직접 수집. → 의미 있는 데이터 누락 없음.
+
+---
+
 ### PR 10-ET~EW — 수집 4소스 동기화 복구 + 실시간 근접 스케줄 + 운영 dev-mode 보안 갭 수정 ✅
 
 > 사용자 지시: "등록된 4곳 소스 데이터 전부 동기화돼야 함" → "동기화 누르면 전부 다 되게끔" → "스케줄 실시간 근접하게 모두 긁어오는게 베스트".
