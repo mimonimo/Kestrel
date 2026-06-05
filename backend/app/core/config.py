@@ -43,10 +43,12 @@ class Settings(BaseSettings):
     # 로컬 docker-compose 는 단일 backend 컨테이너라 기본 true.
     kestrel_run_scheduler: bool = True
 
-    # Scheduler cadence (seconds)
-    nvd_interval_seconds: int = 3600
-    exploit_db_interval_seconds: int = 21600
-    github_advisory_interval_seconds: int = 10800
+    # Scheduler cadence (seconds) — 실시간 근접 수집. delta 는 가벼우니 자주 돌려도
+    # 부하/레이트리밋 여유가 있다(NVD 키 50req/30s, GHSA 5000pts/h). ExploitDB 만
+    # 매 실행이 CSV 전체(~수십MB) 재다운로드라 1h 로 둔다(EDB 발행량 자체가 저빈도).
+    nvd_interval_seconds: int = 600  # 10분
+    exploit_db_interval_seconds: int = 3600  # 1시간
+    github_advisory_interval_seconds: int = 900  # 15분
 
     # Retry / rate-limit defaults
     http_max_retries: int = 5
@@ -77,7 +79,7 @@ class Settings(BaseSettings):
     # in our DB.
     mitre_repo_path: str = "/data/mitre_cvelist"
     mitre_repo_remote: str = "https://github.com/CVEProject/cvelistV5.git"
-    mitre_interval_seconds: int = 21600  # 6 hours — MITRE delta is small
+    mitre_interval_seconds: int = 1800  # 30분 — git pull delta 라 가벼움
     sandbox_compose_project_prefix: str = "kestrel-sandbox"
     # ---- Sandbox isolation hardening (PR9-C, opt-in) -----------------
     # When ``sandbox_harden`` is true, image-mode containers run with

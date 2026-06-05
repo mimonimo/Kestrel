@@ -1125,6 +1125,11 @@ async def refresh_ingestion(
     ghsa_full = "ghsa" in resync_tokens or "all" in resync_tokens
     nvd_full = "nvd" in resync_tokens or "all" in resync_tokens
     edb_full = "exploit_db" in resync_tokens or "all" in resync_tokens
+    # MITRE 는 별도 소스 — 과거엔 설정 화면의 전용 카드로만 돌렸지만, 이제
+    # 대시보드 "동기화" 한 번으로 4개 소스를 전부 긁도록 여기에 합류시킨다.
+    # 평상시엔 delta(최근 14일 git 변경분), "전체 다시 받기(all/mitre)" 일 때만
+    # full(~340k) 로 걷는다.
+    mitre_full = "mitre" in resync_tokens or "all" in resync_tokens
 
     async def _run_all() -> None:
         await asyncio.gather(
@@ -1134,6 +1139,12 @@ async def refresh_ingestion(
                 full_resync=ghsa_full,
             ),
             run_parser(ExploitDbParser(), full_resync=edb_full),
+            run_parser(
+                MitreParser(
+                    mode="full" if mitre_full else "delta",
+                    since_days=14,
+                )
+            ),
             return_exceptions=True,
         )
 
@@ -1148,6 +1159,7 @@ async def refresh_ingestion(
             "nvd": nvd_full,
             "ghsa": ghsa_full,
             "exploit_db": edb_full,
+            "mitre": mitre_full,
         },
     }
 

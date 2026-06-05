@@ -16,7 +16,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiKeysManagerButton } from "@/components/settings/ApiKeysManagerButton";
 import { AssetsManager } from "@/components/settings/AssetsManager";
 import { ClaudeIntegrationPanel } from "@/components/settings/ClaudeIntegrationPanel";
-import { MitreBackfillPanel } from "@/components/settings/MitreBackfillPanel";
 import { PasswordChangePanel } from "@/components/settings/PasswordChangePanel";
 import { ThemeSwitcher } from "@/components/settings/ThemeSwitcher";
 import { VersionPanel } from "@/components/settings/VersionPanel";
@@ -77,33 +76,15 @@ const CATEGORIES: CategoryDef[] = [
     sections: [
       {
         id: "ingestion-all",
-        title: "데이터 수집 관리",
-        description: "데이터 갱신과 외부 소스 연결 키를 관리합니다",
+        title: "외부 소스 연결 키",
+        description: "NVD·GitHub 에서 데이터를 가져올 때 쓰는 키 (운영자 등록 시 전체 적용)",
         render: () => (
-          <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-            <div className="space-y-3">
-              <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-300">
-                  데이터 갱신
-                </h4>
-                <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-500">
-                  평소엔 자동으로 새 데이터가 갱신됩니다. 필요하면 수동으로 갱신하세요
-                </p>
-              </div>
-              <MitreBackfillPanel />
-            </div>
-
-            <div className="space-y-3 border-t border-neutral-200 pt-6 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0 dark:border-neutral-800">
-              <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-300">
-                  외부 소스 연결 키
-                </h4>
-                <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-500">
-                  NVD·GitHub 에서 데이터를 가져올 때 쓰는 키 (운영자 등록 시 전체 적용)
-                </p>
-              </div>
-              <ApiKeysManagerButton />
-            </div>
+          <div className="space-y-3">
+            <ApiKeysManagerButton />
+            <p className="text-[11px] text-neutral-500 dark:text-neutral-500">
+              데이터 갱신은 메인 대시보드의 <span className="font-medium text-neutral-700 dark:text-neutral-300">동기화</span> 버튼에서
+              4개 소스(NVD · GitHub · ExploitDB · MITRE)를 한 번에 받아옵니다. 평소엔 자동으로 수시 갱신됩니다.
+            </p>
           </div>
         ),
       },
