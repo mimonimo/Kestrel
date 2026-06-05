@@ -39,22 +39,6 @@ services:
       - NVD_API_KEY=${NVD_API_KEY}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - CORS_ORIGINS=["http://localhost:3000"]
-      - SANDBOX_NETWORK=${SANDBOX_NETWORK:-kestrel_sandbox_net}
-      - SANDBOX_TTL_SECONDS=${SANDBOX_TTL_SECONDS:-1800}
-      # vulhub lab harvester (PR9-B). VULHUB_HOST_PATH must be an absolute
-      # path on the *host* — the host docker daemon reads compose files from
-      # this path when spawning sibling stacks. VULHUB_REPO_PATH is the
-      # equivalent path inside the backend container; keep them identical
-      # unless you need to remap.
-      - VULHUB_REPO_PATH=${VULHUB_REPO_PATH:-/data/vulhub}
-      - VULHUB_HOST_PATH=${VULHUB_HOST_PATH:-/data/vulhub}
-      - VULHUB_REPO_REMOTE=${VULHUB_REPO_REMOTE:-https://github.com/vulhub/vulhub.git}
-      # Sandbox hardening (PR9-C, opt-in). All four are no-ops when unset
-      # so default deployments behave identically to pre-9-C.
-      - SANDBOX_HARDEN=${SANDBOX_HARDEN:-false}
-      - SANDBOX_RUNTIME=${SANDBOX_RUNTIME:-}
-      - SANDBOX_SECCOMP_PATH=${SANDBOX_SECCOMP_PATH:-}
-      - SANDBOX_OVERRIDE_DIR=${SANDBOX_OVERRIDE_DIR:-}
       # ─── Auth (PR 10-CN) ────────────────────────────────────
       # 운영에서는 반드시 외부 시크릿(.env / vault) 으로 64자 무작위 문자열 주입.
       # 개발 기본값(dev-only-...) 은 서버 시작은 가능하지만 절대 운영에 사용 금지.
@@ -63,14 +47,6 @@ services:
       # 가입 시 자동으로 admin 권한이 부여될 이메일 (콤마 분리). 첫 운영자 부트스트랩용.
       - INITIAL_ADMIN_EMAILS=${INITIAL_ADMIN_EMAILS:-}
     volumes:
-      # Sandbox feature spawns sibling containers via the host docker daemon.
-      # Mounting the socket grants root-equivalent control of docker — the
-      # API restricts what images/limits/networks are accepted (see
-      # app/services/sandbox/manager.py).
-      - /var/run/docker.sock:/var/run/docker.sock
-      # vulhub repo bind mount — same path on host & container so the host
-      # docker daemon can read compose files at the path our code passes.
-      - ${VULHUB_HOST_PATH:-/data/vulhub}:${VULHUB_REPO_PATH:-/data/vulhub}
       # Claude Code OAuth credentials persist here. The dashboard's
       # "Claude 로그인" panel runs `claude setup-token` inside this
       # container, which writes ~/.claude/.credentials.json — the named
@@ -82,15 +58,6 @@ services:
       # Bind mount not needed because nothing else (host docker daemon
       # included) reads this path. (PR 10-AF)
       - mitre_cvelist:/data/mitre_cvelist
-    # The non-root app user needs membership in whatever group owns the host
-    # docker.sock. On macOS+OrbStack the socket appears as root:root inside
-    # the container, so adding GID 0 grants access. On Linux hosts set
-    # DOCKER_GID in .env to the host's `docker` group GID (e.g. 999/998).
-    group_add:
-      - "${DOCKER_GID:-0}"
-    networks:
-      - default
-      - sandbox
     depends_on:
       postgres:
         condition: service_healthy
@@ -152,11 +119,3 @@ volumes:
 
 networks:
   default:
-  # Isolated bridge network where every sandbox lab container is attached.
-  # `internal: true` blocks egress to the internet/host so AI-generated
-  # exploit payloads cannot reach external systems. The backend container
-  # is also attached so it can reach lab targets by container name.
-  sandbox:
-    name: kestrel_sandbox_net
-    driver: bridge
-    internal: true

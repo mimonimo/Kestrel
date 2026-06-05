@@ -137,13 +137,6 @@ CORS_ORIGINS=["https://$${PUBLIC_HOST}"]
 # Docker compose 빌드 인자로 별도 주입.
 NEXT_PUBLIC_API_BASE_URL=/api/v1
 INTERNAL_API_BASE_URL=http://backend:8000/api/v1
-
-# Vulhub / sandbox — single-host 에서는 비활성화. 필요시 활성화 후 storage 늘릴 것.
-VULHUB_REPO_PATH=/data/vulhub
-VULHUB_HOST_PATH=/data/vulhub
-
-# Docker socket group 권한 — 호스트 docker group GID 매칭 (sandbox 비활성 시 무의미).
-DOCKER_GID=0
 EOF
   chmod 600 .env
 fi
