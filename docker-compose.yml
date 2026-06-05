@@ -32,6 +32,13 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # ENV/DEBUG 를 컨테이너로 *명시 전달*. 빠져 있으면 .env(호스트)는 compose
+      # 변수치환에만 쓰이고 컨테이너 안엔 안 들어가 → 앱이 기본값(env=development,
+      # debug=True)으로 떠서 운영인데도 ① 쿠키 Secure 플래그 off(보안 갭) ②
+      # debug 로깅/SQL echo 폭증 ③ prod 가드 미적용 상태가 된다. 로컬은 .env 없으면
+      # 기본값(development/true)으로 떨어져 개발 편의 유지.
+      - ENV=${ENV:-development}
+      - DEBUG=${DEBUG:-true}
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
       - MEILI_HOST=${MEILI_HOST}
