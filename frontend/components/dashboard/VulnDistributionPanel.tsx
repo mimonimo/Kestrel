@@ -284,7 +284,9 @@ export function VulnDistributionPanel() {
       slices: sevSlices,
     },
     {
-      title: "출처",
+      // 주 소스 1개가 아닌 sources 배열 기준 = 각 소스가 보고/기여한 CVE 수.
+      // 한 CVE 가 여러 소스에 잡혀 합계는 100% 초과(커버리지, 중복 카운트).
+      title: "소스별 커버리지",
       slices: sourceSlices,
     },
     {

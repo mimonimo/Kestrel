@@ -494,7 +494,10 @@ async def _build_facets(
         if severity and exclude != "severity":
             conds.append(Vulnerability.severity == severity)
         if source and exclude != "source":
-            conds.append(Vulnerability.source == source)
+            # 커버리지 기준: 주 소스(source)가 아니라 sources 배열에 해당 소스가
+            # 들어 있으면 매칭(예: MITRE 가 주 소스여도 GHSA 가 보고했으면 GHSA 클릭에
+            # 잡힘). 아래 source facet 도 unnest(sources) 로 세므로 칩 카운트와 일치.
+            conds.append(Vulnerability.sources.any(source))
         if type_ and exclude != "type":
             conds.append(
                 select(1)
@@ -571,12 +574,19 @@ async def _build_facets(
         )
     ).all()
 
-    # sources — exclude=source for self.
+    # sources — 커버리지 기준(소스별 기여). 주 소스 1개(Vulnerability.source)가
+    # 아니라 sources 배열을 unnest 해 각 소스가 보고한 CVE 수를 센다. MITRE 가
+    # 캐노니컬이라 거의 모든 CVE 의 주 소스를 차지해 GHSA/NVD 가 0~2% 로 보이던
+    # 오해를 해소(한 CVE 가 여러 소스에 잡혀 합계는 100% 초과 = 중복 카운트).
+    # exclude=source for self.
     src_conds = vuln_filter_for(exclude="source")
     src_q = (
-        select(Vulnerability.source, func.count())
+        select(
+            func.unnest(Vulnerability.sources).label("s"),
+            func.count(),
+        )
         .where(*src_conds)
-        .group_by(Vulnerability.source)
+        .group_by("s")
         .order_by(func.count().desc())
     )
     src_rows = (await db.execute(src_q)).all()
@@ -625,7 +635,7 @@ async def _build_facets(
         types=[FacetBucket(value=str(n), count=int(c)) for n, c in type_rows],
         os_families=[FacetBucket(value=_enum_value(o), count=int(c)) for o, c in os_rows],
         severities=[FacetBucket(value=_enum_value(s), count=int(c)) for s, c in sev_rows],
-        sources=[FacetBucket(value=_enum_value(s), count=int(c)) for s, c in src_rows],
+        sources=[FacetBucket(value=str(s), count=int(c)) for s, c in src_rows if s],
         domains=[FacetBucket(value=str(d), count=int(c)) for d, c in dom_rows if d],
         earliest_published_at=earliest,
         latest_published_at=latest,
