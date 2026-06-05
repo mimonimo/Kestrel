@@ -1309,6 +1309,16 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-EY — NVD 전체 카탈로그 백필 모드 + ExploitDB/NVD 수집 점검 ✅
+
+> 사용자: "Exploit DB, NVD도 잘 가져오고 있는지 확인해줘"
+
+- **ExploitDB ✅ 정상**: CSV 전체 백필 — 연도 분포가 전 구간(2022:212·2023:210·2024:175·2025:165·2026:62)으로 퍼짐. 15,585건(CVE 매핑 익스플로잇; CVE 없는 PoC 는 CVE-keyed 라 스킵). 스케줄 런 success.
+- **NVD ❌→🔧 발견·수정**: NVD 파서가 `since=None`(full_resync 포함)이어도 `pubStartDate=now-30일` 창 고정 → 적재 9,159건 중 2026년이 7,838(87%), 이전 연도는 연 50~126건뿐. historical CVSS/CWE 보강 비어 있었음. `NvdParser(full_catalog=True)`: 날짜 필터 빼고 totalResults(~25만) startIndex 전수 페이지네이션. `/admin/refresh` 의 nvd full 에 연결.
+- **NVD 전체 백필 실행**: 새 컨테이너에서 detached 실행 → nvd_in_sources 9,159 → 52,761(진행 중, 무에러). ~25만 완주까지 약 1시간. 이후 스케줄 증분(lastModStartDate)이 신선도 유지.
+
+---
+
 ### PR 10-EX — 대시보드 "출처" → "소스별 커버리지"(sources 배열 facet) ✅
 
 > 사용자: GHSA 570(0%) 차트 보고 "불러온거 맞음?" + GitHub Advisory 화면(reviewed 31,300 / unreviewed 306,380) 보고 "이거 다 수집되고 있는거 맞지?"
