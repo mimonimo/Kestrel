@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>Kestrel 서비스 기획서 (현행 서비스 기준)</title>
+<script src="./mermaid.min.js"></script>
+<style>
+  :root{
+    --ink:#0f172a; --ink2:#1e293b; --muted:#64748b; --line:#e2e8f0;
+    --amber:#d97757; --amber2:#b45f43; --rose:#f43f5e; --blue:#3b82f6;
+    --teal:#0d9488; --bg-soft:#f8fafc; --bg-card:#f1f5f9;
+  }
+  @page{ size:A4; margin:18mm 16mm; }
+  *{ box-sizing:border-box; }
+  html{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{
+    font-family:"Apple SD Gothic Neo","Pretendard","Noto Sans KR","Malgun Gothic",sans-serif;
+    color:var(--ink); margin:0; line-height:1.7; font-size:10.6pt; letter-spacing:-0.01em;
+  }
+  h1,h2,h3,h4{ line-height:1.3; letter-spacing:-0.02em; }
+  .section{ page-break-before:always; padding-top:4px; }
+
+  /* ── Cover ── */
+  .cover{
+    height:240mm; display:flex; flex-direction:column; justify-content:space-between;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(217,119,87,.22), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(59,130,246,.16), transparent 55%),
+      linear-gradient(160deg,#0b1220 0%, #111c30 55%, #0b1220 100%);
+    color:#e7eef7; border-radius:18px; padding:26mm 22mm; position:relative; overflow:hidden;
+    page-break-after:always;
+  }
+  .cover .kicker{ font-size:11pt; letter-spacing:.42em; color:#9fb4cf; text-transform:uppercase; }
+  .cover h1{ font-size:62pt; margin:6px 0 2px; font-weight:800;
+    background:linear-gradient(90deg,#fff 0%, #ffd9c7 45%, #f6b9a5 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .cover .tagline{ font-size:15pt; color:#cdd9ea; margin-top:8px; font-weight:500;}
+  .cover .triad{ display:flex; gap:10px; margin-top:26px; flex-wrap:wrap; }
+  .cover .pill{ border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.05);
+    padding:9px 16px; border-radius:999px; font-size:11pt; color:#e7eef7; }
+  .cover .pill .x{ color:#f6b9a5; font-weight:700; }
+  .cover .meta{ display:flex; justify-content:space-between; align-items:flex-end;
+    border-top:1px solid rgba(255,255,255,.14); padding-top:18px; font-size:10.5pt; color:#b9c6da; }
+  .cover .meta b{ color:#fff; font-weight:600; }
+  .cover .glyph{ position:absolute; right:46px; top:360px; width:336px; height:336px;
+    filter:drop-shadow(0 16px 44px rgba(217,119,87,.42)); opacity:.97; }
+  .cover .glyph-bg{ position:absolute; right:-130px; bottom:-70px; width:520px; height:520px;
+    opacity:.045; transform:rotate(8deg); pointer-events:none; }
+
+  /* ── Headings ── */
+  h2.title{ font-size:21pt; margin:0 0 4px; color:var(--ink); }
+  .sec-no{ display:inline-block; color:var(--amber); font-weight:800; margin-right:10px; }
+  .lead{ color:var(--muted); margin:2px 0 18px; font-size:10.6pt; border-left:3px solid var(--amber); padding:2px 0 2px 12px; }
+  h3{ font-size:13.5pt; margin:22px 0 8px; color:var(--ink2); border-bottom:2px solid var(--line); padding-bottom:5px; }
+  h4{ font-size:11.5pt; margin:16px 0 6px; color:var(--amber2); }
+  p{ margin:7px 0; }
+  ul,ol{ margin:7px 0; padding-left:20px; } li{ margin:3px 0; }
+  strong{ color:var(--ink); }
+  .accent{ color:var(--amber2); font-weight:700; }
+
+  /* ── Tables ── */
+  table{ border-collapse:collapse; width:100%; margin:12px 0; font-size:9.6pt; }
+  th,td{ border:1px solid var(--line); padding:8px 10px; vertical-align:top; text-align:left; }
+  thead th{ background:linear-gradient(180deg,#1e293b,#0f172a); color:#fff; font-weight:600; border-color:#1e293b; }
+  tbody tr:nth-child(even){ background:var(--bg-soft); }
+  td .yes{ color:var(--teal); font-weight:700; }
+
+  /* ── Cards / callouts ── */
+  .grid3{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin:14px 0; }
+  .grid2{ display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin:14px 0; }
+  .card{ border:1px solid var(--line); border-radius:12px; padding:14px 15px; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+  .card .num{ font-size:23pt; font-weight:800; color:var(--amber); line-height:1; }
+  .card h4{ margin:8px 0 4px; color:var(--ink); font-size:11.5pt; }
+  .card p{ font-size:9.5pt; color:var(--muted); margin:4px 0 0; }
+  .callout{ background:var(--bg-soft); border:1px solid var(--line); border-left:4px solid var(--blue); border-radius:8px; padding:12px 15px; margin:14px 0; font-size:9.9pt; }
+  .callout.ok{ border-left-color:var(--teal); }
+  .kpi{ display:inline-block; background:var(--bg-card); border:1px solid var(--line); border-radius:7px; padding:2px 9px; font-size:9pt; color:var(--ink2); font-weight:600; margin:2px 3px 2px 0;}
+
+  /* ── Figures (live screenshots) ── */
+  .fig{ border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#fff;
+    margin:10px 0 4px; box-shadow:0 3px 14px rgba(15,23,42,.08); break-inside:avoid; }
+  .fig img{ width:100%; display:block; }
+  .fig-cap{ font-size:9pt; color:var(--muted); margin:5px 2px 18px; }
+  .fig-cap b{ color:var(--amber2); }
+  .shot-num{ display:inline-block; background:var(--amber); color:#fff; font-weight:700;
+    border-radius:6px; padding:1px 8px; margin-right:6px; font-size:8.6pt; }
+
+  /* ── Code ── */
+  pre{ background:#0f172a; color:#e2e8f0; border-radius:10px; padding:14px 16px; overflow:auto;
+    font-size:8.6pt; line-height:1.55; margin:12px 0; font-family:"SFMono-Regular",Consolas,monospace; }
+  pre .c{ color:#7dd3fc; }
+  code.inline{ background:var(--bg-card); border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-size:8.8pt; font-family:"SFMono-Regular",Consolas,monospace; color:var(--amber2); }
+
+  /* ── Diagram ── */
+  .diagram{ border:1px solid var(--line); border-radius:12px; padding:14px; background:#fff; margin:14px 0; text-align:center; }
+  .diagram .cap{ font-size:9pt; color:var(--muted); margin-top:8px; }
+
+  /* ── TOC ── */
+  .toc-list{ list-style:none; padding:0; margin:14px 0; }
+  .toc-list li{ display:flex; align-items:baseline; padding:9px 4px; border-bottom:1px dashed var(--line); }
+  .toc-list .n{ color:var(--amber); font-weight:800; width:34px; flex:none; }
+  .toc-list .t{ font-weight:600; color:var(--ink2); }
+  .toc-list .d{ color:var(--muted); font-size:9pt; margin-left:8px; flex:1; }
+
+  .foot{ margin-top:30px; padding-top:12px; border-top:1px solid var(--line); color:var(--muted); font-size:8.6pt; display:flex; justify-content:space-between; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ COVER ═══════════════ -->
+<div class="cover">
+  <svg class="glyph-bg" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
+    <path d="M40,118 C56,96 70,90 84,90 C100,76 120,66 144,66 C160,66 174,72 186,84
+             L214,68 L182,98 L208,108 L176,122 L198,142 L162,141
+             C176,162 172,184 158,202 C150,182 142,165 128,157
+             C112,151 96,153 84,157 C66,157 52,145 46,131
+             C43,127 41,122 40,118 Z" fill="#ffffff"/>
+  </svg>
+  <svg class="glyph" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" aria-label="Kestrel falcon emblem">
+    <defs>
+      <linearGradient id="kf-head" x1="0.1" y1="0" x2="0.85" y2="1">
+        <stop offset="0" stop-color="#ffe2d3"/><stop offset="0.42" stop-color="#ec9170"/><stop offset="1" stop-color="#b45f43"/>
+      </linearGradient>
+      <linearGradient id="kf-crest" x1="0" y1="0" x2="1" y2="0.7">
+        <stop offset="0" stop-color="#d97757"/><stop offset="1" stop-color="#7c3d2a"/>
+      </linearGradient>
+      <radialGradient id="kf-glow" cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stop-color="#d97757" stop-opacity="0.55"/><stop offset="1" stop-color="#d97757" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <circle cx="120" cy="120" r="118" fill="url(#kf-glow)"/>
+    <path d="M150,70 C170,70 186,80 196,96 L222,82 L188,108 L216,120 L182,132
+             L206,154 L168,150 C180,172 174,196 158,214
+             C150,190 146,168 138,150 C150,118 150,92 150,70 Z" fill="url(#kf-crest)" opacity="0.92"/>
+    <path d="M38,120 C54,97 69,89 84,89 C101,74 122,64 146,65 C162,66 176,73 187,86
+             L213,70 L181,100 L207,110 L175,123 L197,143 L161,142
+             C175,163 171,185 157,203 C149,183 141,166 127,158
+             C111,152 95,154 83,158 C65,158 51,146 45,132
+             C42,128 40,124 38,120 Z" fill="url(#kf-head)"/>
+    <path d="M38,120 C45,128 54,134 66,135 C58,141 49,140 43,133 C40,129 38,124 38,120 Z" fill="#7c3d2a" opacity="0.55"/>
+    <path d="M72,93 C84,86 99,87 106,96 C98,92 84,92 74,99 Z" fill="#7c3d2a" opacity="0.7"/>
+    <ellipse cx="88" cy="101" rx="11.5" ry="9.5" fill="#1c1108"/>
+    <circle cx="84.5" cy="97.5" r="3.1" fill="#ffe9dd"/>
+    <path d="M86,111 C82,127 79,140 75,152 C70,141 73,124 79,113 Z" fill="#1c1108" opacity="0.82"/>
+  </svg>
+
+  <div>
+    <div class="kicker">Vulnerability Intelligence Platform</div>
+    <h1>Kestrel</h1>
+    <div class="tagline">CVE 인텔리전스 · 위협 우선순위 · AI 분석</div>
+    <div class="triad">
+      <span class="pill"><b>CVSS</b> <span class="x">이론</span></span>
+      <span class="pill"><b>EPSS</b> <span class="x">예측</span></span>
+      <span class="pill"><b>KEV</b> <span class="x">실측</span></span>
+    </div>
+  </div>
+  <div class="meta">
+    <div>
+      <div style="font-size:13pt;color:#fff;font-weight:600;margin-bottom:4px;">서비스 기획서 · 현행 서비스 기준</div>
+      <div>Next.js · FastAPI · PostgreSQL · Meilisearch · Claude · Docker Compose on AWS EC2</div>
+    </div>
+    <div style="text-align:right;">
+      <div><b>버전</b> v1.0 (live)</div>
+      <div><b>작성일</b> 2026-06-05</div>
+      <div><b>서비스</b> 15.165.138.227.nip.io</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ TOC ═══════════════ -->
+<section class="section">
+  <h2 class="title">목차</h2>
+  <div class="lead">본 문서는 현재 AWS 단일 EC2 인스턴스에서 <strong>실제 운영 중인</strong> Kestrel 서비스를 기준으로 작성되었습니다. (계획·로드맵이 아닌 현행 구성)</div>
+  <ul class="toc-list">
+    <li><span class="n">01</span><span class="t">서비스 개요</span><span class="d">Kestrel 은 무엇을 하는가</span></li>
+    <li><span class="n">02</span><span class="t">현재 서비스 화면</span><span class="d">라이브 서비스 기능별 캡처</span></li>
+    <li><span class="n">03</span><span class="t">주요 기능</span><span class="d">현재 제공 중인 기능 목록</span></li>
+    <li><span class="n">04</span><span class="t">시스템 구성</span><span class="d">단일 EC2 + Docker Compose (실제 배포)</span></li>
+    <li><span class="n">05</span><span class="t">기술 스택</span><span class="d">레이어별 채택 기술</span></li>
+    <li><span class="n">06</span><span class="t">데이터 모델 &amp; API</span><span class="d">핵심 스키마 · 주요 엔드포인트</span></li>
+    <li><span class="n">07</span><span class="t">운영 현황 &amp; 향후 과제</span><span class="d">수집 규모 · 백업 · 다음 단계</span></li>
+    <li><span class="n">08</span><span class="t">결론</span></li>
+  </ul>
+  <div class="callout ok">
+    <strong>현행 한 줄 정의 —</strong> Kestrel 은 전 세계 CVE 피드(NVD·MITRE·Exploit-DB·GitHub Advisory)를 수집·정규화하고
+    <span class="accent">CVSS·EPSS·KEV</span> 신호로 위협 우선순위를 매겨 검색·조회·대시보드로 제공하며, CVE 별 <span class="accent">AI 분석</span>과 커뮤니티를 갖춘
+    취약점 인텔리전스 웹 서비스입니다. 현재 <strong>AWS 서울 리전 단일 EC2 인스턴스</strong>에서 Docker Compose 로 운영됩니다.
+  </div>
+</section>
+
+<!-- ═══════════════ 01 OVERVIEW ═══════════════ -->
+<section class="section">
+  <h2 class="title"><span class="sec-no">01</span>서비스 개요</h2>
+  <div class="lead">"무엇이 취약한가"를 넘어 "무엇부터 봐야 하는가"를 알려주는 취약점 인텔리전스 서비스.</div>
+
+  <p>매년 수만 건의 CVE 가 쏟아지지만 실제로 악용되는 비율은 일부입니다. Kestrel 은 흩어진 취약점 피드를 한곳에 모으고,
+  <strong>이론적 심각도(CVSS) · 악용 확률(EPSS) · 실제 악용 사실(KEV)</strong> 세 신호를 함께 보여 주어 보안 담당자가 우선순위를 빠르게 판단하도록 돕습니다.</p>
+
+  <div class="grid3">
+    <div class="card"><div class="num">338K+</div><h4>수집된 CVE</h4><p>NVD·MITRE·Exploit-DB·GitHub Advisory 통합 수집 (현재 약 338,897건).</p></div>
+    <div class="card"><div class="num">3축</div><h4>위협 우선순위</h4><p>CVSS·EPSS·KEV 신호를 한 화면에서 결합해 "오늘 볼 것"을 추림.</p></div>
+    <div class="card"><div class="num">AI</div><h4>CVE 분석</h4><p>Claude 기반으로 CVE 별 공격·방어 관점 분석을 생성.</p></div>
+  </div>
+
+  <h3>제공 가치</h3>
+  <ul>
+    <li><strong>통합 수집</strong> — 4개 공개 피드를 자동 수집·정규화하고 중복을 제거해 단일 코퍼스로 관리.</li>
+    <li><strong>우선순위 신호</strong> — CISA KEV(실제 악용) · FIRST EPSS(악용 확률)로 CVSS 단독 판단의 맹점을 보완.</li>
+    <li><strong>빠른 검색·조회</strong> — Meilisearch 오타 허용 검색과 심각도·소스·도메인 필터.</li>
+    <li><strong>AI 분석 · 협업</strong> — CVE 별 AI 분석, 북마크, 커뮤니티(게시글·댓글)로 팀 활용 지원.</li>
+  </ul>
+</section>
+
+<!-- ═══════════════ 02 LIVE SCREENS — 페이지당 1장 ═══════════════ -->
+<section class="section">
+  <h2 class="title"><span class="sec-no">02</span>현재 서비스 화면</h2>
+  <div class="lead">아래는 모두 현재 운영 중인 라이브 서비스(<code class="inline">https://15.165.138.227.nip.io</code>)를 직접 캡처한 실제 화면입니다. (페이지당 한 화면)</div>
+
+  <h4><span class="shot-num">01</span>대시보드 — 수집 현황 &amp; 위협 우선순위</h4>
+  <div class="fig"><img src="shots/embed/dashboard.png" alt="대시보드"/></div>
+  <div class="fig-cap"><b>실데이터</b> · 총 338,897건 수집 · 심각도/출처/취약점 유형/도메인 분포, 패치 우선순위(KEV 등재 1,611건), CVSS 점수 분포, 최근 Critical CVE 를 한 화면에 집계.</div>
+</section>
+
+<section class="section">
+  <h4><span class="shot-num">02</span>취약점 조회 — 목록 · 필터 · 검색</h4>
+  <div class="fig"><img src="shots/embed/cves.png" alt="취약점 조회"/></div>
+  <div class="fig-cap">심각도(Critical~Low)·운영체제·취약점 유형·출처별 필터와 CVE ID·제품·키워드 검색. 각 카드에 CVSS 점수, KEV/소스 배지, 북마크 표시.</div>
+</section>
+
+<section class="section">
+  <h4><span class="shot-num">03</span>CVE 상세 + AI 분석</h4>
+  <div class="fig"><img src="shots/embed/cve-detail.png" alt="CVE 상세 및 AI 분석"/></div>
+  <div class="fig-cap">CVSS 점수·벡터, 상세 설명, 영향 제품, 참조 링크와 함께 <b>“AI 심층 분석”</b> 섹션 제공 — 로그인 시 공격 시나리오·PoC·완화책을 한 번에 생성·열람.</div>
+</section>
+
+<section class="section">
+  <h4><span class="shot-num">04</span>커뮤니티 — 분석 · 대응 노하우 공유</h4>
+  <div class="fig"><img src="shots/embed/community.png" alt="커뮤니티"/></div>
+  <div class="fig-cap">CVE 관련 게시글·댓글로 분석과 대응 노하우를 공유하는 커뮤니티 공간.</div>
+</section>
+
+<section class="section">
+  <h4><span class="shot-num">05</span>로그인 / 회원 — 인증 · 권한</h4>
+  <div class="fig"><img src="shots/embed/login.png" alt="로그인"/></div>
+  <div class="fig-cap">이메일·비밀번호(bcrypt+JWT) 인증, 역할 기반 접근(관리자/사용자), 접속 로그 기록.</div>
+</section>
+
+<!-- ═══════════════ 03 FEATURES ═══════════════ -->
+<section class="section">
+  <h2 class="title"><span class="sec-no">03</span>주요 기능</h2>
+  <div class="lead">현재 운영 중인 기능을 영역별로 정리했습니다.</div>
+  <table>
+    <thead><tr><th style="width:20%">영역</th><th>현재 제공 기능</th></tr></thead>
+    <tbody>
+      <tr><td>데이터 수집</td><td>NVD · MITRE cvelistV5 · Exploit-DB · GitHub Advisory 자동 수집, 정규화·중복 제거, 수집 이력(ingestion_logs) 기록</td></tr>
+      <tr><td>위협 우선순위</td><td>CISA KEV 등재 표시, FIRST EPSS 점수/백분위, CVSS 점수·심각도 — 3축 결합 정렬</td></tr>
+      <tr><td>검색·조회</td><td>Meilisearch 전문 검색(오타 허용) + PostgreSQL 전문검색 폴백, 심각도·OS·유형·출처 필터</td></tr>
+      <tr><td>대시보드</td><td>수집 규모, 심각도/출처/유형/도메인 분포, 패치 우선순위, CVSS 분포, 신규/최근 Critical</td></tr>
+      <tr><td>AI 분석</td><td>Claude(CLI OAuth / API 키) 기반 CVE별 공격·방어 분석 생성 및 분석 기록 저장</td></tr>
+      <tr><td>협업</td><td>북마크, 대응 티켓, 커뮤니티 게시글·댓글</td></tr>
+      <tr><td>인증·권한</td><td>회원가입/로그인(bcrypt+JWT), 역할 기반 접근(RBAC), 접속 로그</td></tr>
+      <tr><td>관리자</td><td>사용자/역할 관리, 감사·접속·활동 로그 조회, 수집·우선순위 신호 수동 갱신</td></tr>
+      <tr><td>실습 샌드박스</td><td>격리 Docker 네트워크 기반 취약 랩 재현(리소스 제약 환경에서 제한적 운영)</td></tr>
+    </tbody>
+  </table>
+  <div class="callout"><strong>참고 —</strong> 샌드박스 자동 재현은 코드로 구현되어 있으나, 현재 단일 <code class="inline">t4g.small</code>(2GB RAM) 인스턴스의 자원 제약상 대규모 동시 재현보다는 소규모 실습·검증 용도로 운영합니다.</div>
+</section>
+
+<!-- ═══════════════ 04 SYSTEM ═══════════════ -->
+<section class="section">
+  <h2 class="title"><span class="sec-no">04</span>시스템 구성</h2>
+  <div class="lead">현재 배포는 거창한 다중 서비스가 아니라, <strong>AWS 단일 EC2 인스턴스 1대 위에서 Docker Compose 로 전체 스택</strong>을 구동하는 단순·견고한 구성입니다.</div>
+
+  <div class="diagram">
+    <div class="mermaid">
+flowchart TB
+  U["사용자 (브라우저)"]:::u
+  FEEDS["공개 피드<br/>NVD · MITRE · Exploit-DB · GHSA<br/>+ CISA KEV · FIRST EPSS"]:::feed
+
+  subgraph EC2["AWS EC2 · t4g.small (ap-northeast-2 서울) — Docker Compose"]
+    direction TB
+    CADDY["Caddy 리버스 프록시<br/>Let's Encrypt TLS"]:::proxy
+    FE["frontend<br/>Next.js"]:::app
+    API["backend<br/>FastAPI"]:::app
+    SCH["scheduler<br/>APScheduler"]:::app
+    PG[("PostgreSQL")]:::db
+    REDIS[("Redis")]:::db
+    MEILI[("Meilisearch")]:::db
+  end
+
+  subgraph AWS["AWS 매니지드 (인스턴스 외)"]
+    direction TB
+    EBS[("EBS 30GB gp3<br/>/data — Docker 데이터")]:::aws
+    BK["AWS Backup<br/>일일 스냅샷"]:::aws
+    EIP["Elastic IP<br/>+ nip.io"]:::aws
+    SSM["SSM Session Manager<br/>(SSH 차단)"]:::aws
+  end
+
+  U -->|HTTPS| CADDY
+  CADDY --> FE
+  CADDY -->|/api/*| API
+  API --> PG & REDIS & MEILI
+  SCH --> API
+  FEEDS -->|주기 수집| SCH
+  API -->|AI 분석| CLAUDE["Claude API / CLI"]:::ai
+  EC2 -.저장.-> EBS
+  EBS -.백업.-> BK
+  EIP -.진입.-> CADDY
+  SSM -.운영 접속.-> EC2
+
+  classDef u fill:#1d4ed8,color:#fff;
+  classDef feed fill:#1e3a5f,color:#fff;
+  classDef proxy fill:#0f766e,color:#fff;
+  classDef app fill:#b45f43,color:#fff;
+  classDef db fill:#1e293b,color:#fff;
+  classDef aws fill:#7c3d2a,color:#fff;
+  classDef ai fill:#92400e,color:#fff;
+    </div>
+    <div class="cap">▲ 한 대의 EC2 안에서 프록시·프런트·백엔드·스케줄러·DB·검색이 모두 컨테이너로 동작. 데이터는 별도 EBS 볼륨에 두고 AWS Backup 으로 보호.</div>
+  </div>
+
+  <h3>4.1 배포·운영 구성</h3>
+  <table>
+    <thead><tr><th style="width:22%">항목</th><th>현재 구성</th></tr></thead>
+    <tbody>
+      <tr><td>컴퓨트</td><td>EC2 <code class="inline">t4g.small</code> (ARM Graviton, 2 vCPU / 2 GB RAM) 1대 + 2 GB 스왑</td></tr>
+      <tr><td>리전</td><td>ap-northeast-2 (서울)</td></tr>
+      <tr><td>스토리지</td><td>EBS 30 GB gp3 데이터 볼륨(<code class="inline">/data</code>) — Docker data-root 분리</td></tr>
+      <tr><td>네트워크</td><td>전용 VPC·퍼블릭 서브넷·IGW, Elastic IP + <code class="inline">&lt;EIP&gt;.nip.io</code> 도메인</td></tr>
+      <tr><td>TLS</td><td>Caddy 리버스 프록시 + Let's Encrypt 자동 인증서</td></tr>
+      <tr><td>접속·보안</td><td>SSH 차단, AWS SSM Session Manager 로만 운영 접속, 보안그룹 80/443 공개</td></tr>
+      <tr><td>백업</td><td>AWS Backup(전용 vault·plan)으로 데이터 볼륨 일일 스냅샷</td></tr>
+      <tr><td>프로비저닝</td><td>Terraform(<code class="inline">infra/ec2</code>) + user_data 부트스트랩 — git clone 후 <code class="inline">docker compose up</code></td></tr>
+    </tbody>
+  </table>
+  <div class="callout"><strong>설계 의도 —</strong> 단일 호스트 + IaC 로 <span class="accent">재현 가능하고 운영 부담이 낮은</span> 구성을 택했습니다. 트래픽이 늘면 인스턴스 상향 또는 매니지드 서비스(RDS·ECS 등) 분리로 단계적 확장이 가능합니다(§07).</div>
+</section>
+
+<!-- ═══════════════ 05 STACK ═══════════════ -->
+<section class="section">
+  <h2 class="title"><span class="sec-no">05</span>기술 스택</h2>
+  <div class="lead">현재 서비스에 실제로 사용 중인 기술입니다.</div>
+  <table>
+    <thead><tr><th style="width:16%">레이어</th><th style="width:36%">기술</th><th>역할</th></tr></thead>
+    <tbody>
+      <tr><td>프런트엔드</td><td>Next.js 15 · React 19 · TypeScript · Tailwind · TanStack Query · Zustand</td><td>대시보드·조회·상세·커뮤니티 UI</td></tr>
+      <tr><td>백엔드</td><td>FastAPI · Python 3.12 · SQLAlchemy 2.0(async) · Pydantic v2 · Alembic</td><td>REST API, 수집·분석 처리, 마이그레이션</td></tr>
+      <tr><td>데이터</td><td>PostgreSQL 16 (JSONB·TSVECTOR) · Redis 7</td><td>본문·신호 저장, 캐시·레이트리밋</td></tr>
+      <tr><td>검색</td><td>Meilisearch v1.10</td><td>오타 허용 전문 검색</td></tr>
+      <tr><td>수집 스케줄</td><td>APScheduler</td><td>소스별 시차 주기 수집 + KEV/EPSS 갱신</td></tr>
+      <tr><td>AI</td><td>Anthropic Claude (CLI OAuth / API 키)</td><td>CVE별 공격·방어 분석 생성</td></tr>
+      <tr><td>인증</td><td>bcrypt + JWT · 역할 기반(RBAC)</td><td>회원·관리자 권한 분리</td></tr>
+      <tr><td>배포·운영</td><td>Docker Compose · Caddy · Terraform · AWS(EC2·EBS·Backup·SSM)</td><td>단일 호스트 컨테이너 운영</td></tr>
+      <tr><td>관측</td><td>structlog (+ OpenTelemetry·Sentry 옵션)</td><td>구조화 로그·에러 추적</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ═══════════════ 06 DATA & API ═══════════════ -->
+<section class="section">
+  <h2 class="title"><span class="sec-no">06</span>데이터 모델 &amp; API</h2>
+  <div class="lead">핵심 테이블은 본문과 3축 신호를 담는 <code class="inline">vulnerabilities</code> 이며, 그 위에 분석·커뮤니티·운영 테이블이 붙습니다.</div>
+
+  <h3>6.1 핵심 스키마 (PostgreSQL)</h3>
+<pre><span class="c">-- 취약점 본문 + 우선순위 신호 (수집의 종착점)</span>
+<span class="c">CREATE TABLE</span> vulnerabilities (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cve_id          VARCHAR(32) UNIQUE NOT NULL,
+  title           VARCHAR(512) NOT NULL,
+  description     TEXT NOT NULL,
+  cvss_score      NUMERIC(3,1),                  <span class="c">-- 이론적 심각도 0.0–10.0</span>
+  severity        severity_enum,                 <span class="c">-- low|medium|high|critical</span>
+  epss_score      DOUBLE PRECISION,              <span class="c">-- 악용 확률 예측 (FIRST)</span>
+  kev_listed      BOOLEAN NOT NULL DEFAULT false,<span class="c">-- 실제 악용 사실 (CISA KEV)</span>
+  source          source_enum NOT NULL,          <span class="c">-- nvd|mitre|exploit_db|github_advisory</span>
+  raw_data        JSONB NOT NULL DEFAULT '{}',
+  search_vector   TSVECTOR,                      <span class="c">-- 전문검색 폴백</span>
+  published_at    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+<span class="c">CREATE INDEX</span> ix_vuln_search   <span class="c">ON</span> vulnerabilities <span class="c">USING</span> GIN(search_vector);
+<span class="c">CREATE INDEX</span> ix_vuln_priority <span class="c">ON</span> vulnerabilities (kev_listed, epss_score DESC, cvss_score DESC);</pre>
+  <p style="font-size:9pt;color:var(--muted)">이 외 <code class="inline">analysis_results</code>(AI 분석), <code class="inline">users</code>·<code class="inline">posts</code>·<code class="inline">comments</code>(커뮤니티), <code class="inline">bookmarks</code>·<code class="inline">tickets</code>, <code class="inline">login_logs</code>·<code class="inline">audit_logs</code>(운영) 테이블이 함께 운영됩니다.</p>
+
+  <h3>6.2 주요 API 엔드포인트 (REST v1)</h3>
+  <table>
+    <thead><tr><th style="width:10%">메서드</th><th style="width:34%">경로</th><th>설명</th></tr></thead>
+    <tbody>
+      <tr><td>GET</td><td><code class="inline">/api/v1/cves</code></td><td>필터·정렬 목록(심각도·KEV·EPSS·소스)</td></tr>
+      <tr><td>GET</td><td><code class="inline">/api/v1/cves/{cve_id}</code></td><td>본문 + 신호 + 영향 제품·참조</td></tr>
+      <tr><td>GET</td><td><code class="inline">/api/v1/search</code></td><td>Meilisearch 전문 검색</td></tr>
+      <tr><td>GET</td><td><code class="inline">/api/v1/dashboard</code> · <code class="inline">/stats</code></td><td>대시보드 집계 통계</td></tr>
+      <tr><td>POST</td><td><code class="inline">/api/v1/analysis</code></td><td>AI 분석 생성(인증 필요)</td></tr>
+      <tr><td>—</td><td><code class="inline">/api/v1/community/*</code> · <code class="inline">/bookmarks</code> · <code class="inline">/tickets</code></td><td>커뮤니티·북마크·티켓</td></tr>
+      <tr><td>POST</td><td><code class="inline">/api/v1/auth/{signup,login,logout}</code></td><td>인증(bcrypt+JWT) · 접속 로그</td></tr>
+      <tr><td>GET</td><td><code class="inline">/api/v1/admin/*</code></td><td>사용자/역할·감사/접속 로그·수집 갱신</td></tr>
+      <tr><td>GET</td><td><code class="inline">/api/v1/health</code></td><td>헬스 체크</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ═══════════════ 07 OPS & NEXT ═══════════════ -->
+<section class="section">
+  <h2 class="title"><span class="sec-no">07</span>운영 현황 &amp; 향후 과제</h2>
+  <div class="lead">현재 안정적으로 가동 중이며, 확장은 트래픽·필요에 맞춰 단계적으로 진행합니다.</div>
+
+  <h3>7.1 운영 현황</h3>
+  <p>
+    <span class="kpi">수집 CVE ≈ 338,897건</span>
+    <span class="kpi">KEV 등재 1,611건</span>
+    <span class="kpi">출처 MITRE 93% · Exploit-DB · NVD · GHSA</span>
+    <span class="kpi">단일 EC2 가동</span>
+    <span class="kpi">일일 백업</span>
+    <span class="kpi">SSM 전용 접속</span>
+  </p>
+  <ul>
+    <li><strong>가용성</strong> — Caddy + Docker Compose 자동 재시작, 데이터 볼륨 분리로 인스턴스 교체 시에도 데이터 보존.</li>
+    <li><strong>보안</strong> — SSH 차단·SSM 접속, 비밀값은 부팅 시 무작위 생성, 접속·감사 로그 기록.</li>
+    <li><strong>데이터 보호</strong> — AWS Backup 으로 데이터 볼륨 일일 스냅샷.</li>
+  </ul>
+
+  <h3>7.2 향후 과제 (단계적)</h3>
+  <table>
+    <thead><tr><th style="width:26%">과제</th><th>내용</th></tr></thead>
+    <tbody>
+      <tr><td>자원 확장</td><td>트래픽 증가 시 인스턴스 상향, 이후 DB/검색을 매니지드(RDS·OpenSearch 등)로 분리</td></tr>
+      <tr><td>도메인·인증</td><td><code class="inline">kestrel.day</code> 등 정식 도메인 적용 후 이메일 인증·OIDC 로그인 도입</td></tr>
+      <tr><td>샌드박스 강화</td><td>재현 전용 자원/노드 분리로 자동 재현 커버리지 확대</td></tr>
+      <tr><td>관측 강화</td><td>OpenTelemetry·Sentry 상시화로 수집·AI 파이프라인 가시성 확보</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ═══════════════ 08 CONCLUSION ═══════════════ -->
+<section class="section">
+  <h2 class="title"><span class="sec-no">08</span>결론</h2>
+  <div class="lead">Kestrel 은 지금, 실제로 동작하는 취약점 인텔리전스 서비스다.</div>
+  <p>Kestrel 은 33만 건 이상의 CVE 를 수집해 CVSS·EPSS·KEV 3축으로 우선순위를 제시하고, 검색·대시보드·AI 분석·커뮤니티를 제공하는
+  <strong>운영 중인 웹 서비스</strong>입니다. 화려한 다중 클라우드 아키텍처 대신 <span class="accent">단일 EC2 + Docker Compose + IaC</span> 라는
+  단순하고 재현 가능한 구성을 택해, 적은 운영 비용으로 안정적으로 가동하고 있습니다.</p>
+  <div class="grid3" style="margin-top:14px">
+    <div class="card"><h4 style="color:var(--amber)">지금 동작</h4><p style="color:var(--ink2)">라이브 서비스에서 338K CVE·3축 우선순위·AI 분석을 실제 제공.</p></div>
+    <div class="card"><h4 style="color:var(--teal)">단순·견고</h4><p style="color:var(--ink2)">EC2 1대 + Compose, EBS 분리·일일 백업·SSM 보안 접속.</p></div>
+    <div class="card"><h4 style="color:var(--blue)">단계적 확장</h4><p style="color:var(--ink2)">트래픽에 맞춰 자원 상향·매니지드 분리로 확장 여지 확보.</p></div>
+  </div>
+  <div class="foot">
+    <span>Kestrel — Vulnerability Intelligence Platform · 현행 서비스 기준 기획서 v1.0</span>
+    <span>2026-06-05 · https://15.165.138.227.nip.io</span>
+  </div>
+</section>
+
+<script>
+  mermaid.initialize({
+    startOnLoad:true, theme:'base',
+    themeVariables:{ fontFamily:'"Apple SD Gothic Neo","Noto Sans KR",sans-serif',
+      primaryColor:'#f1f5f9', primaryTextColor:'#0f172a', primaryBorderColor:'#94a3b8',
+      lineColor:'#64748b', fontSize:'13px' },
+    flowchart:{ useMaxWidth:true, htmlLabels:true, curve:'basis' }
+  });
+  window.addEventListener('load', async () => { try{ await mermaid.run(); }catch(e){ console.error(e); }
+    document.body.setAttribute('data-mermaid-done','1'); });
+</script>
+</body>
+</html>
