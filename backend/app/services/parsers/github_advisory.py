@@ -67,8 +67,14 @@ class GithubAdvisoryParser(BaseParser):
     async def fetch(self, since: datetime | None = None) -> AsyncIterator[ParsedVulnerability]:
         token = self.token_override or self.settings.github_token
         if not token:
-            log.warning("github.no_token", message="GITHUB_TOKEN unset; skipping GHSA fetch")
-            return
+            # 토큰이 없으면 *실패* 로 처리. 과거엔 조용히 return(=success 0건)했는데,
+            # 그러면 run_parser 가 finished_at 으로 since-baseline 을 당겨 토큰을
+            # 나중에 등록해도 그 사이 advisory 를 영영 못 받는 since-window 갭이
+            # 생겼다. 실패로 남기면 _last_success 가 무시 → 토큰 등록 후 첫 실행이
+            # 자동으로 전체(since=None) 백필이 된다.
+            raise RuntimeError(
+                "GitHub 토큰이 없어 GHSA 를 가져올 수 없습니다 — 설정 > 외부 연결 키에서 등록하세요."
+            )
 
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
         redis = await get_redis()
