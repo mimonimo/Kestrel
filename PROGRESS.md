@@ -1309,6 +1309,21 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-ET~EW — 수집 4소스 동기화 복구 + 실시간 근접 스케줄 + 운영 dev-mode 보안 갭 수정 ✅
+
+> 사용자 지시: "등록된 4곳 소스 데이터 전부 동기화돼야 함" → "동기화 누르면 전부 다 되게끔" → "스케줄 실시간 근접하게 모두 긁어오는게 베스트".
+
+**근본 원인 (GHSA/ExploitDB 매번 0건)**: `run_parser` 의 `since`=마지막 *성공* 실행 시각인데, GHSA 토큰 등록 전 첫 실행이 "토큰 없음 → success 0건"으로 기록되며 since-baseline 을 최근으로 당겨, 토큰 등록 후에도 직전 1시간만 봐 발행량 적은 소스는 영영 백필 안 됨.
+
+- **PR 10-ET** `github_advisory.py`: no-token 을 `return`(=success 0건) → `RuntimeError`(실패)로. `_last_success`(status=success만) 가 무시 → 토큰 등록 후 첫 실행이 자동 since=None 전체 백필. 자가복구.
+- **PR 10-EU** `admin.py`/`config.py`/`SettingsLayout.tsx`: ① `/admin/refresh _run_all` 에 MITRE 합류 → 대시보드 **동기화 1회 = NVD·GitHub·ExploitDB·MITRE 4소스** (평소 delta, all/mitre 시 MITRE full). ② 스케줄 주기 단축: NVD 1h→**10m**, GHSA 3h→**15m**, MITRE 6h→**30m**, ExploitDB 6h→**1h**(매 실행 CSV 전체 재다운로드라 저빈도 유지). ③ 설정 중복 MITRE 카드 제거(`MitreBackfillPanel` 삭제), 동기화 위치 안내로 대체.
+- **PR 10-EV** `logging.py`: `sqlalchemy.engine`/`pool`/`dialects` 로거 WARNING 고정 — root INFO 상속으로 echo=False 여도 SQL 폭증하던 문제 차단.
+- **PR 10-EW** `docker-compose.yml`: backend `environment` 에 **ENV/DEBUG 누락** → 호스트 .env 의 `ENV=production·DEBUG=false` 가 컨테이너에 전달 안 돼 앱이 dev 모드(env=development·debug=True)로 떠 있었음. 결과: **쿠키 Secure 플래그 off**(`auth.py: secure=env=="production"`)·debug 로깅·prod 하드닝 미적용. `ENV=${ENV:-development}`·`DEBUG=${DEBUG:-true}` 추가로 전달. 검증: 컨테이너 `env=production debug=False`, SQL echo 0줄, 쿠키 Secure on.
+
+**백필 결과 (전체 재실행, full_resync)**: EDB 19,278 · GHSA 27,569 · NVD 7,609 처리 완료. DB 적재 mitre 338,264 · github_advisory 27,569 · exploit_db 15,585 · nvd 9,115 — 4소스 동기화 확인. 스케줄러 새 주기(10/15/30m interval) 기동·정상 실행 로그 확인. 공개 URL home/docs 200.
+
+---
+
 ### PR 10-AU — 라이트/다크 페어링 전체 일괄 (28 파일, 169 클래스) ✅
 
 > 사용자 지시: "너가 진행해" — 남은 라이트/다크 미페어링 컴포넌트 일괄 처리.
