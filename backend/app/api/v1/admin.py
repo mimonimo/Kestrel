@@ -1133,7 +1133,10 @@ async def refresh_ingestion(
 
     async def _run_all() -> None:
         await asyncio.gather(
-            run_parser(NvdParser(api_key_override=nvd_token), full_resync=nvd_full),
+            run_parser(
+                NvdParser(api_key_override=nvd_token, full_catalog=nvd_full),
+                full_resync=nvd_full,
+            ),
             run_parser(
                 GithubAdvisoryParser(token_override=gh_token),
                 full_resync=ghsa_full,

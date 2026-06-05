@@ -44,9 +44,16 @@ class NvdParser(BaseParser):
     source: ClassVar[Source] = Source.NVD
     name: ClassVar[str] = "NVD"
 
-    def __init__(self, api_key_override: str | None = None) -> None:
+    def __init__(
+        self, api_key_override: str | None = None, full_catalog: bool = False
+    ) -> None:
         self.settings = get_settings()
         self.api_key_override = api_key_override
+        # ``full_catalog`` 는 "전체 다시 받기(nvd)" 전용 — NVD 전 카탈로그(~25만 CVE)를
+        # 날짜 필터 없이 startIndex 로 끝까지 페이지네이션해 historical CVE 의
+        # CVSS/CWE 보강을 채운다. 평상시 since=None(첫 실행)은 30일 창을 유지해
+        # 부팅 때 25만 건을 한꺼번에 긁지 않는다.
+        self.full_catalog = full_catalog
 
     async def fetch(self, since: datetime | None = None) -> AsyncIterator[ParsedVulnerability]:
         api_key = self.api_key_override or self.settings.nvd_api_key
@@ -62,6 +69,10 @@ class NvdParser(BaseParser):
             # Incremental: fetch anything touched since the last successful run.
             params["lastModStartDate"] = since.astimezone(timezone.utc).isoformat(timespec="seconds")
             params["lastModEndDate"] = now.isoformat(timespec="seconds")
+        elif self.full_catalog:
+            # 전체 카탈로그: 날짜 필터를 아예 빼면 NVD 가 totalResults(~25만) 를
+            # startIndex 페이지네이션으로 전부 반환한다. 아래 while 루프가 그대로 처리.
+            log.info("nvd.full_catalog_backfill")
         else:
             # First run: grab the last 30 days of CVEs (published window) so the
             # dashboard fills with recent data instead of crawling the 1990s back-catalog.
