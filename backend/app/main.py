@@ -45,6 +45,13 @@ async def lifespan(app: FastAPI):
     else:
         log.info("scheduler.skipped", reason="KESTREL_RUN_SCHEDULER=false")
 
+    # SES 클라이언트 워밍업 — 첫 메일 발송 콜드스타트 제거(비차단, 실패해도 무시).
+    import asyncio
+
+    from app.services.email import warmup as warmup_email
+
+    asyncio.create_task(warmup_email())
+
     try:
         yield
     finally:

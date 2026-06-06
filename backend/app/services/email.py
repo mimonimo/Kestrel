@@ -38,6 +38,28 @@ def _ses_client():  # noqa: ANN202 — boto3 client 타입
     return boto3.client("ses", region_name=get_settings().aws_region)
 
 
+async def warmup() -> None:
+    """앱 시작 시 SES 클라이언트를 미리 초기화 — 첫 메일 발송의 콜드스타트 제거.
+
+    boto3 import + botocore 서비스 모델 로드 + IAM 역할 자격증명(IMDS) 해석 +
+    엔드포인트/서명 준비를 한 번에 끝내 둔다(get_send_quota 는 무료·읽기전용).
+    이게 없으면 컨테이너 재시작 후 *첫* 발송 요청이 20초 넘게 걸려 사용자가
+    멈춤을 겪는다. 비차단(create_task) 으로 호출하므로 부팅/헬스체크를 막지 않는다.
+    email_enabled=false(콘솔 모드) 면 아무것도 하지 않는다.
+    """
+    if not get_settings().email_enabled:
+        return
+
+    def _init() -> None:
+        _ses_client().get_send_quota()
+
+    try:
+        await asyncio.to_thread(_init)
+        log.info("email.warmup_done")
+    except Exception as exc:  # noqa: BLE001 — 워밍업 실패는 발송 자체를 막지 않음
+        log.warning("email.warmup_failed", error=str(exc))
+
+
 def _wrap_html(title: str, intro: str, button_label: str, link: str, footer: str) -> str:
     """간결한 인라인 스타일 HTML 메일 — 메일 클라이언트 호환성 위해 table 기반."""
     return f"""\
