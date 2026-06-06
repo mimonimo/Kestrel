@@ -14,6 +14,7 @@ Run cadence:
 """
 from __future__ import annotations
 
+import asyncio
 import csv
 import gzip
 import io
@@ -184,17 +185,17 @@ async def refresh_epss(batch_size: int = 2000) -> dict:
     now = datetime.now(timezone.utc)
 
     async with SessionLocal() as session:
-        # Use a temp table + JOIN-based UPDATE so we touch only the rows
-        # whose CVE we actually have. Going row-by-row over 300k entries
-        # would be O(minutes); the set-based UPDATE FROM completes in a
-        # few seconds.
+        # 스테이징 — 배치 UPDATE 를 여러 트랜잭션으로 나누려면 커밋 사이에도
+        # 유지돼야 하므로 ON COMMIT PRESERVE ROWS. 이전 실행 잔재(풀 재사용
+        # 커넥션)는 시작 시 제거.
+        await session.execute(text("DROP TABLE IF EXISTS _epss_staging"))
         await session.execute(
             text(
-                "CREATE TEMP TABLE IF NOT EXISTS _epss_staging ("
+                "CREATE TEMP TABLE _epss_staging ("
                 " cve_id text PRIMARY KEY,"
                 " score double precision NOT NULL,"
                 " percentile double precision NOT NULL"
-                ") ON COMMIT DROP"
+                ") ON COMMIT PRESERVE ROWS"
             )
         )
         for i in range(0, len(rows), batch_size):
@@ -208,20 +209,46 @@ async def refresh_epss(batch_size: int = 2000) -> dict:
                 ),
                 [{"cve": c, "score": s, "pct": p} for c, s, p in chunk],
             )
+        await session.commit()  # 스테이징 적재 확정
 
-        # One set-based UPDATE — Postgres only rewrites rows that match.
-        updated = await session.execute(
-            text(
-                "UPDATE vulnerabilities v "
-                "SET epss_score = s.score, "
-                "    epss_percentile = s.percentile, "
-                "    epss_updated_at = :now "
-                "FROM _epss_staging s "
-                "WHERE v.cve_id = s.cve_id"
-            ),
-            {"now": now},
+        # 변경된 행만 배치로 갱신 (perf-A: 백그라운드 부하 완화).
+        #  - 기존: 매일 ~30만 행을 통째로 재기록(단일 트랜잭션) → 20분간 락/WAL/
+        #    디스크 점유 → API 가 굶음(load 폭증).
+        #  - 변경: ① epss_score/percentile 이 실제로 바뀐 행만 (IS DISTINCT FROM)
+        #    ② UPDATE_BATCH 단위로 쪼개 커밋 → 트랜잭션/락/WAL 작게 유지, autovacuum
+        #    이 사이사이 정리. ③ 배치 간 짧은 sleep 으로 I/O 를 API 에 양보.
+        #  epss_score 가 Float(double) 라 갱신 후 IS DISTINCT FROM 이 false 가 되어
+        #  루프가 안전하게 종료된다(정밀도 무한루프 없음).
+        UPDATE_BATCH = 5000
+        batch_update = text(
+            "WITH batch AS ("
+            "  SELECT v.id "
+            "  FROM vulnerabilities v "
+            "  JOIN _epss_staging s ON s.cve_id = v.cve_id "
+            "  WHERE v.epss_score IS DISTINCT FROM s.score "
+            "     OR v.epss_percentile IS DISTINCT FROM s.percentile "
+            "  LIMIT :lim "
+            ") "
+            "UPDATE vulnerabilities v "
+            "SET epss_score = s.score, "
+            "    epss_percentile = s.percentile, "
+            "    epss_updated_at = :now "
+            "FROM _epss_staging s, batch b "
+            "WHERE v.id = b.id AND s.cve_id = v.cve_id"
         )
-        result["matched"] = int(updated.rowcount or 0)
+        total = 0
+        while True:
+            res = await session.execute(batch_update, {"lim": UPDATE_BATCH, "now": now})
+            n = int(res.rowcount or 0)
+            await session.commit()
+            total += n
+            if n == 0:
+                break
+            # 약한 단일 호스트에서 EPSS 가 디스크/CPU 를 독점하지 않도록 양보.
+            await asyncio.sleep(0.2)
+        result["matched"] = total
+
+        await session.execute(text("DROP TABLE IF EXISTS _epss_staging"))
         await session.commit()
 
     elapsed = (datetime.now(timezone.utc) - started).total_seconds()
