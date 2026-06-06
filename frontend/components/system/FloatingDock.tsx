@@ -174,11 +174,17 @@ export function FloatingDock() {
   }, [authUser?.id]);
 
   // ── Status state ─────────────────────────────────────────────────
+  // 시스템/서비스 상태(정상·경고·알림)는 운영 정보 → 운영자(admin)에게만 노출.
+  // 일반·비로그인 사용자에겐 dock 을 AI 분석 활동이 있을 때만 띄운다.
+  const isAdmin = !!authUser?.isAdmin;
   const clientKeys = useMemo(
     () => ({ nvd: !!nvdApiKey, github: !!githubToken }),
     [nvdApiKey, githubToken],
   );
-  const lines = useMemo(() => buildLines(status, clientKeys), [status, clientKeys]);
+  const lines = useMemo(
+    () => (isAdmin ? buildLines(status, clientKeys) : []),
+    [status, clientKeys, isAdmin],
+  );
   const sig = useMemo(() => signature(lines), [lines]);
   const warnCount = lines.filter((l) => l.level === "warn").length;
   const infoCount = lines.filter((l) => l.level === "info").length;
@@ -273,8 +279,11 @@ export function FloatingDock() {
     };
   }, [open]);
 
-  // Nothing useful to surface yet — hide the dock entirely.
-  if (!status && !isRunning && historyCount === 0) return null;
+  // 시스템 상태 pill 은 운영자(admin)+status 가 있을 때만. 일반·비로그인
+  // 사용자에겐 분석 진행 중(isRunning) 또는 새 분석 알림(historyCount)이 있을
+  // 때만 dock 을 노출한다 — 평소엔 "정상" pill 자체를 띄우지 않는다.
+  const systemVisible = isAdmin && !!status;
+  if (!systemVisible && !isRunning && historyCount === 0) return null;
 
   // Dismissed + no analysis activity → minimized "다시 보기" toggle.
   if (isDismissed && !isRunning && historyCount === 0) {
@@ -297,9 +306,17 @@ export function FloatingDock() {
   //  ▸ system 경고 > 분석 중 > system 알림 > 정상
   // Color/icon match the priority so a glance tells the user what
   // they're looking at without having to open the popover.
-  type PillTone = "warn" | "running" | "info" | "ok";
+  type PillTone = "warn" | "running" | "info" | "ok" | "analysis";
   const tone: PillTone =
-    warnCount > 0 ? "warn" : isRunning ? "running" : hasIssues ? "info" : "ok";
+    warnCount > 0
+      ? "warn"
+      : isRunning
+        ? "running"
+        : hasIssues
+          ? "info"
+          : !isAdmin && historyCount > 0
+            ? "analysis"
+            : "ok";
 
   const toneCls: Record<PillTone, string> = {
     warn: "border-amber-500/40 bg-amber-500/15 text-amber-800 hover:bg-amber-500/25 dark:text-amber-200",
@@ -307,6 +324,8 @@ export function FloatingDock() {
       "border-violet-500/40 bg-violet-500/15 text-violet-800 hover:bg-violet-500/25 dark:text-violet-200",
     info: "border-sky-500/40 bg-sky-500/15 text-sky-800 hover:bg-sky-500/25 dark:text-sky-200",
     ok: "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 dark:text-emerald-200",
+    analysis:
+      "border-violet-500/40 bg-violet-500/15 text-violet-800 hover:bg-violet-500/25 dark:text-violet-200",
   };
 
   const dotColor: Record<PillTone, string> = {
@@ -314,6 +333,7 @@ export function FloatingDock() {
     running: "bg-violet-500",
     info: "bg-sky-400",
     ok: "bg-emerald-400",
+    analysis: "bg-violet-500",
   };
 
   const pingColor: Record<PillTone, string> = {
@@ -321,12 +341,13 @@ export function FloatingDock() {
     running: "bg-violet-400",
     info: "bg-sky-400",
     ok: "bg-emerald-400",
+    analysis: "bg-violet-400",
   };
 
   const PillIcon =
     tone === "warn"
       ? AlertTriangle
-      : tone === "running"
+      : tone === "running" || tone === "analysis"
         ? Sparkles
         : tone === "info"
           ? Info
@@ -339,7 +360,9 @@ export function FloatingDock() {
         ? "분석 중"
         : tone === "info"
           ? "알림"
-          : "정상";
+          : tone === "analysis"
+            ? "분석"
+            : "정상";
 
   const showPing = tone === "warn" || tone === "running";
 
@@ -360,7 +383,7 @@ export function FloatingDock() {
                   "h-4 w-4",
                   tone === "warn"
                     ? "text-amber-700 dark:text-amber-300"
-                    : tone === "running"
+                    : tone === "running" || tone === "analysis"
                       ? "text-violet-600 dark:text-violet-400"
                       : tone === "info"
                         ? "text-sky-700 dark:text-sky-300"
