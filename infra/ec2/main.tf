@@ -175,6 +175,7 @@ resource "aws_instance" "host" {
     GIT_REPO_URL         = var.git_repo_url
     GIT_BRANCH           = var.git_branch
     DATA_VOLUME_DEVICE   = "/dev/sdb"
+    AWS_REGION           = var.aws_region
   })
 
   # user_data 가 EBS 마운트를 시도하므로 인스턴스 생성 직후에 attach 도 필요.
@@ -222,7 +223,7 @@ resource "aws_route53_record" "apex" {
   records = [aws_eip.host.public_ip]
 }
 
-# www 도 같은 IP 로 (선택적 — 도메인 등록자가 www 도 원할 때).
+# www 도 같은 IP 로 (apex 와 동일 EIP).
 resource "aws_route53_record" "www" {
   count   = var.domain_name == "" ? 0 : 1
   zone_id = data.aws_route53_zone.this[0].zone_id
@@ -230,6 +231,55 @@ resource "aws_route53_record" "www" {
   type    = "A"
   ttl     = 300
   records = [aws_eip.host.public_ip]
+}
+
+# ── SES — 회원가입 인증 / 비밀번호 재설정 메일 발송 ──────────
+# 도메인이 설정된 경우에만 구성한다(nip.io 모드는 메일 비활성 = 콘솔 모드).
+# 흐름: 도메인 ID 등록 → _amazonses TXT 로 소유 검증 → DKIM CNAME 3개로
+# 서명(스팸함 회피) → 인스턴스 IAM 역할에 ses:SendEmail 부여.
+# 주의: 신규 SES 계정은 *샌드박스* 상태 — 검증된 주소로만 발송 가능하다.
+# 실제 임의 사용자에게 보내려면 콘솔에서 "프로덕션 액세스" 를 요청해야 한다.
+resource "aws_ses_domain_identity" "this" {
+  count  = var.domain_name == "" ? 0 : 1
+  domain = var.domain_name
+}
+
+resource "aws_route53_record" "ses_verification" {
+  count   = var.domain_name == "" ? 0 : 1
+  zone_id = data.aws_route53_zone.this[0].zone_id
+  name    = "_amazonses.${var.domain_name}"
+  type    = "TXT"
+  ttl     = 600
+  records = [aws_ses_domain_identity.this[0].verification_token]
+}
+
+resource "aws_ses_domain_dkim" "this" {
+  count  = var.domain_name == "" ? 0 : 1
+  domain = aws_ses_domain_identity.this[0].domain
+}
+
+resource "aws_route53_record" "ses_dkim" {
+  count   = var.domain_name == "" ? 0 : 3
+  zone_id = data.aws_route53_zone.this[0].zone_id
+  name    = "${aws_ses_domain_dkim.this[0].dkim_tokens[count.index]}._domainkey.${var.domain_name}"
+  type    = "CNAME"
+  ttl     = 600
+  records = ["${aws_ses_domain_dkim.this[0].dkim_tokens[count.index]}.dkim.amazonses.com"]
+}
+
+# 인스턴스 호스트 역할에 SES 발송 권한 부여(정적 키 불필요 — 역할 자격증명 사용).
+resource "aws_iam_role_policy" "ses_send" {
+  count = var.domain_name == "" ? 0 : 1
+  name  = "${local.name_prefix}-ses-send"
+  role  = aws_iam_role.host.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ses:SendEmail", "ses:SendRawEmail"]
+      Resource = "*"
+    }]
+  })
 }
 
 # ── AWS Backup — 데이터 EBS daily snapshot, 7일 보존 ─────────

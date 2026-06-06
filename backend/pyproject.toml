@@ -28,6 +28,10 @@ dependencies = [
     "email-validator>=2.2.0",
     # User-Agent 파싱 (PR 10-DK) — 접속 로그에 OS/브라우저/디바이스 상세 노출.
     "ua-parser>=0.18.0",
+    # AWS SES 이메일 발송 (회원가입 인증 / 비밀번호 재설정). 인스턴스 IAM
+    # 역할 자격증명을 자동 사용 — 정적 키 불필요. 동기 클라이언트라 호출은
+    # asyncio.to_thread 로 감싼다.
+    "boto3>=1.35.0",
 ]
 
 [project.optional-dependencies]

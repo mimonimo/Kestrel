@@ -198,6 +198,18 @@ export interface SignupRequest {
   password: string;
 }
 
+// 가입 직후 응답 — 자동 로그인 대신 이메일 인증을 요구.
+export interface SignupResult {
+  email: string;
+  emailVerificationRequired: boolean;
+  message: string;
+}
+
+// resend-verification / forgot-password / reset-password 의 공통 응답.
+export interface SimpleMessage {
+  message: string;
+}
+
 export interface LoginRequest {
   email: string;
   password: string;
@@ -544,7 +556,7 @@ export const api = {
 
   // ─── Auth ─────────────────────────────────────────────────────
   signup: (body: SignupRequest) =>
-    request<AuthUser>(`/auth/signup`, { method: "POST", body: JSON.stringify(body) }),
+    request<SignupResult>(`/auth/signup`, { method: "POST", body: JSON.stringify(body) }),
   login: (body: LoginRequest) =>
     request<AuthUser>(`/auth/login`, { method: "POST", body: JSON.stringify(body) }),
   logout: () => request<void>(`/auth/logout`, { method: "POST" }),
@@ -553,6 +565,28 @@ export const api = {
     request<void>(`/auth/change-password`, {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+  // 이메일 인증 — 메일 링크의 토큰으로 인증 완료(성공 시 자동 로그인 → AuthUser).
+  verifyEmail: (token: string) =>
+    request<AuthUser>(`/auth/verify-email`, {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+  resendVerification: (email: string) =>
+    request<SimpleMessage>(`/auth/resend-verification`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+  // 비밀번호 찾기/재설정.
+  forgotPassword: (email: string) =>
+    request<SimpleMessage>(`/auth/forgot-password`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+  resetPassword: (token: string, newPassword: string) =>
+    request<SimpleMessage>(`/auth/reset-password`, {
+      method: "POST",
+      body: JSON.stringify({ token, newPassword }),
     }),
 
   // ─── Profile ─────────────────────────────────────────────────

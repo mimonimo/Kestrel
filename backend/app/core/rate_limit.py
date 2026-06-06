@@ -28,6 +28,11 @@ _LOGIN_WINDOW = 15 * 60     # 15분
 _SIGNUP_IP_LIMIT = 10
 _SIGNUP_WINDOW = 60 * 60    # 1시간
 
+# 이메일 발송(인증 재발송 / 비밀번호 찾기) 임계치 — 메일 폭탄/열거 억제.
+_EMAIL_IP_LIMIT = 10        # 동일 IP 1시간 10통
+_EMAIL_ADDR_LIMIT = 5       # 동일 수신 이메일 1시간 5통
+_EMAIL_WINDOW = 60 * 60
+
 
 def _too_many(retry_after: int) -> HTTPException:
     return HTTPException(
@@ -99,3 +104,19 @@ async def enforce_signup_rate_limit(ip: str) -> None:
         return
     if cnt > _SIGNUP_IP_LIMIT:
         raise _too_many(_SIGNUP_WINDOW)
+
+
+# ─── 이메일 발송 (인증 재발송 / 비밀번호 찾기) ───────────
+async def enforce_email_send_rate_limit(ip: str, email: str) -> None:
+    """메일 발송 트리거 엔드포인트 보호 — IP·수신주소 두 축으로 카운트.
+
+    forgot-password 는 계정 존재 여부와 무관하게 항상 200 을 주지만, 그렇다고
+    무제한 발송하면 메일 폭탄/열거에 악용된다. 시도 자체를 카운트한다."""
+    try:
+        ip_cnt = await _count(f"rl:email:ip:{ip}", _EMAIL_WINDOW)
+        addr_cnt = await _count(f"rl:email:addr:{email}", _EMAIL_WINDOW)
+    except Exception as exc:  # noqa: BLE001 — Redis 장애 시 막지 않음
+        log.warning("rate_limit_check_failed", scope="email", error=str(exc))
+        return
+    if ip_cnt > _EMAIL_IP_LIMIT or addr_cnt > _EMAIL_ADDR_LIMIT:
+        raise _too_many(_EMAIL_WINDOW)

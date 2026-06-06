@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Bird, LogIn } from "lucide-react";
 
-import { ApiError } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +19,16 @@ function readNextParam(): string | null {
   }
 }
 
+function isEmailNotVerified(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    err.status === 403 &&
+    !!err.detail &&
+    typeof err.detail === "object" &&
+    (err.detail as { code?: unknown }).code === "email_not_verified"
+  );
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
@@ -26,25 +36,49 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 미인증 계정으로 로그인 시도 시 재발송 UI 노출.
+  const [needsVerify, setNeedsVerify] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setNeedsVerify(false);
+    setResent(false);
     setLoading(true);
     try {
       await login(email.trim(), password);
       const next = readNextParam();
       router.replace((next ?? "/") as never);
     } catch (err) {
-      const msg =
-        err instanceof ApiError && err.status === 401
-          ? "이메일 또는 비밀번호가 일치하지 않습니다."
-          : err instanceof Error
-            ? err.message
-            : "로그인에 실패했습니다.";
-      setError(msg);
+      if (isEmailNotVerified(err)) {
+        setNeedsVerify(true);
+        setError("이메일 인증이 필요합니다. 메일의 인증 링크를 확인해 주세요.");
+      } else {
+        const msg =
+          err instanceof ApiError && err.status === 401
+            ? "이메일 또는 비밀번호가 일치하지 않습니다."
+            : err instanceof Error
+              ? err.message
+              : "로그인에 실패했습니다.";
+        setError(msg);
+      }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function onResend() {
+    setResending(true);
+    setResent(false);
+    try {
+      await api.resendVerification(email.trim());
+      setResent(true);
+    } catch {
+      setResent(true);
+    } finally {
+      setResending(false);
     }
   }
 
@@ -82,10 +116,38 @@ export default function LoginPage() {
           />
         </label>
 
+        <div className="flex justify-end text-sm">
+          <Link
+            href={"/forgot-password" as never}
+            className="font-medium text-sky-600 hover:underline dark:text-sky-400"
+          >
+            비밀번호를 잊으셨나요?
+          </Link>
+        </div>
+
         {error && (
           <p className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
             {error}
           </p>
+        )}
+
+        {needsVerify && (
+          <div className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm dark:border-amber-500/40 dark:bg-amber-500/10">
+            {resent ? (
+              <span className="text-emerald-700 dark:text-emerald-300">
+                인증 메일을 다시 보냈습니다. 메일함을 확인해 주세요.
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={onResend}
+                disabled={resending}
+                className="self-start font-medium text-amber-800 hover:underline disabled:opacity-60 dark:text-amber-300"
+              >
+                {resending ? "재발송 중…" : "인증 메일 다시 보내기"}
+              </button>
+            )}
+          </div>
         )}
 
         <button

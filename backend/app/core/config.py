@@ -37,6 +37,24 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
+    # ─── 이메일 (회원가입 인증 / 비밀번호 재설정) ─────────────
+    # email_enabled=false 면 실제 발송 대신 백엔드 로그로 링크를 출력하는
+    # "콘솔 모드" — 로컬 개발/테스트에서 SES 자격증명 없이 흐름을 검증할 수 있다.
+    # 운영(SES)에서는 user_data 가 EMAIL_ENABLED=true 로 주입.
+    email_enabled: bool = False
+    # 발신 주소 — SES 에서 검증된 도메인/주소여야 한다.
+    email_from: str = "no-reply@kestrel.forum"
+    email_from_name: str = "Kestrel"
+    # SES 리전 (서울 ap-northeast-2 에서 SES 사용 가능). boto3 가 인스턴스
+    # IAM 역할 자격증명을 자동 사용 — 정적 키 불필요.
+    aws_region: str = "ap-northeast-2"
+    # 이메일 링크에 쓰는 공개 베이스 URL. 비우면 cors_origins[0] 로 폴백.
+    # 운영은 https://www.kestrel.forum.
+    public_base_url: str = ""
+    # 토큰 만료 — 가입 인증 메일 링크 24h, 비밀번호 재설정 링크 1h.
+    email_verify_token_ttl_hours: int = 24
+    password_reset_token_ttl_minutes: int = 60
+
     # 멀티 컨테이너 분리 (PR 10-CN, AWS ECS).
     # ``true`` 일 때만 lifespan 에서 APScheduler 가 가동.
     # ECS 구성: api 태스크(다수, Spot) = false, scheduler 태스크(1개, On-Demand) = true.

@@ -56,6 +56,14 @@ services:
       - JWT_EXP_HOURS=${JWT_EXP_HOURS:-12}
       # 가입 시 자동으로 admin 권한이 부여될 이메일 (콤마 분리). 첫 운영자 부트스트랩용.
       - INITIAL_ADMIN_EMAILS=${INITIAL_ADMIN_EMAILS:-}
+      # ─── 이메일 (회원가입 인증 / 비밀번호 재설정) ───────────
+      # 로컬은 기본 비활성(콘솔 모드) — 발송 대신 백엔드 로그에 인증 링크 출력.
+      # 운영(AWS)은 user_data 가 .env 로 EMAIL_ENABLED=true + SES 설정 주입.
+      - EMAIL_ENABLED=${EMAIL_ENABLED:-false}
+      - EMAIL_FROM=${EMAIL_FROM:-no-reply@localhost}
+      - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-Kestrel}
+      - AWS_REGION=${AWS_REGION:-ap-northeast-2}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
     volumes:
       # Claude Code OAuth credentials persist here. The dashboard's
       # "Claude 로그인" panel runs `claude setup-token` inside this

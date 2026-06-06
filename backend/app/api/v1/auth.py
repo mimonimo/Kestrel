@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import re
 import uuid
-
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -21,9 +20,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import COOKIE_NAME, get_current_user
 from app.core.audit import AuditAction, record_audit
+from app.core.auth_tokens import (
+    PURPOSE_EMAIL_VERIFY,
+    PURPOSE_PASSWORD_RESET,
+    consume_token,
+    create_token,
+)
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.rate_limit import (
+    enforce_email_send_rate_limit,
     enforce_login_rate_limit,
     enforce_signup_rate_limit,
     record_login_failure,
@@ -40,6 +46,7 @@ from app.core.security import (
 )
 from app.models import LoginLog, User, UserRole
 from app.schemas.vulnerability import CamelModel
+from app.services.email import send_password_reset_email, send_verification_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -59,6 +66,30 @@ class LoginIn(CamelModel):
 class ChangePasswordIn(CamelModel):
     current_password: str
     new_password: str = Field(min_length=8, max_length=128)
+
+
+class SignupOut(CamelModel):
+    """가입 직후 응답 — 인증 메일을 보냈으니 로그인 전 인증을 요구."""
+    email: str
+    email_verification_required: bool = True
+    message: str
+
+
+class EmailIn(CamelModel):
+    email: EmailStr
+
+
+class VerifyEmailIn(CamelModel):
+    token: str = Field(min_length=8, max_length=512)
+
+
+class ResetPasswordIn(CamelModel):
+    token: str = Field(min_length=8, max_length=512)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class SimpleMessageOut(CamelModel):
+    message: str
 
 
 class MeOut(CamelModel):
@@ -101,14 +132,25 @@ def _clear_auth_cookie(response: Response) -> None:
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_가-힣\-.]{2,64}$")
 
 
+async def _send_verification(db: AsyncSession, user: User, request: Request) -> None:
+    """인증 토큰 발급 + 메일 발송 + 감사 기록. 발송 실패는 호출자에게 전파."""
+    settings = get_settings()
+    token = await create_token(
+        PURPOSE_EMAIL_VERIFY, user.id, settings.email_verify_token_ttl_hours * 3600
+    )
+    await send_verification_email(user.email, token)
+    await record_audit(
+        db, action=AuditAction.EMAIL_VERIFY_SENT, actor=user, request=request
+    )
+
+
 # ─── 라우트 ────────────────────────────────────────────
-@router.post("/signup", response_model=MeOut, response_model_by_alias=True, status_code=201)
+@router.post("/signup", response_model=SignupOut, response_model_by_alias=True, status_code=201)
 async def signup(
     body: SignupIn,
     request: Request,
-    response: Response,
     db: AsyncSession = Depends(get_db),
-) -> MeOut:
+) -> SignupOut:
     # 대량 계정 생성/스팸 억제 — IP 기준 시도 제한.
     await enforce_signup_rate_limit(client_ip(request) or "unknown")
 
@@ -126,20 +168,17 @@ async def signup(
         raise HTTPException(409, detail="이미 사용 중인 이메일 또는 사용자명입니다.")
 
     role = UserRole.ADMIN if is_admin_email(email_norm) else UserRole.USER
-    now = datetime.now(timezone.utc)
+    # 가입 시점엔 미인증 상태로 생성 — 메일 링크 검증 전까지 로그인 차단.
+    # 세션을 시작하지 않으므로 last_login_at / LoginLog 는 기록하지 않는다.
     user = User(
         id=uuid.uuid4(),
         email=email_norm,
         username=body.username,
         password_hash=hash_password(body.password),
         role=role,
-        last_login_at=now,
+        email_verified=False,
     )
     db.add(user)
-    # 가입은 곧 첫 로그인(세션 시작) — 접속 로그에도 남긴다 (PR 10-EP).
-    ip = client_ip(request)
-    ua = (request.headers.get("user-agent") or "")[:512] or None
-    db.add(LoginLog(user_id=user.id, ip=ip, user_agent=ua))
     await db.commit()
 
     await record_audit(
@@ -147,9 +186,16 @@ async def signup(
         detail=f"role={role.value}",
     )
 
-    token = issue_access_token(user_id=str(user.id), role=role.value)
-    _set_auth_cookie(response, token)
-    return _to_me(user)
+    # 인증 메일 발송 — 실패해도 계정은 생성됐으니 재발송으로 복구 가능.
+    try:
+        await _send_verification(db, user, request)
+    except Exception:  # noqa: BLE001 — 발송 실패가 가입 자체를 롤백하지 않음
+        pass
+
+    return SignupOut(
+        email=email_norm,
+        message="인증 메일을 보냈습니다. 메일의 링크를 눌러 인증을 완료해 주세요.",
+    )
 
 
 @router.post("/login", response_model=MeOut, response_model_by_alias=True)
@@ -188,6 +234,20 @@ async def login(
 
     # 성공 — 실패 카운터 초기화(정상 사용자 잠김 방지).
     await reset_login_failures(ip, email_norm)
+
+    # 이메일 인증 전 로그인 차단 — 프론트가 재발송 UI 를 띄울 수 있게 구조화 detail.
+    if not user.email_verified:
+        await record_audit(
+            db, action=AuditAction.LOGIN_FAILURE, actor=user, request=request,
+            detail="이메일 미인증",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "email_not_verified",
+                "message": "이메일 인증이 필요합니다. 메일의 인증 링크를 확인해 주세요.",
+            },
+        )
 
     # PR 10-DE — last_login_at + login_logs 갱신. 운영자 추적용.
     # PR 10-DM — Caddy 뒤라 request.client.host 는 항상 bridge IP 만 잡혀서
@@ -242,3 +302,126 @@ async def change_password(
     role = user.role.value if hasattr(user.role, "value") else str(user.role)
     token = issue_access_token(user_id=str(user.id), role=role)
     _set_auth_cookie(response, token)
+
+
+# ─── 이메일 인증 ──────────────────────────────────────────
+@router.post("/verify-email", response_model=MeOut, response_model_by_alias=True)
+async def verify_email(
+    body: VerifyEmailIn,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> MeOut:
+    """메일 링크의 토큰으로 이메일 인증을 완료하고 곧바로 로그인 세션을 발급한다."""
+    user_id = await consume_token(PURPOSE_EMAIL_VERIFY, body.token)
+    if user_id is None:
+        raise HTTPException(
+            400, detail="유효하지 않거나 만료된 링크입니다. 인증 메일을 다시 요청해 주세요."
+        )
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if user is None:
+        raise HTTPException(400, detail="유효하지 않은 링크입니다.")
+
+    if not user.email_verified:
+        user.email_verified = True
+        user.email_verified_at = datetime.now(timezone.utc)
+        user.last_login_at = datetime.now(timezone.utc)
+        db.add(LoginLog(
+            user_id=user.id,
+            ip=(client_ip(request) or None),
+            user_agent=(request.headers.get("user-agent") or "")[:512] or None,
+        ))
+        await db.commit()
+        await record_audit(
+            db, action=AuditAction.EMAIL_VERIFIED, actor=user, request=request
+        )
+
+    # 인증 완료 → 바로 로그인 상태로 진입(세션 쿠키 발급).
+    role = user.role.value if hasattr(user.role, "value") else str(user.role)
+    token = issue_access_token(user_id=str(user.id), role=role)
+    _set_auth_cookie(response, token)
+    return _to_me(user)
+
+
+@router.post("/resend-verification", response_model=SimpleMessageOut, response_model_by_alias=True)
+async def resend_verification(
+    body: EmailIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> SimpleMessageOut:
+    """인증 메일 재발송. 계정 존재/인증 여부를 노출하지 않도록 항상 동일 응답."""
+    email_norm = body.email.strip().lower()
+    await enforce_email_send_rate_limit(client_ip(request) or "unknown", email_norm)
+
+    user = await db.scalar(select(User).where(User.email == email_norm))
+    if user is not None and not user.email_verified:
+        try:
+            await _send_verification(db, user, request)
+        except Exception:  # noqa: BLE001 — 발송 실패해도 응답은 동일
+            pass
+
+    return SimpleMessageOut(
+        message="해당 이메일로 가입된 미인증 계정이 있으면 인증 메일을 다시 보냈습니다."
+    )
+
+
+# ─── 비밀번호 재설정 ──────────────────────────────────────
+@router.post("/forgot-password", response_model=SimpleMessageOut, response_model_by_alias=True)
+async def forgot_password(
+    body: EmailIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> SimpleMessageOut:
+    """재설정 메일 발송. 이메일 존재 여부를 노출하지 않도록 항상 200 + 동일 메시지."""
+    email_norm = body.email.strip().lower()
+    await enforce_email_send_rate_limit(client_ip(request) or "unknown", email_norm)
+
+    user = await db.scalar(select(User).where(User.email == email_norm))
+    if user is not None:
+        settings = get_settings()
+        try:
+            token = await create_token(
+                PURPOSE_PASSWORD_RESET, user.id,
+                settings.password_reset_token_ttl_minutes * 60,
+            )
+            await send_password_reset_email(user.email, token)
+            await record_audit(
+                db, action=AuditAction.PASSWORD_RESET_REQUEST, actor=user, request=request
+            )
+        except Exception:  # noqa: BLE001 — 발송 실패해도 응답은 동일
+            pass
+
+    return SimpleMessageOut(
+        message="해당 이메일로 가입된 계정이 있으면 비밀번호 재설정 메일을 보냈습니다."
+    )
+
+
+@router.post("/reset-password", response_model=SimpleMessageOut, response_model_by_alias=True)
+async def reset_password(
+    body: ResetPasswordIn,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> SimpleMessageOut:
+    """재설정 토큰으로 새 비밀번호 설정. 성공 시 기존 세션 쿠키는 제거."""
+    user_id = await consume_token(PURPOSE_PASSWORD_RESET, body.token)
+    if user_id is None:
+        raise HTTPException(
+            400, detail="유효하지 않거나 만료된 링크입니다. 비밀번호 찾기를 다시 요청해 주세요."
+        )
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if user is None:
+        raise HTTPException(400, detail="유효하지 않은 링크입니다.")
+
+    user.password_hash = hash_password(body.new_password)
+    # 비밀번호를 잊을 정도면 메일 인증은 사실상 통과 — 미인증이었다면 함께 인증 처리.
+    if not user.email_verified:
+        user.email_verified = True
+        user.email_verified_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    await record_audit(db, action=AuditAction.PASSWORD_RESET, actor=user, request=request)
+
+    # 안전을 위해 현재 브라우저의 세션 쿠키 제거 → 새 비밀번호로 다시 로그인 유도.
+    _clear_auth_cookie(response)
+    return SimpleMessageOut(message="비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.")

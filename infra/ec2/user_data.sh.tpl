@@ -109,6 +109,16 @@ if [ ! -f .env ]; then
   POSTGRES_PASSWORD="$(openssl rand -hex 16)"
   MEILI_MASTER_KEY="$(openssl rand -hex 24)"
   PUBLIC_HOST="$${DOMAIN:-$(imds public-ipv4).nip.io}"
+  # 이메일(SES) — 도메인이 있을 때만 활성화. nip.io 모드는 콘솔 모드(발송 안 함).
+  if [ -n "$${DOMAIN}" ]; then
+    EMAIL_ENABLED="true"
+    EMAIL_FROM="no-reply@$${DOMAIN}"
+    PUBLIC_BASE_URL="https://www.$${DOMAIN}"
+  else
+    EMAIL_ENABLED="false"
+    EMAIL_FROM="no-reply@localhost"
+    PUBLIC_BASE_URL="https://$${PUBLIC_HOST}"
+  fi
   cat > .env <<EOF
 # 자동 생성 — 운영자 외 접근 금지. chmod 600 .env
 # 프로덕션 표시 — 쿠키 Secure 플래그 활성화 + debug off + 기본 시크릿 가드.
@@ -132,6 +142,13 @@ INITIAL_ADMIN_EMAILS=${INITIAL_ADMIN_EMAILS}
 # 도메인 명시는 안전 마진.
 CORS_ORIGINS=["https://$${PUBLIC_HOST}"]
 
+# 이메일 발송 (회원가입 인증 / 비밀번호 재설정) — SES.
+EMAIL_ENABLED=$${EMAIL_ENABLED}
+EMAIL_FROM=$${EMAIL_FROM}
+EMAIL_FROM_NAME=Kestrel
+AWS_REGION=${AWS_REGION}
+PUBLIC_BASE_URL=$${PUBLIC_BASE_URL}
+
 # Frontend → backend 호출 — Caddy 가 /api/* 를 backend 로 라우팅하니
 # 클라이언트에서는 상대경로 사용. NEXT_PUBLIC_API_BASE_URL 은 빌드 타임 값이라
 # Docker compose 빌드 인자로 별도 주입.
@@ -145,14 +162,28 @@ fi
 # 주의: named matcher 와 handle 의 ``{`` 는 *반드시 단독 라인* 이어야 한다.
 # ``@api { path ... }`` 처럼 한 줄로 쓰면 Caddy 가 "Unexpected next token after '{'"
 # 로 거부하고 80/443 listen 자체를 안 한다.
-PUBLIC_HOST="$${DOMAIN:-$(imds public-ipv4).nip.io}"
+# 접속 경로 구성 (www 를 유일한 서비스 호스트로, 나머지는 전부 www 로 funnel):
+#   - DOMAIN 설정 시: www.<domain> 만 HTTPS 서비스. apex(<domain>),
+#     <eip>.nip.io, raw IP 는 모두 www 로 301 리다이렉트.
+#   - DOMAIN 미설정 시: <eip>.nip.io HTTPS 서비스, raw IP 는 nip.io 로 리다이렉트.
+# (공인 인증서는 raw IP 로 발급 불가 → 평문 서비스 대신 HTTPS 호스트로 보냄.)
+IP_ADDR="$(imds public-ipv4)"
+if [ -n "$${DOMAIN}" ]; then
+  MAIN_HOST="www.$${DOMAIN}"
+  REDIR_HOSTS="$${DOMAIN}, $${IP_ADDR}.nip.io"
+  REDIR_TARGET="www.$${DOMAIN}"
+else
+  MAIN_HOST="$${IP_ADDR}.nip.io"
+  REDIR_HOSTS=""
+  REDIR_TARGET="$${IP_ADDR}.nip.io"
+fi
 mkdir -p /opt/kestrel/caddy
 cat > /opt/kestrel/caddy/Caddyfile <<EOF
 {
   email ${TLS_EMAIL}
 }
 
-$${PUBLIC_HOST} {
+$${MAIN_HOST} {
   encode gzip zstd
 
   @api {
@@ -165,7 +196,21 @@ $${PUBLIC_HOST} {
     reverse_proxy frontend:3000
   }
 }
+
+http://$${IP_ADDR} {
+  redir https://$${REDIR_TARGET}{uri} permanent
+}
 EOF
+
+# DOMAIN 설정 시 apex + nip.io → www 리다이렉트 블록 추가.
+if [ -n "$${REDIR_HOSTS}" ]; then
+  cat >> /opt/kestrel/caddy/Caddyfile <<EOF
+
+$${REDIR_HOSTS} {
+  redir https://$${REDIR_TARGET}{uri} permanent
+}
+EOF
+fi
 
 # docker-compose override — caddy 서비스 추가 + frontend 빌드 인자 + ports 노출 조정.
 # 주의: NEXT_PUBLIC_API_BASE_URL 은 *빌드 타임* 에 Next.js 코드에 박히므로

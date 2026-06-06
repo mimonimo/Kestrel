@@ -25,6 +25,10 @@ class AuditAction:
     LOGIN_FAILURE = "login.failure"
     SIGNUP = "signup"
     PASSWORD_CHANGE = "password.change"
+    EMAIL_VERIFY_SENT = "email.verify_sent"
+    EMAIL_VERIFIED = "email.verified"
+    PASSWORD_RESET_REQUEST = "password.reset_request"
+    PASSWORD_RESET = "password.reset"
     USER_ROLE_CHANGE = "user.role_change"
     USER_DELETE = "user.delete"
     ADMIN_KEYS_UPDATE = "admin.keys_update"
@@ -37,6 +41,10 @@ ACTION_LABELS: dict[str, str] = {
     AuditAction.LOGIN_FAILURE: "로그인 실패",
     AuditAction.SIGNUP: "회원가입",
     AuditAction.PASSWORD_CHANGE: "비밀번호 변경",
+    AuditAction.EMAIL_VERIFY_SENT: "인증 메일 발송",
+    AuditAction.EMAIL_VERIFIED: "이메일 인증 완료",
+    AuditAction.PASSWORD_RESET_REQUEST: "비밀번호 재설정 요청",
+    AuditAction.PASSWORD_RESET: "비밀번호 재설정 완료",
     AuditAction.USER_ROLE_CHANGE: "역할 변경",
     AuditAction.USER_DELETE: "사용자 삭제",
     AuditAction.ADMIN_KEYS_UPDATE: "외부 키 변경",
