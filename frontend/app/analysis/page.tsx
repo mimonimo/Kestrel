@@ -166,6 +166,7 @@ function AnalysisTab() {
   const { user } = useAuth();
   const [entries, setEntries] = useState<AnalysisHistoryEntry[]>([]);
   const [query, setQuery] = useState("");
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -257,6 +258,29 @@ function AnalysisTab() {
     );
   }, [entries, query]);
 
+  // 카드에 심각도/CVSS 를 표시하기 위해 목록 CVE 들의 메타를 한 번에 조회(5분 캐시).
+  const sortedCveIds = useMemo(() => entries.map((e) => e.cveId).sort(), [entries]);
+  const detailsQuery = useQuery({
+    queryKey: ["analysis-tab-vulns", sortedCveIds.join(",")],
+    queryFn: () => api.batchVulnerabilities(sortedCveIds),
+    enabled: sortedCveIds.length > 0,
+    staleTime: 5 * 60_000,
+  });
+  const metaByCve = useMemo(() => {
+    const m = new Map<string, { severity: string | null; cvss: number | null }>();
+    for (const v of detailsQuery.data ?? []) {
+      m.set(v.cveId, { severity: v.severity ?? null, cvss: v.cvssScore ?? null });
+    }
+    return m;
+  }, [detailsQuery.data]);
+
+  // 최신/오래된 정렬 (분석 시각 기준).
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => (sortOrder === "newest" ? b.timestamp - a.timestamp : a.timestamp - b.timestamp));
+    return arr;
+  }, [filtered, sortOrder]);
+
   return (
     <>
       {/* 진행 중 — 완료된 카드와 같은 비주얼 톤으로 통일해 entry 흐름의 일부로 */}
@@ -288,6 +312,31 @@ function AnalysisTab() {
               className="rounded-full pl-9"
             />
           </div>
+          <span className="shrink-0 text-[11px] tabular-nums text-neutral-600 dark:text-neutral-400">
+            {filtered.length}건
+          </span>
+          <div
+            role="group"
+            aria-label="정렬"
+            className="inline-flex shrink-0 overflow-hidden rounded-full border border-neutral-300 bg-white text-[11px] dark:border-neutral-800 dark:bg-surface-2"
+          >
+            {([["newest", "최신순"], ["oldest", "오래된순"]] as const).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setSortOrder(v)}
+                className={cn(
+                  "px-2.5 py-1 transition-colors",
+                  sortOrder === v
+                    ? "bg-violet-100 font-medium text-violet-800 dark:bg-violet-500/20 dark:text-violet-200"
+                    : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-100",
+                )}
+                aria-pressed={sortOrder === v}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <Button
             variant="outline"
             size="sm"
@@ -309,7 +358,7 @@ function AnalysisTab() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => selectAll(filtered.map((e) => e.cveId))}
+                onClick={() => selectAll(sorted.map((e) => e.cveId))}
                 disabled={filtered.length === 0}
               >
                 현재 목록 전체 선택
@@ -350,8 +399,9 @@ function AnalysisTab() {
         <NoMatch />
       ) : (
         <ul className="space-y-3">
-          {filtered.map((e) => {
+          {sorted.map((e) => {
             const checked = selectedIds.has(e.cveId);
+            const meta = metaByCve.get(e.cveId);
             const card = (
               <div
                 className={cn(
@@ -387,6 +437,9 @@ function AnalysisTab() {
                       <span className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                         {e.cveId}
                       </span>
+                      {meta?.severity && (
+                        <SeverityChip severity={meta.severity} cvss={meta.cvss} />
+                      )}
                       <Chip title={formatFull(e.timestamp)}>
                         <Clock className="h-3 w-3" />
                         {formatAge(e.timestamp)}
@@ -1186,6 +1239,28 @@ function Chip({
       title={title}
     >
       {children}
+    </span>
+  );
+}
+
+const _SEV_CHIP: Record<string, string> = {
+  critical: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-300",
+  high: "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-500/40 dark:bg-orange-500/15 dark:text-orange-300",
+  medium: "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200",
+  low: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300",
+};
+
+function SeverityChip({ severity, cvss }: { severity: string; cvss: number | null }) {
+  const tone = _SEV_CHIP[severity.toLowerCase()] ?? _SEV_CHIP.low;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium tabular-nums",
+        tone,
+      )}
+    >
+      {severity.toUpperCase()}
+      {cvss != null && ` · ${cvss.toFixed(1)}`}
     </span>
   );
 }
