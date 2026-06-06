@@ -380,8 +380,9 @@ export function FloatingDock() {
           </div>
 
           <div className="max-h-[70vh] overflow-y-auto">
-            {/* ── 시스템 상태 섹션 ─────────────────────────────── */}
-            {status && (
+            {/* ── 시스템 상태 섹션 (운영자 전용) ───────────────────
+                시스템/서비스 상태는 운영 정보라 일반·비로그인 사용자에겐 숨긴다. */}
+            {status && authUser?.isAdmin && (
               <section className="border-b border-neutral-200 dark:border-neutral-800">
                 <div className="flex items-center justify-between px-4 pt-3 pb-1.5">
                   <h3 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-700 dark:text-neutral-400">

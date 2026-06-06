@@ -17,33 +17,26 @@ import { ApiError, api, type AuthUser } from "./api";
 
 // 사용자 분리 캐시 (PR 10-CP1 / 보강 PR 10-CP1.2).
 //
-// 1차 (PR 10-CP1) 에선 사용자 전환 시 ``kestrel:*`` 전체를 일괄 클리어해
-// 다른 사용자의 흔적을 제거했는데, 본인 분석 기록까지 함께 사라진다는
-// 보고 ("분석 기록은 유지 되어야지 왜 지워지니") 가 들어왔다.
+// 사용자 전환 시 *유지* 할 키만 KEEP, 나머지 ``kestrel:*`` 는 전부 클리어.
 //
-// 분석 기록 / 즐겨찾기 / Q&A / 비교 히스토리·캐시된 분석 결과는 backend
-// 가 user-scoped 로 영구 저장한다 (DB AnalysisResult / bookmarks.user_id /
-// /me/analyses 등). 사용자 분리는 backend 응답 자체로 보장되므로 로컬
-// 캐시까지 강제로 비울 필요가 없다.
+// PR 10-CP1 → 이후 KEEP_PREFIX 로 분석 히스토리 등을 *유지* 했었는데, 그 가정
+// ("사용자 분리는 backend 가 보장하니 로컬 캐시는 안 비워도 됨")이 틀렸다(PR 10-FE):
+// analysis-history / ai-analysis / qa / compare-history / comment-history /
+// analysis-seen 캐시는 *user 별 네임스페이스가 없는 단일 키* 이고 UI(활동 센터·
+// /analysis 탭)에 그대로 표시된다. 그래서 같은 브라우저에서 계정을 바꾸면 이전
+// 사용자의 기록이 새 사용자(예: test)에게 노출됐다 — 명백한 데이터 격리 위반.
 //
-// 반면 ``-running`` 마커 (refresh-running / analysis-running / qa-running /
-// compare-running) 같은 트랜잭션 상태는 사용자 전환 시 반드시 비워야 한다 —
-// 다른 사용자의 진행 중 작업이 새 사용자에게 자동 재시도되면 401 으로 깨진다.
+// 본인 기록 유실 우려는 없다: /analysis 페이지·활동 센터는 서버 /me/analyses
+// (user-scoped) 를 다시 불러오므로 클리어 후 본인 계정으로 들어오면 서버에서
+// 복원된다. ``-running`` 트랜잭션 마커도 전환 시 비워져야 정상(다른 사용자의
+// 진행 중 작업 재시도 → 401 방지).
 const LAST_USER_KEY = "kestrel:last-user-id";
-// 사용자 전환 시 *유지* 할 키 / prefix.
+// 사용자 전환 시 *유지* 할 키 / prefix. theme(개인 취향, 비-사용자 데이터)만 유지.
 const KEEP_EXACT = new Set<string>([
   "kestrel:theme",
   LAST_USER_KEY,
 ]);
-const KEEP_PREFIX = [
-  "kestrel:analysis-history",   // 분석 히스토리
-  "kestrel:compare-history",    // 비교 히스토리
-  "kestrel:comment-history",    // 내 댓글 히스토리
-  "kestrel:ai-analysis",        // 캐시된 분석 결과 (CVE 별)
-  "kestrel:qa:",                // Q&A 히스토리 (CVE 별)
-  "kestrel:bookmarks",          // 즐겨찾기 캐시 (backend 가 user-scoped 라 자동 갱신)
-  "kestrel:analysis-seen",      // 알림 읽음 표시
-] as const;
+const KEEP_PREFIX: readonly string[] = [];
 
 function shouldKeep(k: string): boolean {
   if (KEEP_EXACT.has(k)) return true;
