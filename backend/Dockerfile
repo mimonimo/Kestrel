@@ -53,6 +53,9 @@ RUN pip install --upgrade pip && pip install -e .
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
+# 운영 스크립트(예: scripts.reindex_meili — to_document/필터 속성 변경 후 Meili 전수
+# 재색인). 이미지에 포함해 `python -m scripts.reindex_meili` 로 바로 실행 가능.
+COPY scripts ./scripts
 
 # Non-root user
 RUN groupadd --gid 1001 app && useradd --uid 1001 --gid app --shell /bin/bash --create-home app \
