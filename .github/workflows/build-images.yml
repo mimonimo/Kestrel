@@ -1,0 +1,73 @@
+name: Build & Push Images (GHCR)
+
+# 단일 EC2(docker compose) 운영용 이미지 프리빌드. 기존 deploy.yml(ECS, 미사용)
+# 대체. 빌드를 약한 t4g.small 에서 하던 것(매 배포 ~10분 + 프론트 OOM 위험)을
+# GitHub 러너로 옮기고, EC2 는 빌드된 이미지를 pull 만 한다.
+#
+# 활성화(최초 1회):
+#   1) push 후 Actions 가 ghcr.io/<owner>/kestrel-{backend,frontend} 에 이미지 push
+#   2) GitHub > Packages 에서 두 패키지를 Public 으로 설정(또는 EC2 에 read PAT 로
+#      `docker login ghcr.io`). Public 이면 EC2 는 인증 없이 pull 가능.
+#   3) EC2 배포를 `docker compose pull && up -d` 로 전환(user_data.sh.tpl 반영됨).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/build-images.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: backend
+            context: ./backend
+            # Claude CLI 포함(대시보드 AI 로그인 흐름). 빌드 인자 기본값 유지.
+            build_args: |
+              INSTALL_CLAUDE_CLI=1
+          - name: frontend
+            context: ./frontend
+            # 운영은 Caddy 동일 origin → API 는 /api/v1 상대경로(빌드 타임 주입).
+            build_args: |
+              NEXT_PUBLIC_API_BASE_URL=/api/v1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lowercase owner
+        id: owner
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          build-args: ${{ matrix.build_args }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner }}/kestrel-${{ matrix.name }}:latest
+            ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner }}/kestrel-${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

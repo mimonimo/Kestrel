@@ -209,3 +209,53 @@ def meili_healthy() -> bool:
         return True
     except Exception:
         return False
+
+
+def meili_document_count() -> int:
+    """현재 인덱스에 색인된 문서 수. 실패 시 -1."""
+    try:
+        idx = _client().index(get_settings().meili_index)
+        return int(idx.get_stats().number_of_documents)
+    except Exception:  # noqa: BLE001
+        return -1
+
+
+async def reindex_all(batch: int = 500) -> int:
+    """모든 Vulnerability 를 Meili 에 전수 재색인(idempotent, PK=cveId 덮어쓰기).
+
+    정합성 점검 잡(드리프트 자동 복구) + 수동 스크립트 공용. 약한 호스트를
+    위해 keyset 페이지네이션 + 배치. 반환: 큐잉한 문서 수.
+    """
+    import uuid as _uuid
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.core.database import SessionLocal
+    from app.models import Vulnerability
+
+    ensure_index()
+    total = 0
+    last_id: _uuid.UUID | None = None
+    async with SessionLocal() as session:
+        while True:
+            stmt = (
+                select(Vulnerability)
+                .options(
+                    selectinload(Vulnerability.types),
+                    selectinload(Vulnerability.affected_products),
+                    selectinload(Vulnerability.references),
+                )
+                .order_by(Vulnerability.id)
+                .limit(batch)
+            )
+            if last_id is not None:
+                stmt = stmt.where(Vulnerability.id > last_id)
+            rows = (await session.execute(stmt)).scalars().unique().all()
+            if not rows:
+                break
+            index_many(list(rows))
+            total += len(rows)
+            last_id = rows[-1].id
+    log.info("meili.reindex_all_done", queued=total)
+    return total

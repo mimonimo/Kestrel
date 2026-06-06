@@ -46,8 +46,9 @@ RUN if [ "$INSTALL_CLAUDE_CLI" = "1" ]; then \
     fi
 
 # Install dependencies
+# [sentry] extra 포함 — SENTRY_DSN 만 설정하면 에러 추적이 켜진다(DSN 없으면 no-op).
 COPY pyproject.toml ./
-RUN pip install --upgrade pip && pip install -e .
+RUN pip install --upgrade pip && pip install -e ".[sentry]"
 
 # Copy application
 COPY app ./app

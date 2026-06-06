@@ -149,6 +149,10 @@ EMAIL_FROM_NAME=Kestrel
 AWS_REGION=${AWS_REGION}
 PUBLIC_BASE_URL=$${PUBLIC_BASE_URL}
 
+# 에러 추적 — Sentry 프로젝트 DSN 을 채우면 활성화(비우면 비활성). 콘솔에서
+# 프로젝트 생성 후 DSN 붙여넣기. SSM 으로 .env 수정 후 backend 재시작.
+SENTRY_DSN=
+
 # Frontend → backend 호출 — Caddy 가 /api/* 를 backend 로 라우팅하니
 # 클라이언트에서는 상대경로 사용. NEXT_PUBLIC_API_BASE_URL 은 빌드 타임 값이라
 # Docker compose 빌드 인자로 별도 주입.
@@ -185,6 +189,16 @@ cat > /opt/kestrel/caddy/Caddyfile <<EOF
 
 $${MAIN_HOST} {
   encode gzip zstd
+
+  # 보안 헤더 — HTTPS 강제(HSTS), MIME 스니핑/clickjacking/referrer 보호.
+  # CSP 는 Next.js 인라인 스크립트와 충돌 위험이 있어 의도적으로 제외.
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "SAMEORIGIN"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    -Server
+  }
 
   @api {
     path /api/* /docs /openapi.json
@@ -257,7 +271,9 @@ StartLimitIntervalSec=0
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/kestrel
-ExecStart=/usr/bin/docker compose up -d --build
+# 배포: CI(GHCR)가 빌드한 이미지를 pull 해서 기동(약한 호스트에서 빌드 회피).
+# pull 실패(이미지 미존재/비공개 등) 시에만 마지막 수단으로 직접 build.
+ExecStart=/usr/bin/bash -lc 'cd /opt/kestrel && { docker compose pull --quiet && docker compose up -d; } || docker compose up -d --build'
 ExecStop=/usr/bin/docker compose down
 TimeoutStartSec=1800
 

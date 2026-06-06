@@ -18,6 +18,7 @@ from app.services.ingestion import run_parser
 from app.services.parsers import ExploitDbParser, GithubAdvisoryParser, NvdParser
 from app.services.parsers.mitre import MitreParser
 from app.services.priority_signals import refresh_epss, refresh_kev
+from app.services.search_reconcile import reconcile_search_index
 
 log = get_logger(__name__)
 
@@ -111,6 +112,19 @@ def build_scheduler() -> AsyncIOScheduler:
         _safe_refresh, args=[refresh_snapshots, "snapshots"],
         id="aggregate-snapshots-boot",
         next_run_time=_now_plus(45), max_instances=1,
+    )
+
+    # 검색 색인 정합성 점검 — PG vs Meili 카운트 비교, 드리프트 시 자동 재색인.
+    # 평상시엔 카운트 조회만(가벼움). 6시간마다 + 부팅 후 한 번.
+    scheduler.add_job(
+        _safe_refresh, args=[reconcile_search_index, "search-reconcile"],
+        trigger=IntervalTrigger(hours=6),
+        id="search-reconcile", max_instances=1, coalesce=True, misfire_grace_time=600,
+    )
+    scheduler.add_job(
+        _safe_refresh, args=[reconcile_search_index, "search-reconcile"],
+        id="search-reconcile-boot",
+        next_run_time=_now_plus(300), max_instances=1,
     )
 
     return scheduler

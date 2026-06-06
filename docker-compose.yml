@@ -1,5 +1,8 @@
 services:
   frontend:
+    # CI(GitHub Actions)가 빌드해 GHCR 에 올린 이미지. 운영은 이걸 pull 한다.
+    # 로컬 개발은 아래 build: 로 직접 빌드(이미지 태그만 공유).
+    image: ghcr.io/mimonimo/kestrel-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -18,6 +21,8 @@ services:
     restart: unless-stopped
 
   backend:
+    # CI(GitHub Actions)가 빌드해 GHCR 에 올린 이미지. 운영은 pull. 로컬은 build.
+    image: ghcr.io/mimonimo/kestrel-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -64,6 +69,9 @@ services:
       - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-Kestrel}
       - AWS_REGION=${AWS_REGION:-ap-northeast-2}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
+      # 에러 추적(Sentry) — DSN 설정 시 활성화, 없으면 no-op.
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
     volumes:
       # Claude Code OAuth credentials persist here. The dashboard's
       # "Claude 로그인" panel runs `claude setup-token` inside this
@@ -117,6 +125,22 @@ services:
       - "effective_io_concurrency=200"
       - "-c"
       - "jit=off"
+      # ─── autovacuum / 통계 (PR perf-A3) ─────────────────────
+      # 대량 수집(MITRE 36만 등) 후 통계가 stale 해지면 플래너가 seq scan 으로
+      # 빠져 집계가 분 단위가 됐다. 더 자주·공격적으로 vacuum/analyze 한다.
+      #   - scale_factor 하향: 변경분 비율이 작아도 일찍 vacuum/analyze.
+      #   - cost_limit 상향: 라운드당 더 많이 처리해 빨리 따라잡음.
+      #   - naptime 단축: 더 자주 점검.
+      - "-c"
+      - "autovacuum_vacuum_scale_factor=0.05"
+      - "-c"
+      - "autovacuum_analyze_scale_factor=0.02"
+      - "-c"
+      - "autovacuum_vacuum_cost_limit=2000"
+      - "-c"
+      - "autovacuum_naptime=30s"
+      - "-c"
+      - "autovacuum_max_workers=3"
     ports:
       - "5432:5432"
     environment:
