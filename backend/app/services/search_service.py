@@ -65,6 +65,10 @@ TYPO_TOLERANCE = {
 
 SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
 
+# Meili 페이지네이션 상한 — 기본 1000 이면 정렬 검색이 최신 1000건까지만
+# 도달 가능(오래된 CVE 조회 불가). 코퍼스 규모(~36만)+성장 여유로 상향.
+MEILI_MAX_TOTAL_HITS = 1_000_000
+
 # Frontend SortKey → Meilisearch sort spec. When the user picks "심각도순",
 # break ties by recency so two equally-severe CVEs aren't shuffled
 # arbitrarily between page loads.
@@ -100,6 +104,10 @@ def ensure_index() -> None:
     index.update_ranking_rules(RANKING_RULES)
     index.update_stop_words(STOP_WORDS)
     index.update_typo_tolerance(TYPO_TOLERANCE)
+    # Meili 기본 maxTotalHits=1000 → 정렬 검색이 최신 1000건까지만 페이지네이션
+    # 가능하고 그 이상(오래된 CVE)은 빈 결과가 된다. 코퍼스(~36만)+성장분을
+    # 모두 넘길 수 있게 상향. (offset 기반 deep page 는 사용자 주도라 허용)
+    index.update_pagination_settings({"maxTotalHits": MEILI_MAX_TOTAL_HITS})
     log.info("meili.index_ready", index=s.meili_index)
 
 

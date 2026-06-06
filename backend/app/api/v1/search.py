@@ -16,6 +16,7 @@ PR-A (Step 10) additions
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from datetime import datetime, timezone
 from typing import Literal
@@ -36,7 +37,7 @@ from app.models import (
 from app.schemas.search import SearchResponse
 from app.schemas.vulnerability import CamelModel, VulnerabilityListItem
 from app.services import search_service
-from app.services.aggregate_snapshots import SNAP_FACETS, get_snapshot
+from app.services.aggregate_snapshots import SNAP_FACETS, SNAP_PRIORITIES, get_snapshot
 
 router = APIRouter(prefix="/search", tags=["search"])
 log = get_logger(__name__)
@@ -114,6 +115,26 @@ def _pg_order_by(sort: SortKey):
 _PRIORITY_KEYS = {"kev", "epss_high", "cvss_mid_epss_high", "cvss_high_epss_low"}
 
 
+async def _priority_bucket_total(priority_key: str) -> int | None:
+    """대시보드 우선순위 스냅샷에서 해당 tier 의 전체 건수를 읽는다.
+
+    검색의 우선순위 필터 총건수는 이 값(이미 백그라운드에서 계산·캐시됨)을
+    재사용한다 — 저선택도 tier 의 count(*) 풀스캔/타임아웃을 피하기 위함.
+    스냅샷이 아직 없으면 None.
+    """
+    raw = await get_snapshot(SNAP_PRIORITIES)
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        for b in data.get("buckets", []):
+            if b.get("key") == priority_key:
+                return int(b.get("count", 0))
+    except Exception:  # noqa: BLE001 — 파싱 실패 시 폴백
+        return None
+    return None
+
+
 @router.get("", response_model=SearchResponse, response_model_by_alias=True)
 async def search(
     q: str = Query("", description="Full-text query"),
@@ -147,10 +168,17 @@ async def search(
 
     priority_norm = priority if priority in _PRIORITY_KEYS else None
     if priority_norm:
-        rows, total = await _pg_search(
+        # 우선순위 필터의 count(*) 는 저선택도라 풀스캔(타임아웃)이 될 수 있어
+        # 직접 세지 않고, 대시보드 우선순위 스냅샷에 이미 계산된 버킷 count 를
+        # 재사용한다(동일 정의). 행만 빠르게 조회.
+        rows, _ = await _pg_search(
             db, q, severity, os, type, domain, from_date, to_date, sort,
-            page_size, offset, cve_pattern, priority=priority_norm,
+            page_size, offset, cve_pattern, priority=priority_norm, skip_count=True,
         )
+        total = await _priority_bucket_total(priority_norm)
+        if total is None:
+            # 스냅샷 미생성(배포 직후 등) — 더 있을 수 있음을 알리는 보수적 추정.
+            total = offset + len(rows) + (page_size if len(rows) == page_size else 0)
         return SearchResponse(
             items=[VulnerabilityListItem.model_validate(v) for v in rows],
             total=total,
@@ -245,6 +273,7 @@ async def _pg_search(
     offset: int,
     cve_pattern: str | None,
     priority: str | None = None,
+    skip_count: bool = False,
 ) -> tuple[list[Vulnerability], int]:
     from sqlalchemy import and_, func
 
@@ -324,7 +353,12 @@ async def _pg_search(
     if conds:
         stmt = stmt.where(and_(*conds))
 
-    total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+    # 저선택도 우선순위 필터(예: cvss>=7 은 44%)의 count(*) 는 본질적으로 풀스캔
+    # (~60초) → API statement_timeout 초과 500. 이 경우 호출자가 미리 계산된
+    # 스냅샷 버킷 count 를 쓰므로 여기선 count 를 건너뛴다.
+    total = -1 if skip_count else (
+        await db.execute(select(func.count()).select_from(stmt.subquery()))
+    ).scalar_one()
     rows = (
         (
             await db.execute(

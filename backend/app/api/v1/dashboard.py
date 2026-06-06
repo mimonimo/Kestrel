@@ -12,7 +12,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -506,7 +506,10 @@ _PRIORITY_CACHE_LOCK = asyncio.Lock()
 # etc.; later tiers exclude rows that already qualify for an earlier
 # tier so the same CVE doesn't appear twice on the matrix.
 def _tier_filters():
-    kev = Vulnerability.kev_listed.is_(True)
+    # ``== true()`` 로 렌더(= ``kev_listed = true``)해야 부분 인덱스
+    # ix_vuln_kev_listed(WHERE kev_listed = true)를 탄다. ``.is_(True)``(IS TRUE)는
+    # 부분 인덱스 술어와 매칭되지 않아 seq scan(=count 62초) 으로 떨어진다.
+    kev = Vulnerability.kev_listed == true()
     epss_high = Vulnerability.epss_score >= 0.5
     cvss_mid = and_(Vulnerability.cvss_score >= 4.0, Vulnerability.cvss_score < 7.0)
     cvss_high = Vulnerability.cvss_score >= 7.0
