@@ -4,7 +4,8 @@ import { ImageResponse } from "next/og";
 // Next.js 파일 컨벤션 — 자동으로 og:image 메타에 연결된다. (PR 10-FF)
 // 한글 폰트 임베드는 생략(tofu 방지) → 이미지 텍스트는 영문, 카드 제목/설명
 // 메타는 한글(클라이언트 폰트로 렌더).
-export const runtime = "edge";
+// runtime 은 nodejs(기본) — 자체 호스팅 standalone 빌드에선 edge 런타임의
+// ImageResponse(satori/resvg WASM)가 "failed to pipe response" 로 502 가 난다.
 export const alt = "Kestrel — Real-time CVE & Zero-day Monitoring";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
