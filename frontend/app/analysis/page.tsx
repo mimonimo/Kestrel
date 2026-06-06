@@ -624,26 +624,10 @@ function CompareTab() {
               여러 CVE 의 공통 공격 패턴 · 차이점 · 통합 완화 전략을 한 번에 도출합니다.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] tabular-nums text-neutral-600 dark:text-neutral-400">
-              {selected.length} / 5
-            </span>
-            <Button
-              type="button"
-              size="sm"
-              disabled={selected.length < 2 || pending}
-              onClick={runCompare}
-              className="rounded-full bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-violet-500 dark:hover:bg-violet-400"
-              title={user ? undefined : "로그인 후 실행할 수 있어요"}
-            >
-              {pending ? (
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <GitCompare className="mr-1 h-3.5 w-3.5" />
-              )}
-              {user ? "비교 분석 실행" : "로그인 후 비교"}
-            </Button>
-          </div>
+          <span className="text-[11px] text-neutral-500 dark:text-neutral-500">
+            아래 목록에서 고른 뒤{" "}
+            <span className="font-medium text-violet-700 dark:text-violet-300">비교 실행</span>
+          </span>
         </header>
         {entries.length === 0 ? (
           <p className="rounded-md border border-dashed border-neutral-300 bg-neutral-50 p-4 text-center text-[12px] text-neutral-600 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-400">
@@ -752,24 +736,81 @@ function CompareTab() {
             )}
           </>
         )}
-        {selected.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-            {selected.map((id) => (
-              <span
-                key={id}
-                className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 font-mono text-[10px] text-violet-800 dark:bg-violet-500/20 dark:text-violet-200"
-              >
-                {id}
-                <button
-                  type="button"
-                  onClick={() => toggle(id)}
-                  className="rounded-full hover:bg-violet-200 dark:hover:bg-violet-500/40"
-                  aria-label={`${id} 제거`}
-                >
-                  <X className="h-2.5 w-2.5" />
-                </button>
+        {entries.length > 0 && (
+          <div className="mt-3 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+            {/* 선택된 CVE 칩 (없으면 안내) */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {selected.length === 0 ? (
+                <span className="text-[11px] text-neutral-500 dark:text-neutral-500">
+                  위 목록에서 비교할 CVE 를 2개 이상 선택하세요.
+                </span>
+              ) : (
+                selected.map((id) => (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 font-mono text-[10px] text-violet-800 dark:bg-violet-500/20 dark:text-violet-200"
+                  >
+                    {id}
+                    <button
+                      type="button"
+                      onClick={() => toggle(id)}
+                      className="rounded-full hover:bg-violet-200 dark:hover:bg-violet-500/40"
+                      aria-label={`${id} 제거`}
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </span>
+                ))
+              )}
+            </div>
+
+            {/* 액션 바 — 선택 현황 + 전체 해제 + 비교 실행을 한 곳에 */}
+            <div className="mt-2.5 flex items-center justify-between gap-2">
+              <span className="text-[11px] tabular-nums text-neutral-600 dark:text-neutral-400">
+                {selected.length} / 5 선택
               </span>
-            ))}
+              <div className="flex items-center gap-2">
+                {selected.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelected([]);
+                      setResult(null);
+                      setError(null);
+                    }}
+                  >
+                    전체 해제
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={selected.length < 2 || pending}
+                  onClick={runCompare}
+                  className="rounded-full bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 dark:bg-violet-500 dark:hover:bg-violet-400"
+                  title={
+                    selected.length < 2
+                      ? "2개 이상 선택하면 실행할 수 있어요"
+                      : user
+                        ? undefined
+                        : "로그인 후 실행할 수 있어요"
+                  }
+                >
+                  {pending ? (
+                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <GitCompare className="mr-1 h-3.5 w-3.5" />
+                  )}
+                  {selected.length < 2
+                    ? "2개 이상 선택"
+                    : user
+                      ? "비교 분석 실행"
+                      : "로그인 후 비교"}
+                </Button>
+              </div>
+            </div>
           </div>
         )}
       </section>
