@@ -13,7 +13,7 @@
 <br/>
 <br/>
 
-[![docker compose up](https://img.shields.io/badge/DOCKER_COMPOSE_UP-2496ED?style=for-the-badge&logo=docker&logoColor=white)](#빠른-시작)
+[![Live](https://img.shields.io/badge/LIVE-www.kestrel.forum-22C55E?style=for-the-badge&logo=googlechrome&logoColor=white)](https://www.kestrel.forum)
 [![Claude AI](https://img.shields.io/badge/CLAUDE_AI-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](#tech-stack)
 [![KEV · EPSS](https://img.shields.io/badge/KEV_·_EPSS-F43F5E?style=for-the-badge&logo=cloudflare&logoColor=white)](#tech-stack)
 [![MIT License](https://img.shields.io/badge/MIT_LICENSE-3B82F6?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](./LICENSE)
@@ -38,20 +38,6 @@
 
 #### 상세 + AI 분석
 <img src="docs/screenshots/cve-detail.png" alt="CVE 상세" width="100%"/>
-
-</td>
-</tr>
-<tr>
-<td width="50%" align="center">
-
-#### AI 분석 작업
-<img src="docs/screenshots/analysis.png" alt="AI 분석" width="100%"/>
-
-</td>
-<td width="50%" align="center">
-
-#### 설정
-<img src="docs/screenshots/settings.png" alt="설정" width="100%"/>
 
 </td>
 </tr>
@@ -84,18 +70,6 @@
 ![Claude](https://img.shields.io/badge/Anthropic_Claude-D97757?style=for-the-badge&logo=anthropic&logoColor=white)
 ![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-425CC7?style=for-the-badge&logo=opentelemetry&logoColor=white)
 ![Sentry](https://img.shields.io/badge/Sentry-362D59?style=for-the-badge&logo=sentry&logoColor=white)
-
-<br/>
-
-## 빠른 시작
-
-```bash
-git clone https://github.com/mimonimo/Kestrel.git
-cd Kestrel
-docker compose up -d --build
-```
-
-Frontend → <http://localhost:3000>  ·  Backend → <http://localhost:8000>
 
 <br/>
 
