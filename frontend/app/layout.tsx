@@ -15,8 +15,9 @@ export const metadata: Metadata = {
   title: SITE_TITLE,
   description: SITE_DESC,
   keywords: ["Kestrel", "CVE", "zero-day", "vulnerability", "security", "NVD", "exploit"],
-  // 링크 공유 미리보기(카카오톡·슬랙·디스코드·페북). og:image 는 app/opengraph-image.tsx
-  // 파일 컨벤션이 자동 연결한다. (PR 10-FF)
+  // 링크 공유 미리보기(카카오톡·슬랙·디스코드·페북). og:image 는 정적 PNG(public/og.png)
+  // — 동적 ImageResponse 는 self-host standalone 에서 satori CSS 한계 + WASM 트레이싱
+  // 누락으로 502 가 나서, 빌드 타임에 미리 렌더한 정적 이미지를 쓴다. (PR 10-FI2)
   openGraph: {
     type: "website",
     url: SITE_URL,
@@ -24,12 +25,13 @@ export const metadata: Metadata = {
     title: SITE_TITLE,
     description: SITE_DESC,
     locale: "ko_KR",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Kestrel" }],
   },
-  // 트위터는 전용 카드 + og:image 폴백 사용.
   twitter: {
     card: "summary_large_image",
     title: SITE_TITLE,
     description: SITE_DESC,
+    images: ["/og.png"],
   },
 };
 
