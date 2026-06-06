@@ -1309,6 +1309,21 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-FB — 자산 매칭 알림(서버 자산 영속화 + 인앱/Slack·Discord 웹훅) ✅
+
+> 사용자: 개선 우선순위 논의 → "자산 매칭 알림(웹훅/인앱)" 선택 + "로그인 사용자 자산 서버 저장(하이브리드)".
+
+- **핵심 공백**: 자산이 브라우저 localStorage 에만 있어(`POST /assets/match` 바디) 서버가 소유자를 몰라 푸시 알림 불가.
+- **Phase 0**: `user_assets` 테이블 + `/assets/saved` GET/PUT(로그인 필수). `useAssets` 훅이 로그인 시 서버 동기화 + 기존 localStorage 자산 1회 이관. 비로그인은 종전대로.
+- **Phase 1**: `notifications`/`notification_channels`(마이그레이션 0026). `services/notifications.notify_new_cves` 가 *증분 수집의 신규 CVE* 만 자산과 ILIKE 매칭 → 인앱 알림(unique index 중복 방지) + enabled 채널(Slack/Discord 웹훅) best-effort POST. `ingestion.run_parser` 훅(full_resync 제외로 백필 폭주 방지). `/notifications` API(목록·읽음·채널 CRUD·테스트, URL 마스킹).
+- **Phase 2**: 설정>개인>"알림 채널" 패널(웹훅 등록·테스트·삭제).
+- 검증: 마이그레이션 0026 적용, 3개 테이블 생성, `/notifications` 401(인증), 프론트 tsc 0.
+
+### PR 10-EZ·FA — 수집 인프라 버그 수정 ✅
+
+- **10-EZ**: `run_parser` 끝 Meili 색인이 new_or_updated_ids(전체 NVD ~25만)를 한 `IN(...)` 절에 통째로 → asyncpg 32767 파라미터 한도 초과 크래시(Postgres 적재는 무손실, 색인만 누락). 1000개 청크로 수정.
+- **10-FA**: 이미지에 `scripts/` 미포함 → `python -m scripts.reindex_meili` 불가. Dockerfile `COPY scripts` + `__init__.py` 추가. 배포 후 전수 재색인으로 Meili 356k 복구.
+
 ### PR 10-EY — NVD 전체 카탈로그 백필 모드 + ExploitDB/NVD 수집 점검 ✅
 
 > 사용자: "Exploit DB, NVD도 잘 가져오고 있는지 확인해줘"
