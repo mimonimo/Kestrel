@@ -515,7 +515,7 @@ export function ClaudeIntegrationPanel() {
                   저장
                 </Button>
                 <p className="text-[10px] text-neutral-600 dark:text-neutral-500">
-                  영구 볼륨에 저장되며 컨테이너 재시작에도 유지됩니다.
+                  한 번 저장하면 계속 유지되어 다시 입력할 필요가 없습니다.
                 </p>
               </div>
               {manualSave.error && (

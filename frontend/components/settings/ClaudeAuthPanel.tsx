@@ -167,9 +167,8 @@ export function ClaudeAuthPanel() {
   if (!data.cliPresent) {
     return (
       <NoticeBox
-        title="이 백엔드 이미지에는 Claude Code CLI 가 없습니다"
-        message="대시보드 로그인 흐름은 컨테이너 안의 Claude Code CLI 가 OAuth 를 처리합니다. INSTALL_CLAUDE_CLI=1 (기본값) 로 백엔드 이미지를 다시 빌드해 주세요."
-        hint="bash scripts/update.sh --no-pull"
+        title="AI 분석 엔진을 현재 사용할 수 없습니다"
+        message="AI 분석에 필요한 엔진이 아직 준비되지 않았습니다. 잠시 후 다시 시도하거나 운영자에게 문의해 주세요."
       />
     );
   }
@@ -364,7 +363,7 @@ export function ClaudeAuthPanel() {
           </ol>
 
           <p className="text-[11px] text-neutral-600 dark:text-neutral-500">
-            세션은 10분 후 자동 만료. 자격증명은 컨테이너 재시작에도 유지됩니다.
+            세션은 10분 후 자동 만료됩니다. 저장된 자격증명은 계속 유지됩니다.
           </p>
 
           {submit.error && (
@@ -441,7 +440,7 @@ export function ClaudeAuthPanel() {
                   저장
                 </Button>
                 <p className="text-[10px] text-neutral-600 dark:text-neutral-500">
-                  영구 볼륨에 저장되며 컨테이너 재시작에도 유지됩니다.
+                  한 번 저장하면 계속 유지되어 다시 입력할 필요가 없습니다.
                 </p>
               </div>
               {manualSave.error && (

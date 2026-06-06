@@ -334,9 +334,9 @@ function remedyForKind(kind: string | null): string | null {
     case "rate_limit":
       return "Claude 구독 사용량 한도에 도달했습니다. 표시된 reset 시각 이후 다시 시도하거나, 별도 키를 등록해 활성화해 주세요.";
     case "config_missing":
-      return "Claude 인증 파일이 백엔드와 연결되지 않았습니다. 백엔드 컨테이너를 한 번 재시작하면 해결됩니다.";
+      return "Claude 인증이 아직 적용되지 않았습니다. 잠시 후 다시 시도해 주세요.";
     case "cli_missing":
-      return "백엔드 이미지에 Claude CLI 가 설치되어 있지 않습니다. README 설치 가이드의 'AI 키 등록' 단계를 다시 진행해 주세요.";
+      return "AI 분석 엔진을 현재 사용할 수 없습니다. 잠시 후 다시 시도하거나 운영자에게 문의해 주세요.";
     case "empty_response":
       return "Claude 가 응답 없이 종료되었습니다. 자동 복구가 실패했다면 인증 토큰이 만료되었을 가능성이 큽니다 — 위 인증 갱신 안내를 따라 주세요.";
     case "not_configured":
