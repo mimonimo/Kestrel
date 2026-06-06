@@ -5,13 +5,18 @@ import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
+  CheckSquare,
+  ChevronLeft,
   Clock,
   Download,
+  Filter,
   Globe,
+  ListChecks,
   LogIn,
   ScrollText,
   Loader2,
   Search,
+  Square,
   Trash2,
   Users as UsersIcon,
   X,
@@ -448,8 +453,12 @@ function AccessFeed() {
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState<Period>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
   // 뷰 전환 시 선택 초기화 — 회원=uid / 비회원=ip 로 키 의미가 달라짐.
-  useEffect(() => setSelected(new Set()), [who, drill]);
+  useEffect(() => {
+    setSelected(new Set());
+    setSelectMode(false);
+  }, [who, drill]);
 
   const summaryQ = useQuery({
     queryKey: ["admin-access-summary", who],
@@ -571,65 +580,108 @@ function AccessFeed() {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-1.5">
-        {!drill &&
-          ([
-            { v: "member", l: "회원별" },
-            { v: "anon", l: "비회원(IP)" },
-          ] as const).map((t) => (
-            <button
-              key={t.v}
-              type="button"
-              onClick={() => setWho(t.v)}
-              className={cn(
-                "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
-                who === t.v
-                  ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
-                  : "border-neutral-300 text-neutral-600 hover:border-sky-300 hover:text-sky-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-sky-200",
-              )}
-            >
-              {t.l}
-            </button>
-          ))}
-        {drill && (
+      <div className="flex flex-wrap items-center gap-2">
+        {drill ? (
           <button
             type="button"
             onClick={() => setDrill(null)}
-            className="inline-flex items-center gap-1 text-[11px] text-neutral-500 hover:text-sky-700 dark:hover:text-sky-300"
+            className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-sky-700 dark:hover:bg-surface-3 dark:hover:text-sky-300"
           >
-            ← 목록 · <span className="font-mono text-neutral-700 dark:text-neutral-300">{drill.label}</span>
+            <ChevronLeft className="h-3.5 w-3.5" />
+            목록
+            <span className="font-mono text-neutral-700 dark:text-neutral-300">· {drill.label}</span>
           </button>
+        ) : (
+          <div className="inline-flex shrink-0 overflow-hidden rounded-full border border-neutral-300 text-[11px] dark:border-neutral-700">
+            {([
+              ["member", "회원별"],
+              ["anon", "비회원(IP)"],
+            ] as const).map(([v, l]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setWho(v)}
+                className={cn(
+                  "px-3 py-1 transition-colors",
+                  who === v
+                    ? "bg-sky-100 font-medium text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"
+                    : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-surface-3",
+                )}
+                aria-pressed={who === v}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
         )}
+
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          {!drill && (
-            <button
-              type="button"
-              onClick={purgeNoise}
-              title="내부 호출·헬스체크 등 의미 없는 로그를 정리"
-              className="inline-flex items-center gap-1 rounded-full border border-neutral-300 px-2.5 py-0.5 text-[11px] font-medium text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-surface-3"
-            >
-              <Trash2 className="h-3 w-3" />
-              노이즈 정리
-            </button>
+          {!drill && selectMode ? (
+            <>
+              <span className="text-[11px] tabular-nums text-neutral-500 dark:text-neutral-400">
+                {selected.size}개 선택
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelected(new Set(summary.map(selKeyOf).filter(Boolean)))}
+                className="rounded-full px-2.5 py-1 text-[11px] font-medium text-neutral-600 transition-colors hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-surface-3"
+              >
+                전체 선택
+              </button>
+              <button
+                type="button"
+                onClick={deleteSelected}
+                disabled={selected.size === 0}
+                className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-3 py-1 text-[11px] font-medium text-white transition-colors hover:bg-rose-500 disabled:opacity-40"
+              >
+                <Trash2 className="h-3 w-3" />
+                삭제
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectMode(false);
+                  setSelected(new Set());
+                }}
+                className="rounded-full px-2.5 py-1 text-[11px] font-medium text-neutral-600 transition-colors hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-surface-3"
+              >
+                취소
+              </button>
+            </>
+          ) : (
+            <>
+              {!drill && (
+                <button
+                  type="button"
+                  onClick={() => setSelectMode(true)}
+                  disabled={summary.length === 0}
+                  className="inline-flex items-center gap-1 rounded-full border border-neutral-300 px-2.5 py-1 text-[11px] font-medium text-neutral-700 transition-colors hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-surface-3"
+                >
+                  <ListChecks className="h-3.5 w-3.5" />
+                  선택
+                </button>
+              )}
+              {!drill && (
+                <button
+                  type="button"
+                  onClick={purgeNoise}
+                  title="내부 호출·헬스체크 등 의미 없는 로그를 정리"
+                  className="inline-flex items-center gap-1 rounded-full border border-neutral-300 px-2.5 py-1 text-[11px] font-medium text-neutral-700 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-surface-3"
+                >
+                  <Filter className="h-3.5 w-3.5" />
+                  노이즈 정리
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={clearLogs}
+                className="inline-flex items-center gap-1 rounded-full border border-rose-300 px-2.5 py-1 text-[11px] font-medium text-rose-700 transition-colors hover:bg-rose-50 dark:border-rose-900/50 dark:text-rose-300 dark:hover:bg-rose-950/40"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {drill ? (drill.kind === "ip" ? "이 IP 비우기" : "이 회원 비우기") : "전체 비우기"}
+              </button>
+            </>
           )}
-          {!drill && selected.size > 0 && (
-            <button
-              type="button"
-              onClick={deleteSelected}
-              className="inline-flex items-center gap-1 rounded-full border border-red-300 bg-red-50 px-2.5 py-0.5 text-[11px] font-medium text-red-700 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
-            >
-              <Trash2 className="h-3 w-3" />
-              선택 삭제 ({selected.size})
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={clearLogs}
-            className="inline-flex items-center gap-1 rounded-full border border-red-300 px-2.5 py-0.5 text-[11px] font-medium text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/40"
-          >
-            <Trash2 className="h-3 w-3" />
-            {drill ? (drill.kind === "ip" ? "이 IP 로그 비우기" : "이 회원 로그 비우기") : "로그 비우기"}
-          </button>
         </div>
       </div>
 
@@ -673,23 +725,37 @@ function AccessFeed() {
             <ul className="space-y-1.5">
               {summary.map((s) => (
                 <li key={s.userId || s.ip} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(selKeyOf(s))}
-                    onChange={() => toggleSel(selKeyOf(s))}
-                    aria-label="선택"
-                    className="h-3.5 w-3.5 shrink-0 rounded border-neutral-300 text-sky-600 focus:ring-sky-500 dark:border-neutral-600 dark:bg-surface-2"
-                  />
+                  {selectMode && (
+                    <button
+                      type="button"
+                      onClick={() => toggleSel(selKeyOf(s))}
+                      aria-label={selected.has(selKeyOf(s)) ? "선택 해제" : "선택"}
+                      className="shrink-0"
+                    >
+                      {selected.has(selKeyOf(s)) ? (
+                        <CheckSquare className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+                      ) : (
+                        <Square className="h-4 w-4 text-neutral-400 dark:text-neutral-600" />
+                      )}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() =>
-                      setDrill(
-                        who === "member"
-                          ? { kind: "user", key: s.userId || "", label: s.label }
-                          : { kind: "ip", key: s.ip, label: s.ip },
-                      )
+                      selectMode
+                        ? toggleSel(selKeyOf(s))
+                        : setDrill(
+                            who === "member"
+                              ? { kind: "user", key: s.userId || "", label: s.label }
+                              : { kind: "ip", key: s.ip, label: s.ip },
+                          )
                     }
-                    className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-left text-xs transition-colors hover:border-sky-300 hover:bg-sky-50/40 dark:border-neutral-800 dark:hover:border-sky-500/40 dark:hover:bg-surface-2"
+                    className={cn(
+                      "flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-3 py-2 text-left text-xs transition-colors",
+                      selectMode && selected.has(selKeyOf(s))
+                        ? "border-sky-400 bg-sky-50/60 ring-1 ring-sky-300 dark:border-sky-500/60 dark:bg-sky-500/10 dark:ring-sky-500/40"
+                        : "border-neutral-200 hover:border-sky-300 hover:bg-sky-50/40 dark:border-neutral-800 dark:hover:border-sky-500/40 dark:hover:bg-surface-2",
+                    )}
                   >
                     <span className="font-medium text-neutral-900 dark:text-neutral-100">{s.label}</span>
                     {s.deviceKind && (
