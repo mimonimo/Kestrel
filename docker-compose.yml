@@ -89,6 +89,34 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    # ─── 성능 튜닝 (PR perf-A) ──────────────────────────────
+    # 기본 postgres 설정은 shared_buffers=128MB/work_mem=4MB 라 356k행·2.6GB
+    # 의 vulnerabilities 테이블 집계(count distinct over join)가 디스크로
+    # 스필되어 수 분~수십 분 걸렸다. 단일 호스트(t4g.small 2GB)에 맞춰 상향.
+    #   - shared_buffers: PG 전용 캐시. 인스턴스 RAM 의 ~20%.
+    #   - effective_cache_size: 플래너 힌트(실제 할당 X) — OS page cache 포함 가용량.
+    #   - work_mem: 정렬/해시 집계 1노드당. distinct/group by 가 메모리에 머물게.
+    #   - maintenance_work_mem: VACUUM/인덱스.
+    #   - random_page_cost/effective_io_concurrency: gp3 SSD 가정.
+    #   - jit off: 약한 CPU 에서 JIT 컴파일 오버헤드가 분석쿼리에 오히려 손해.
+    # statement_timeout 은 여기(서버 전역)에 두지 않는다 — 백그라운드 수집/백필
+    # (대량 UPDATE)이 끊기면 안 되므로 API 요청 세션(get_db)에만 적용한다.
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=384MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "work_mem=32MB"
+      - "-c"
+      - "maintenance_work_mem=96MB"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "jit=off"
     ports:
       - "5432:5432"
     environment:
