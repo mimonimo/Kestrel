@@ -16,7 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiKeysManagerButton } from "@/components/settings/ApiKeysManagerButton";
 import { AssetsManager } from "@/components/settings/AssetsManager";
 import { ClaudeIntegrationPanel } from "@/components/settings/ClaudeIntegrationPanel";
-import { NotificationChannelsPanel } from "@/components/settings/NotificationChannelsPanel";
+import { NotificationChannelsButton } from "@/components/settings/NotificationChannelsButton";
 import { PasswordChangePanel } from "@/components/settings/PasswordChangePanel";
 import { ThemeSwitcher } from "@/components/settings/ThemeSwitcher";
 import { VersionPanel } from "@/components/settings/VersionPanel";
@@ -65,7 +65,7 @@ const CATEGORIES: CategoryDef[] = [
         id: "notif-channels",
         title: "알림 채널",
         description: "내 자산에 새 CVE 가 뜨면 Slack/Discord 웹훅으로 실시간 알림",
-        render: () => <NotificationChannelsPanel />,
+        render: () => <NotificationChannelsButton />,
       },
       {
         id: "password",
