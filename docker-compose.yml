@@ -45,7 +45,10 @@ services:
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
       - NVD_API_KEY=${NVD_API_KEY}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
-      - CORS_ORIGINS=["http://localhost:3000"]
+      # .env 의 CORS_ORIGINS 를 그대로 전달(운영 도메인). 하드코딩하면 .env 갱신이
+      # 무시돼 운영에서도 localhost 로 떠 알림 웹훅의 CVE 링크가 깨진다(PR 10-EW 의
+      # ENV/DEBUG 와 같은 부류). 로컬은 기본값(localhost:3000)으로 떨어진다.
+      - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:3000"]}
       # ─── Auth (PR 10-CN) ────────────────────────────────────
       # 운영에서는 반드시 외부 시크릿(.env / vault) 으로 64자 무작위 문자열 주입.
       # 개발 기본값(dev-only-...) 은 서버 시작은 가능하지만 절대 운영에 사용 금지.
