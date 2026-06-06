@@ -36,6 +36,7 @@ from app.models import (
 from app.schemas.search import SearchResponse
 from app.schemas.vulnerability import CamelModel, VulnerabilityListItem
 from app.services import search_service
+from app.services.aggregate_snapshots import SNAP_FACETS, get_snapshot
 
 router = APIRouter(prefix="/search", tags=["search"])
 log = get_logger(__name__)
@@ -408,6 +409,18 @@ async def search_facets(
     now = _time.monotonic()
     since = _parse_iso_date(from_)
     until = _parse_iso_date(to)
+
+    # 필터 없는 기본 요청(대시보드/검색 첫 로드)은 미리 계산된 스냅샷을 즉시 반환.
+    # 288만 행 집계를 매 요청 돌리지 않게 한다(perf-A2). 스냅샷이 아직 없으면
+    # (배포 직후 등) 아래 라이브 경로로 폴백.
+    if not any([from_, to, severity, source, type, domain]):
+        raw = await get_snapshot(SNAP_FACETS)
+        if raw:
+            try:
+                return FacetsResponse.model_validate_json(raw)
+            except Exception:  # noqa: BLE001 — 파싱 실패 시 라이브 계산으로 폴백
+                pass
+
     cache_key = (
         f"v3|{from_ or ''}|{to or ''}|"
         f"{severity or ''}|{source or ''}|{type or ''}|{domain or ''}"

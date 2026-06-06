@@ -18,6 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.models import AffectedProduct, Vulnerability
 from app.schemas.vulnerability import CamelModel
+from app.services.aggregate_snapshots import (
+    SNAP_INSIGHTS,
+    SNAP_PRIORITIES,
+    get_snapshot,
+)
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -197,6 +202,14 @@ async def dashboard_insights(
     recent_limit: int = Query(default=5, ge=1, le=20),
 ) -> InsightsResponse:
     """Bundled dashboard metrics with a short TTL cache."""
+    # 기본 파라미터(프론트 대시보드 첫 로드)는 미리 계산된 스냅샷을 즉시 반환.
+    if days == 30 and vendor_limit == 10 and recent_limit == 5:
+        raw = await get_snapshot(SNAP_INSIGHTS)
+        if raw:
+            try:
+                return InsightsResponse.model_validate_json(raw)
+            except Exception:  # noqa: BLE001 — 폴백
+                pass
     # v4: CVSS 점수 분포가 days 윈도우(published_at)를 타도록 변경 — 캐시 무효화.
     cache_key = f"v4|{days}|{vendor_limit}|{recent_limit}"
     now_mono = time.monotonic()
@@ -562,6 +575,14 @@ async def dashboard_priorities(
       3. CVSS 4-6.9 + EPSS ≥ 0.3 (이론 낮아도 실제 터질 가능성)
       4. CVSS ≥ 7 + EPSS < 0.3 (계획된 패치)
     """
+    # 기본 per_bucket(프론트 대시보드 첫 로드)은 미리 계산된 스냅샷을 즉시 반환.
+    if per_bucket == 5:
+        raw = await get_snapshot(SNAP_PRIORITIES)
+        if raw:
+            try:
+                return PrioritiesResponse.model_validate_json(raw)
+            except Exception:  # noqa: BLE001 — 폴백
+                pass
     cache_key = f"v1|{per_bucket}"
     now_mono = time.monotonic()
     cached = _PRIORITY_CACHE.get(cache_key)

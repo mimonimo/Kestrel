@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.core.logging import get_logger
 from app.models import AppSettings
+from app.services.aggregate_snapshots import refresh_snapshots
 from app.services.ingestion import run_parser
 from app.services.parsers import ExploitDbParser, GithubAdvisoryParser, NvdParser
 from app.services.parsers.mitre import MitreParser
@@ -96,6 +97,20 @@ def build_scheduler() -> AsyncIOScheduler:
         _safe_refresh, args=[refresh_epss, "epss"],
         id="priority-epss-boot",
         next_run_time=_now_plus(180), max_instances=1,
+    )
+
+    # 집계 스냅샷 — 무거운 facets/dashboard 집계를 10분마다 미리 계산해 Redis 에
+    # 저장(perf-A2). API 는 스냅샷을 즉시 반환 → 매 요청 수십초 집계 제거.
+    scheduler.add_job(
+        _safe_refresh, args=[refresh_snapshots, "snapshots"],
+        trigger=IntervalTrigger(minutes=10),
+        id="aggregate-snapshots", max_instances=1, coalesce=True, misfire_grace_time=300,
+    )
+    # 부팅 직후 1회 — 배포 후 사용자가 곧바로 캐시된 대시보드를 받도록.
+    scheduler.add_job(
+        _safe_refresh, args=[refresh_snapshots, "snapshots"],
+        id="aggregate-snapshots-boot",
+        next_run_time=_now_plus(45), max_instances=1,
     )
 
     return scheduler
