@@ -7,8 +7,7 @@ import { FloatingDock } from "@/components/system/FloatingDock";
 
 const SITE_URL = "https://www.kestrel.forum";
 const SITE_TITLE = "Kestrel — 실시간 CVE & 제로데이 모니터링";
-const SITE_DESC =
-  "Kestrel은 NVD, Exploit-DB, GitHub Advisory, MITRE를 실시간으로 집약한 사이버 보안 전문가용 취약점 대시보드입니다.";
+const SITE_DESC = "실시간 CVE·제로데이 모니터링과 분석 커뮤니티, Kestrel";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
