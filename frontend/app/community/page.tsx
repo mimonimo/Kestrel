@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, MessageSquare, Plus, Eye, Hash, LogIn, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Loader2, MessageSquare, Plus, Eye, Hash, LogIn, RefreshCw, Share2, Sparkles, Trash2 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -22,7 +22,20 @@ export default function CommunityPage() {
   const [tab, setTab] = useState<CommunityTab>("posts");
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const requireLogin = (): boolean => {
+    if (user) return true;
+    if (typeof window !== "undefined") {
+      const next = window.location.pathname + window.location.search;
+      window.location.href = `/login?next=${encodeURIComponent(next)}`;
+    }
+    return false;
+  };
+  const openShare = () => {
+    if (requireLogin()) setShareOpen(true);
+  };
 
   // 글 목록 카드 자체에서 빠르게 삭제 — owner / admin 모두 사용.
   const deletePost = useMutation({
@@ -63,8 +76,10 @@ export default function CommunityPage() {
             보안 운영자들이 공유한 글과 AI 분석 결과를 한 곳에서 확인하세요.
           </p>
         </div>
-        {tab === "posts" &&
-          (user ? (
+        {/* 우상단 액션 — 탭이 바뀌어도 항상 버튼 1개를 유지해 헤더가 들썩이지
+            않게 한다. 글 탭=새 글, 분석 피드 탭=내 분석 공유. */}
+        {tab === "posts" ? (
+          user ? (
             <Button onClick={openNewPost} className="gap-2">
               <Plus className="h-4 w-4" />새 글
             </Button>
@@ -73,7 +88,20 @@ export default function CommunityPage() {
               <LogIn className="h-4 w-4" />
               로그인 후 작성
             </Button>
-          ))}
+          )
+        ) : user ? (
+          <Button
+            onClick={openShare}
+            className="gap-2 bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-400"
+          >
+            <Share2 className="h-4 w-4" />내 분석 공유
+          </Button>
+        ) : (
+          <Button onClick={openShare} variant="outline" className="gap-2">
+            <LogIn className="h-4 w-4" />
+            로그인 후 공유
+          </Button>
+        )}
       </header>
 
       {/* 글 / 분석 피드 탭 */}
@@ -102,7 +130,7 @@ export default function CommunityPage() {
       </div>
 
       {tab === "analyses" ? (
-        <AnalysisFeed />
+        <AnalysisFeed shareOpen={shareOpen} onShareOpenChange={setShareOpen} />
       ) : isPending ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (

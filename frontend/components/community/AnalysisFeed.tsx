@@ -18,7 +18,6 @@ import {
   Folder,
   Loader2,
   Search,
-  Share2,
   ShieldAlert,
   Sparkles,
   User as UserIcon,
@@ -55,10 +54,15 @@ const SEVERITY_TONE: Record<string, string> = {
   low: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200",
 };
 
-export function AnalysisFeed() {
+export function AnalysisFeed({
+  shareOpen,
+  onShareOpenChange,
+}: {
+  shareOpen: boolean;
+  onShareOpenChange: (v: boolean) => void;
+}) {
   const { user } = useAuth();
   const [openId, setOpenId] = useState<string | null>(null);
-  const [shareOpen, setShareOpen] = useState(false);
   const [view, setView] = useState<ViewMode>("latest");
   // 그룹 모드에서 특정 키만 보고 싶을 때 클릭 필터 (null = 전체).
   const [filterKey, setFilterKey] = useState<string | null>(null);
@@ -142,9 +146,10 @@ export function AnalysisFeed() {
     });
   };
 
-  // 헤더 — 로그인 사용자에겐 "내 분석 공유하기" 버튼 노출. 비로그인은 그대로 읽기만.
+  // 헤더 — 보기 모드 설명. "내 분석 공유" 액션은 페이지 상단 헤더 버튼으로 통일
+  // (탭 전환 시 우상단 버튼이 사라지지 않게 — 들썩임 방지).
   const header = (
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-600 dark:text-neutral-500">
+    <div className="mb-3 text-xs text-neutral-600 dark:text-neutral-500">
       <span>
         {view === "latest"
           ? "공개된 분석을 시간 역순으로 보여줍니다."
@@ -154,15 +159,6 @@ export function AnalysisFeed() {
               : "취약점 유형별 그룹 — XSS · SQLi · RCE · 인증 등 한 분석이 여러 유형에 속할 수 있어요."
             : "작성자별 그룹 — 행을 눌러 펼쳐 보세요."}
       </span>
-      {user && (
-        <button
-          type="button"
-          onClick={() => setShareOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-500 dark:bg-violet-500 dark:hover:bg-violet-400"
-        >
-          <Share2 className="h-3.5 w-3.5" />내 분석 공유하기
-        </button>
-      )}
     </div>
   );
 
@@ -298,7 +294,7 @@ export function AnalysisFeed() {
             />
           ))}
         </div>
-        <ShareMyAnalysesModal open={shareOpen} onClose={() => setShareOpen(false)} />
+        <ShareMyAnalysesModal open={shareOpen} onClose={() => onShareOpenChange(false)} />
       </>
     );
   }
@@ -311,7 +307,7 @@ export function AnalysisFeed() {
           title="분석 피드를 불러오지 못했습니다"
           message="잠시 후 다시 시도해 주세요."
         />
-        <ShareMyAnalysesModal open={shareOpen} onClose={() => setShareOpen(false)} />
+        <ShareMyAnalysesModal open={shareOpen} onClose={() => onShareOpenChange(false)} />
       </>
     );
   }
@@ -332,7 +328,7 @@ export function AnalysisFeed() {
             {user ? "위의 \"내 분석 공유하기\" 버튼" : "로그인 후 공유 버튼"}으로 골라 공개할 수 있어요.
           </p>
         </div>
-        <ShareMyAnalysesModal open={shareOpen} onClose={() => setShareOpen(false)} />
+        <ShareMyAnalysesModal open={shareOpen} onClose={() => onShareOpenChange(false)} />
       </>
     );
   }
@@ -470,7 +466,7 @@ export function AnalysisFeed() {
         summary={list.data.items.find((a) => a.id === openId) ?? null}
         onClose={() => setOpenId(null)}
       />
-      <ShareMyAnalysesModal open={shareOpen} onClose={() => setShareOpen(false)} />
+      <ShareMyAnalysesModal open={shareOpen} onClose={() => onShareOpenChange(false)} />
     </>
   );
 }
