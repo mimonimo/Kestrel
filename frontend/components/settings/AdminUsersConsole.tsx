@@ -6,10 +6,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   Clock,
+  Download,
   Globe,
   LogIn,
   ScrollText,
   Loader2,
+  Search,
   Trash2,
   Users as UsersIcon,
   X,
@@ -26,6 +28,104 @@ async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { credentials: "include", cache: "no-store" });
   if (!res.ok) throw new ApiError(res.status, `불러오지 못했습니다 (${res.status})`);
   return res.json();
+}
+
+// ─── 로그 공용: 기간 필터 + CSV 내보내기 ─────────────────
+type Period = "all" | "1d" | "7d" | "30d";
+const PERIODS: { v: Period; l: string }[] = [
+  { v: "all", l: "전체" },
+  { v: "1d", l: "오늘" },
+  { v: "7d", l: "7일" },
+  { v: "30d", l: "30일" },
+];
+function periodCutoffMs(p: Period): number {
+  if (p === "all") return 0;
+  const days = p === "1d" ? 1 : p === "7d" ? 7 : 30;
+  return Date.now() - days * 86_400_000;
+}
+function downloadCsv(filename: string, rows: (string | number | null | undefined)[][]): void {
+  const esc = (c: string | number | null | undefined) =>
+    `"${String(c ?? "").replace(/"/g, '""')}"`;
+  const body = rows.map((r) => r.map(esc).join(",")).join("\r\n");
+  // BOM 으로 Excel 한글 깨짐 방지.
+  const blob = new Blob(["\uFEFF" + body], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// 공용 로그 툴바 — 검색 + 기간 토글 + 건수 + CSV. category 필터칩은 children.
+function LogToolbar({
+  search,
+  onSearch,
+  period,
+  onPeriod,
+  count,
+  onCsv,
+  placeholder,
+  children,
+}: {
+  search: string;
+  onSearch: (v: string) => void;
+  period: Period;
+  onPeriod: (p: Period) => void;
+  count: number;
+  onCsv: () => void;
+  placeholder: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[180px] flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-500" />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder={placeholder}
+            className="block w-full rounded-full border border-neutral-300 bg-white py-1.5 pl-8 pr-3 text-xs text-neutral-900 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100 dark:focus:ring-sky-500/30"
+          />
+        </div>
+        <div className="inline-flex shrink-0 overflow-hidden rounded-full border border-neutral-300 text-[11px] dark:border-neutral-700">
+          {PERIODS.map((p) => (
+            <button
+              key={p.v}
+              type="button"
+              onClick={() => onPeriod(p.v)}
+              className={cn(
+                "px-2 py-1 transition-colors",
+                period === p.v
+                  ? "bg-sky-100 font-medium text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"
+                  : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-surface-3",
+              )}
+            >
+              {p.l}
+            </button>
+          ))}
+        </div>
+        <span className="shrink-0 text-[11px] tabular-nums text-neutral-600 dark:text-neutral-400">
+          {count.toLocaleString("ko-KR")}건
+        </span>
+        <button
+          type="button"
+          onClick={onCsv}
+          disabled={count === 0}
+          title="현재 표시된 로그를 CSV 로 내보내기"
+          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-neutral-300 px-2.5 py-1 text-[11px] font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-surface-3"
+        >
+          <Download className="h-3 w-3" />
+          CSV
+        </button>
+      </div>
+      {children && <div className="flex flex-wrap gap-1.5">{children}</div>}
+    </div>
+  );
 }
 
 type Which = "users" | "access" | "activity" | "audit";
@@ -62,7 +162,7 @@ export function AdminUsersConsole() {
           );
         })}
       </div>
-      {open && <ConsoleModal which={open} onClose={() => setOpen(null)} />}
+      {open && <ConsoleModal initial={open} onClose={() => setOpen(null)} />}
     </div>
   );
 }
@@ -226,8 +326,9 @@ function StatCard({ label, value, tint }: { label: string; value: number; tint: 
 }
 
 // ─── 모달 ────────────────────────────────────────────────
-function ConsoleModal({ which, onClose }: { which: Which; onClose: () => void }) {
-  const { label, icon: Icon } = META[which];
+function ConsoleModal({ initial, onClose }: { initial: Which; onClose: () => void }) {
+  const [tab, setTab] = useState<Which>(initial);
+  const { label } = META[tab];
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
@@ -252,23 +353,50 @@ function ConsoleModal({ which, onClose }: { which: Which; onClose: () => void })
         className="relative flex max-h-[88vh] w-full max-w-4xl flex-col rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/20 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/50 animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex shrink-0 items-center gap-2 border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
-          <Icon className="h-4 w-4 text-sky-700 dark:text-sky-300" />
-          <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{label}</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="닫기"
-            className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
-          >
-            <X className="h-4 w-4" />
-          </button>
+        <header className="shrink-0 border-b border-neutral-200 dark:border-neutral-800">
+          <div className="flex items-center gap-2 px-5 pt-4">
+            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              이용자 조회 및 감사
+            </h3>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="닫기"
+              className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {/* 탭 — 모달을 닫지 않고 이용자/접속/활동/감사 를 즉시 전환 */}
+          <div className="flex gap-0.5 overflow-x-auto px-3 pb-px [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {(Object.keys(META) as Which[]).map((w) => {
+              const { label: l, icon: TabIcon } = META[w];
+              const active = tab === w;
+              return (
+                <button
+                  key={w}
+                  type="button"
+                  onClick={() => setTab(w)}
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium transition-colors",
+                    active
+                      ? "border-sky-500 text-sky-700 dark:border-sky-400 dark:text-sky-300"
+                      : "border-transparent text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
+                  )}
+                  aria-pressed={active}
+                >
+                  <TabIcon className="h-3.5 w-3.5" />
+                  {l}
+                </button>
+              );
+            })}
+          </div>
         </header>
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          {which === "users" && <UserManagementPanel />}
-          {which === "access" && <AccessFeed />}
-          {which === "activity" && <ActivityFeed />}
-          {which === "audit" && <AuditFeed />}
+          {tab === "users" && <UserManagementPanel />}
+          {tab === "access" && <AccessFeed />}
+          {tab === "activity" && <ActivityFeed />}
+          {tab === "audit" && <AuditFeed />}
         </div>
       </div>
     </div>,
@@ -317,6 +445,8 @@ function AccessFeed() {
   const qc = useQueryClient();
   const [who, setWho] = useState<"member" | "anon">("member");
   const [drill, setDrill] = useState<Drill | null>(null);
+  const [search, setSearch] = useState("");
+  const [period, setPeriod] = useState<Period>("all");
 
   const summaryQ = useQuery({
     queryKey: ["admin-access-summary", who],
@@ -367,8 +497,48 @@ function AccessFeed() {
     qc.invalidateQueries({ queryKey: ["admin-access-drill"] });
   };
 
-  const summary = summaryQ.data?.items ?? [];
-  const drillItems = drillQ.data?.items ?? [];
+  const allSummary = summaryQ.data?.items ?? [];
+  const allDrill = drillQ.data?.items ?? [];
+  const cutoff = periodCutoffMs(period);
+  const ql = search.trim().toLowerCase();
+  const summary = allSummary.filter((s) => {
+    if (cutoff && s.lastAt > 0 && s.lastAt * 1000 < cutoff) return false;
+    if (ql && !`${s.label} ${s.topPath ?? ""} ${s.browserName ?? ""} ${s.osName ?? ""}`.toLowerCase().includes(ql))
+      return false;
+    return true;
+  });
+  const drillItems = allDrill.filter((l) => {
+    if (cutoff && l.createdAt * 1000 < cutoff) return false;
+    if (ql && !`${l.method} ${l.status} ${l.path} ${l.ip ?? ""}`.toLowerCase().includes(ql)) return false;
+    return true;
+  });
+  const exportCsv = () => {
+    const stamp = new Date().toISOString().slice(0, 10);
+    if (drill) {
+      downloadCsv(`access-${drill.kind}-${stamp}.csv`, [
+        ["method", "status", "path", "ip", "시각"],
+        ...drillItems.map((l) => [
+          l.method,
+          l.status,
+          l.path,
+          l.ip ?? "",
+          new Date(l.createdAt * 1000).toISOString(),
+        ]),
+      ]);
+    } else {
+      downloadCsv(`access-summary-${who}-${stamp}.csv`, [
+        ["대상", "요청수", "경로수", "기기", "브라우저", "최근요청"],
+        ...summary.map((s) => [
+          s.label,
+          s.requestCount,
+          s.distinctPaths,
+          s.deviceKind ?? "",
+          s.browserName ?? "",
+          s.lastAt > 0 ? new Date(s.lastAt * 1000).toISOString() : "",
+        ]),
+      ]);
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -410,6 +580,16 @@ function AccessFeed() {
           {drill ? (drill.kind === "ip" ? "이 IP 로그 비우기" : "이 회원 로그 비우기") : "로그 비우기"}
         </button>
       </div>
+
+      <LogToolbar
+        search={search}
+        onSearch={setSearch}
+        period={period}
+        onPeriod={setPeriod}
+        count={drill ? drillItems.length : summary.length}
+        onCsv={exportCsv}
+        placeholder={drill ? "경로·IP·메서드로 검색" : "대상·경로·브라우저로 검색"}
+      />
 
       {/* 드릴다운: 특정 회원/IP 의 요청 기록 */}
       {drill ? (
@@ -506,15 +686,40 @@ const ACTIVITY_FILTERS = [
 
 function ActivityFeed() {
   const [kind, setKind] = useState("");
+  const [search, setSearch] = useState("");
+  const [period, setPeriod] = useState<Period>("all");
+  const [limit, setLimit] = useState(150);
   const q = useQuery({
-    queryKey: ["admin-activity-logs", kind],
-    queryFn: () => getJSON<{ items: ActivityLog[] }>(`/admin/activity-logs?limit=150${kind ? `&kind=${kind}` : ""}`),
+    queryKey: ["admin-activity-logs", kind, limit],
+    queryFn: () => getJSON<{ items: ActivityLog[] }>(`/admin/activity-logs?limit=${limit}${kind ? `&kind=${kind}` : ""}`),
     staleTime: 15_000,
   });
-  const items = q.data?.items ?? [];
+  const all = q.data?.items ?? [];
+  const cutoff = periodCutoffMs(period);
+  const ql = search.trim().toLowerCase();
+  const items = all.filter((a) => {
+    if (cutoff && new Date(a.createdAt).getTime() < cutoff) return false;
+    if (ql && !`${a.kindLabel} ${a.actorLabel ?? ""} ${a.ref ?? ""}`.toLowerCase().includes(ql))
+      return false;
+    return true;
+  });
+  const canMore = all.length >= limit && limit < 300;
+  const exportCsv = () =>
+    downloadCsv(`activity-logs-${new Date().toISOString().slice(0, 10)}.csv`, [
+      ["유형", "사용자", "대상", "시각"],
+      ...items.map((a) => [a.kindLabel, a.actorLabel ?? "", a.ref ?? "", a.createdAt]),
+    ]);
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-1.5">
+      <LogToolbar
+        search={search}
+        onSearch={setSearch}
+        period={period}
+        onPeriod={setPeriod}
+        count={items.length}
+        onCsv={exportCsv}
+        placeholder="사용자·대상·유형으로 검색"
+      >
         {ACTIVITY_FILTERS.map((f) => (
           <button
             key={f.value}
@@ -530,22 +735,33 @@ function ActivityFeed() {
             {f.label}
           </button>
         ))}
-      </div>
+      </LogToolbar>
       <FeedState q={q} empty={items.length === 0} />
       {!q.isPending && !q.isError && items.length > 0 && (
-        <ul className="space-y-1.5">
-          {items.map((a, i) => (
-            <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800">
-              <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", activityTone(a.kind))}>{a.kindLabel}</span>
-              <span className="font-medium text-neutral-800 dark:text-neutral-200">{a.actorLabel || "(삭제된 사용자)"}</span>
-              {a.ref && <span className="min-w-0 truncate text-neutral-600 dark:text-neutral-400">{a.ref}</span>}
-              <span className="ml-auto inline-flex shrink-0 items-center gap-1 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">
-                <Clock className="h-2.5 w-2.5" />
-                {formatRelativeKo(a.createdAt)}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-1.5">
+            {items.map((a, i) => (
+              <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800">
+                <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", activityTone(a.kind))}>{a.kindLabel}</span>
+                <span className="font-medium text-neutral-800 dark:text-neutral-200">{a.actorLabel || "(삭제된 사용자)"}</span>
+                {a.ref && <span className="min-w-0 truncate text-neutral-600 dark:text-neutral-400">{a.ref}</span>}
+                <span className="ml-auto inline-flex shrink-0 items-center gap-1 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">
+                  <Clock className="h-2.5 w-2.5" />
+                  {formatRelativeKo(a.createdAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {canMore && (
+            <button
+              type="button"
+              onClick={() => setLimit((l) => Math.min(300, l + 150))}
+              className="mx-auto block rounded-full border border-neutral-300 px-3 py-1 text-[11px] text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-surface-3"
+            >
+              더 보기
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -575,17 +791,34 @@ function auditTone(action: string): string {
 
 function AuditFeed() {
   const [action, setAction] = useState("");
+  const [search, setSearch] = useState("");
+  const [period, setPeriod] = useState<Period>("all");
+  const [limit, setLimit] = useState(150);
   const actionsQ = useQuery({
     queryKey: ["admin-audit-actions"],
     queryFn: () => getJSON<{ actions: Record<string, string> }>("/admin/audit/actions"),
     staleTime: 5 * 60_000,
   });
   const q = useQuery({
-    queryKey: ["admin-audit-logs", action],
-    queryFn: () => getJSON<{ items: AuditLog[] }>(`/admin/audit/logs?limit=150${action ? `&action=${action}` : ""}`),
+    queryKey: ["admin-audit-logs", action, limit],
+    queryFn: () => getJSON<{ items: AuditLog[] }>(`/admin/audit/logs?limit=${limit}${action ? `&action=${action}` : ""}`),
     staleTime: 15_000,
   });
-  const items = q.data?.items ?? [];
+  const all = q.data?.items ?? [];
+  const cutoff = periodCutoffMs(period);
+  const ql = search.trim().toLowerCase();
+  const items = all.filter((l) => {
+    if (cutoff && new Date(l.createdAt).getTime() < cutoff) return false;
+    if (
+      ql &&
+      !`${l.actionLabel ?? l.action} ${l.actorLabel ?? ""} ${l.target ?? ""} ${l.detail ?? ""} ${l.ip ?? ""}`
+        .toLowerCase()
+        .includes(ql)
+    )
+      return false;
+    return true;
+  });
+  const canMore = all.length >= limit && limit < 200;
   const actionMap = actionsQ.data?.actions ?? {};
   // 필터 버튼 — 역할 변경/사용자 삭제는 제외(운영상 드물어 노이즈).
   const HIDDEN = new Set(["user.role_change", "user.delete"]);
@@ -595,9 +828,29 @@ function AuditFeed() {
       .filter(([code]) => !HIDDEN.has(code))
       .map(([value, label]) => ({ value, label })),
   ];
+  const exportCsv = () =>
+    downloadCsv(`audit-logs-${new Date().toISOString().slice(0, 10)}.csv`, [
+      ["액션", "행위자", "대상", "상세", "IP", "시각"],
+      ...items.map((l) => [
+        l.actionLabel || l.action,
+        l.actorLabel ?? "",
+        l.target ?? "",
+        l.detail ?? "",
+        l.ip ?? "",
+        l.createdAt,
+      ]),
+    ]);
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-1.5">
+      <LogToolbar
+        search={search}
+        onSearch={setSearch}
+        period={period}
+        onPeriod={setPeriod}
+        count={items.length}
+        onCsv={exportCsv}
+        placeholder="행위자·대상·상세·IP·액션으로 검색"
+      >
         {filterOptions.map((f) => (
           <button
             key={f.value}
@@ -613,24 +866,35 @@ function AuditFeed() {
             {f.label}
           </button>
         ))}
-      </div>
+      </LogToolbar>
       <FeedState q={q} empty={items.length === 0} />
       {!q.isPending && !q.isError && items.length > 0 && (
-        <ul className="space-y-1.5">
-          {items.map((l) => (
-            <li key={l.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800">
-              <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", auditTone(l.action))}>{l.actionLabel || l.action}</span>
-              {l.actorLabel && <span className="font-medium text-neutral-800 dark:text-neutral-200">{l.actorLabel}</span>}
-              {l.target && <span className="text-neutral-600 dark:text-neutral-400">→ {l.target}</span>}
-              {l.detail && <span className="text-neutral-500 dark:text-neutral-500">({l.detail})</span>}
-              {l.ip && <span className="tabular-nums text-neutral-500 dark:text-neutral-500">{l.ip}</span>}
-              <span className="ml-auto inline-flex shrink-0 items-center gap-1 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">
-                <Clock className="h-2.5 w-2.5" />
-                {formatRelativeKo(l.createdAt)}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-1.5">
+            {items.map((l) => (
+              <li key={l.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800">
+                <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", auditTone(l.action))}>{l.actionLabel || l.action}</span>
+                {l.actorLabel && <span className="font-medium text-neutral-800 dark:text-neutral-200">{l.actorLabel}</span>}
+                {l.target && <span className="text-neutral-600 dark:text-neutral-400">→ {l.target}</span>}
+                {l.detail && <span className="text-neutral-500 dark:text-neutral-500">({l.detail})</span>}
+                {l.ip && <span className="tabular-nums text-neutral-500 dark:text-neutral-500">{l.ip}</span>}
+                <span className="ml-auto inline-flex shrink-0 items-center gap-1 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">
+                  <Clock className="h-2.5 w-2.5" />
+                  {formatRelativeKo(l.createdAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {canMore && (
+            <button
+              type="button"
+              onClick={() => setLimit((l) => Math.min(200, l + 150))}
+              className="mx-auto block rounded-full border border-neutral-300 px-3 py-1 text-[11px] text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-surface-3"
+            >
+              더 보기
+            </button>
+          )}
+        </>
       )}
     </div>
   );
