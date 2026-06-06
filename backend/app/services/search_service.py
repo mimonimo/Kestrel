@@ -26,6 +26,7 @@ PR-A (Step 10) sort/filter expansion
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import meilisearch
@@ -35,6 +36,10 @@ from app.core.logging import get_logger
 from app.models import Vulnerability
 
 log = get_logger(__name__)
+
+
+# Meili 문서 식별자로 안전한(그리고 검색 대상으로 유효한) CVE id 패턴.
+_VALID_CVE_ID = re.compile(r"^CVE-\d{4}-\d{4,}$")
 
 
 STOP_WORDS = [
@@ -136,7 +141,21 @@ def index_many(vulns: list[Vulnerability]) -> None:
         return
     client = _client()
     index = client.index(get_settings().meili_index)
-    docs = [to_document(v) for v in vulns]
+    # Meili 문서 식별자는 영숫자/하이픈/언더스코어만 허용 — cve_id 에 en-dash 나
+    # 공백/콜론 같은 오염 문자가 있으면 *배치 전체*(500건) 색인이 실패한다.
+    # 정규 CVE 형식이 아닌 문서는 건너뛰어, 한 건의 불량 id 가 배치를 오염시키지
+    # 않게 한다(검색 색인 누락 방지).
+    docs = []
+    skipped = 0
+    for v in vulns:
+        if not _VALID_CVE_ID.match(v.cve_id or ""):
+            skipped += 1
+            continue
+        docs.append(to_document(v))
+    if skipped:
+        log.warning("meili.skipped_invalid_cve_id", count=skipped)
+    if not docs:
+        return
     task = index.add_documents(docs)
     log.info("meili.indexed", count=len(docs), task=task.task_uid)
 
