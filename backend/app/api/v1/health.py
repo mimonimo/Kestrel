@@ -15,6 +15,7 @@ actually rolled new code into the container.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import datetime, timezone
 
@@ -75,7 +76,13 @@ async def status(db: AsyncSession = Depends(get_db)) -> StatusReport:
     redis_ok = False
     try:
         redis = await get_redis()
-        redis_ok = bool(await redis.ping())
+        try:
+            redis_ok = bool(await redis.ping())
+        except Exception:
+            # 부하 순간의 단발 타임아웃으로 redis=false 가 깜박이지 않게 1회 재시도.
+            # (배포/수집 중 박스 포화 시 활동센터 오탐 방지. 지속 장애는 그대로 잡힘.)
+            await asyncio.sleep(0.3)
+            redis_ok = bool(await redis.ping())
     except Exception:
         redis_ok = False
 
