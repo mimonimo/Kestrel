@@ -16,8 +16,9 @@ from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.api.v1.deps import get_current_user
 from app.core.database import get_db
-from app.models import AffectedProduct, OsFamily, Vulnerability
+from app.models import AffectedProduct, OsFamily, User, UserAsset, Vulnerability
 from app.schemas.search import SearchResponse
 from app.schemas.vulnerability import CamelModel, VulnerabilityListItem
 
@@ -303,4 +304,71 @@ async def asset_notifications(
         total=len(rows),
         page=1,
         page_size=req.limit,
+    )
+
+
+# ── 서버 저장 자산 (로그인 사용자) — 알림의 전제 ─────────────────────
+# 비로그인은 종전대로 localStorage + /match 로 동작(알림 없음). 로그인 사용자는
+# 여기에 저장해야 수집 훅이 새 CVE 매칭 시 알림을 보낼 수 있다. (PR 10-FB)
+
+
+class SavedAsset(CamelModel):
+    vendor: str
+    product: str
+
+
+class SavedAssetsResponse(CamelModel):
+    assets: list[SavedAsset]
+
+
+class SaveAssetsRequest(CamelModel):
+    # 전체 집합 교체(PUT 의미) — 프론트의 AssetsManager 가 현재 목록을 통째로 보낸다.
+    assets: list[AssetInput] = Field(default_factory=list, max_length=200)
+
+
+@router.get("/saved", response_model=SavedAssetsResponse, response_model_by_alias=True)
+async def list_saved_assets(
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> SavedAssetsResponse:
+    rows = (
+        await db.execute(
+            select(UserAsset)
+            .where(UserAsset.user_id == user.id)
+            .order_by(UserAsset.vendor, UserAsset.product)
+        )
+    ).scalars().all()
+    return SavedAssetsResponse(
+        assets=[SavedAsset(vendor=r.vendor, product=r.product) for r in rows]
+    )
+
+
+@router.put("/saved", response_model=SavedAssetsResponse, response_model_by_alias=True)
+async def replace_saved_assets(
+    req: SaveAssetsRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SavedAssetsResponse:
+    """로그인 사용자의 저장 자산을 요청 집합으로 교체. 중복(벤더·제품)은 제거."""
+    # 정규화 + 중복 제거.
+    seen: set[tuple[str, str]] = set()
+    cleaned: list[tuple[str, str]] = []
+    for a in req.assets:
+        key = (a.vendor.strip(), a.product.strip())
+        if not key[0] or not key[1] or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(key)
+
+    # 전량 교체 — 기존 행 삭제 후 재삽입(작은 집합이라 단순/안전).
+    existing = (
+        await db.execute(select(UserAsset).where(UserAsset.user_id == user.id))
+    ).scalars().all()
+    for row in existing:
+        await db.delete(row)
+    for vendor, product in cleaned:
+        db.add(UserAsset(user_id=user.id, vendor=vendor, product=product))
+    await db.commit()
+
+    return SavedAssetsResponse(
+        assets=[SavedAsset(vendor=v, product=p) for v, p in cleaned]
     )

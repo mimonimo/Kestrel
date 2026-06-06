@@ -5,6 +5,29 @@ import type { SearchFilters, SearchResponse, StatusReport, Vulnerability } from 
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
+// 자산 매칭 알림 (PR 10-FB)
+export interface NotificationItem {
+  id: number;
+  cveId: string;
+  vendor: string | null;
+  product: string | null;
+  severity: string | null;
+  title: string | null;
+  read: boolean;
+  createdAt: string;
+}
+export interface NotificationsResponse {
+  items: NotificationItem[];
+  unreadCount: number;
+}
+export interface NotificationChannel {
+  id: number;
+  kind: "slack" | "discord";
+  url: string;
+  enabled: boolean;
+  createdAt: string;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -311,6 +334,41 @@ export const api = {
     request<AssetProductsResponse>(
       `/assets/products?vendor=${encodeURIComponent(vendor)}&limit=${limit}`,
     ),
+
+  // 서버 저장 자산 (로그인 사용자) — 알림 매칭의 전제. (PR 10-FB)
+  getSavedAssets: () =>
+    request<{ assets: { vendor: string; product: string }[] }>(`/assets/saved`),
+  putSavedAssets: (assets: { vendor: string; product: string }[]) =>
+    request<{ assets: { vendor: string; product: string }[] }>(`/assets/saved`, {
+      method: "PUT",
+      body: JSON.stringify({ assets }),
+    }),
+
+  // 인앱 알림 피드 (서버 생성).
+  getNotifications: (limit = 50) =>
+    request<NotificationsResponse>(`/notifications?limit=${limit}`),
+  markNotificationsRead: (ids?: number[]) =>
+    request<{ marked: number }>(`/notifications/read`, {
+      method: "POST",
+      body: JSON.stringify({ ids: ids ?? null }),
+    }),
+
+  // 알림 채널 (Slack/Discord 웹훅).
+  listNotificationChannels: () =>
+    request<NotificationChannel[]>(`/notifications/channels`),
+  createNotificationChannel: (kind: "slack" | "discord", url: string) =>
+    request<NotificationChannel>(`/notifications/channels`, {
+      method: "POST",
+      body: JSON.stringify({ kind, url }),
+    }),
+  deleteNotificationChannel: (id: number) =>
+    request<{ deleted: boolean }>(`/notifications/channels/${id}`, {
+      method: "DELETE",
+    }),
+  testNotificationChannel: (id: number) =>
+    request<{ sent: boolean }>(`/notifications/channels/${id}/test`, {
+      method: "POST",
+    }),
 
   listTickets: (status?: TicketStatus) => {
     const params = new URLSearchParams();

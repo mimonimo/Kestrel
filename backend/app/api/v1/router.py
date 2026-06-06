@@ -12,6 +12,7 @@ from app.api.v1 import (
     cves,
     dashboard,
     health,
+    notifications,
     profile,
     resources,
     search,
@@ -30,6 +31,7 @@ api_router.include_router(search.router)
 api_router.include_router(community.router)
 api_router.include_router(admin.router)
 api_router.include_router(assets.router)
+api_router.include_router(notifications.router)
 api_router.include_router(bookmarks.router)
 api_router.include_router(tickets.router)
 api_router.include_router(settings.router)

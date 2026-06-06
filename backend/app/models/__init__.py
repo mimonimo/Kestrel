@@ -5,8 +5,10 @@ from app.models.base import Base
 from app.models.bookmark import Bookmark
 from app.models.community import Comment, Post, PostLike, Tag, User, UserRole, Vote, VoteTarget
 from app.models.login_log import LoginLog
+from app.models.notification import Notification, NotificationChannel
 from app.models.settings import AppSettings
 from app.models.ticket import Ticket, TicketStatus
+from app.models.user_asset import UserAsset
 from app.models.vulnerability import (
     AffectedProduct,
     IngestionLog,
@@ -32,6 +34,8 @@ __all__ = [
     "IngestionLog",
     "OsFamily",
     "LoginLog",
+    "Notification",
+    "NotificationChannel",
     "Post",
     "PostLike",
     "RefType",
@@ -41,6 +45,7 @@ __all__ = [
     "Ticket",
     "TicketStatus",
     "User",
+    "UserAsset",
     "UserRole",
     "Vote",
     "VoteTarget",

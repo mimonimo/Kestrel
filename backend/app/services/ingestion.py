@@ -114,6 +114,9 @@ async def run_parser(parser: BaseParser, full_resync: bool = False) -> dict:
     counts = {"processed": 0, "new": 0, "updated": 0}
     error: str | None = None
     new_or_updated_ids: list[str] = []
+    # 알림은 *신규* CVE 만(갱신 재알림 방지). 전체 백필(full_resync)에서는
+    # 25만 건을 한꺼번에 알림하면 안 되므로 아예 수집하지 않는다.
+    new_ids: list[str] = []
 
     async with SessionLocal() as session:
         log_row = IngestionLog(source=parser.source, started_at=started, status="running")
@@ -131,6 +134,8 @@ async def run_parser(parser: BaseParser, full_resync: bool = False) -> dict:
                 if result == "new":
                     counts["new"] += 1
                     new_or_updated_ids.append(parsed.cve_id)
+                    if not full_resync:
+                        new_ids.append(parsed.cve_id)
                 elif result == "updated":
                     counts["updated"] += 1
                     new_or_updated_ids.append(parsed.cve_id)
@@ -180,6 +185,16 @@ async def run_parser(parser: BaseParser, full_resync: bool = False) -> dict:
             )
             if rows:
                 index_many(list(rows))
+
+    # 자산 매칭 알림 — 증분 실행의 신규 CVE 만(full_resync 면 new_ids 는 비어 있음).
+    # best-effort: 알림 실패가 수집 결과(success)를 뒤집지 않도록 try 로 감싼다.
+    if new_ids:
+        try:
+            from app.services.notifications import notify_new_cves
+
+            await notify_new_cves(new_ids)
+        except Exception:
+            log.exception("ingestion.notify_failed", source=parser.source.value)
 
     log.info("ingestion.done", source=parser.source.value, **counts, error=error)
     return {"source": parser.source.value, **counts, "error": error}
