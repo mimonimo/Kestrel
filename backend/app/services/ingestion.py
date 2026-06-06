@@ -152,14 +152,21 @@ async def run_parser(parser: BaseParser, full_resync: bool = False) -> dict:
             await session.merge(log_row)
             await session.commit()
 
-    # Index touched rows into Meilisearch (post-commit so they're visible)
-    if new_or_updated_ids:
+    # Index touched rows into Meilisearch (post-commit so they're visible).
+    # *반드시 청크 단위로* — 전체 백필(NVD ~25만)에서 new_or_updated_ids 를 한
+    # 쿼리의 ``cve_id.in_(...)`` 에 통째로 넣으면 asyncpg 의 단일 쿼리 파라미터
+    # 한도(32767)를 넘겨 InterfaceError 로 색인 단계가 통째로 죽는다(Postgres 적재는
+    # 이미 커밋됐지만 Meili 색인만 누락). 1000개씩 끊어 IN 절·메모리·Meili payload
+    # 를 모두 안전하게 유지한다.
+    CHUNK = 1000
+    for i in range(0, len(new_or_updated_ids), CHUNK):
+        chunk_ids = new_or_updated_ids[i : i + CHUNK]
         async with SessionLocal() as session:
             rows = (
                 (
                     await session.execute(
                         select(Vulnerability)
-                        .where(Vulnerability.cve_id.in_(new_or_updated_ids))
+                        .where(Vulnerability.cve_id.in_(chunk_ids))
                         .options(
                             selectinload(Vulnerability.types),
                             selectinload(Vulnerability.affected_products),
@@ -171,7 +178,8 @@ async def run_parser(parser: BaseParser, full_resync: bool = False) -> dict:
                 .unique()
                 .all()
             )
-            index_many(list(rows))
+            if rows:
+                index_many(list(rows))
 
     log.info("ingestion.done", source=parser.source.value, **counts, error=error)
     return {"source": parser.source.value, **counts, "error": error}
