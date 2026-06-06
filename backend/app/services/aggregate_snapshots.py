@@ -21,15 +21,24 @@ log = get_logger(__name__)
 
 # 스냅샷 Redis 키 (스키마 변경 시 vN 올려 무효화).
 SNAP_FACETS = "kestrel:snap:facets:v1"
-SNAP_INSIGHTS = "kestrel:snap:insights:v1"
 SNAP_PRIORITIES = "kestrel:snap:priorities:v1"
+
+
+def insights_snap_key(days: int) -> str:
+    """대시보드 insights 는 기간 토글(7/30/90일)마다 별도 캐시."""
+    return f"kestrel:snap:insights:v1:{days}"
+
 
 # 안전 만료 — 스케줄러가 10분마다 갱신하지만, 스케줄러가 죽어도 1시간 뒤
 # 스냅샷이 사라져 라이브 경로(최신값)로 폴백하도록 한다.
 _SNAPSHOT_TTL = 3600
 
 # 프론트가 실제 보내는 기본 파라미터 — 이 형태만 스냅샷으로 캐싱.
-INSIGHTS_DEFAULTS = {"days": 30, "vendor_limit": 10, "recent_limit": 5}
+# CvssBucketsPanel / TimelinePanel 의 기간 토글이 7·30·90일이므로 모두 캐싱한다
+# (안 하면 7/90일이 라이브 집계 → statement_timeout 500).
+INSIGHTS_DAYS = (7, 30, 90)
+INSIGHTS_VENDOR_LIMIT = 10
+INSIGHTS_RECENT_LIMIT = 5
 PRIORITIES_DEFAULT_PER_BUCKET = 5
 
 
@@ -64,13 +73,21 @@ async def refresh_snapshots() -> None:
         except Exception:
             log.exception("snapshot.facets_failed")
 
-        try:
-            insights = await _compute(session, **INSIGHTS_DEFAULTS)
-            await redis.set(
-                SNAP_INSIGHTS, insights.model_dump_json(by_alias=True), ex=_SNAPSHOT_TTL
-            )
-        except Exception:
-            log.exception("snapshot.insights_failed")
+        for days in INSIGHTS_DAYS:
+            try:
+                insights = await _compute(
+                    session,
+                    days=days,
+                    vendor_limit=INSIGHTS_VENDOR_LIMIT,
+                    recent_limit=INSIGHTS_RECENT_LIMIT,
+                )
+                await redis.set(
+                    insights_snap_key(days),
+                    insights.model_dump_json(by_alias=True),
+                    ex=_SNAPSHOT_TTL,
+                )
+            except Exception:
+                log.exception("snapshot.insights_failed", days=days)
 
         try:
             pri = await _compute_priorities(session, per_bucket=PRIORITIES_DEFAULT_PER_BUCKET)

@@ -19,9 +19,10 @@ from app.core.database import get_db
 from app.models import AffectedProduct, Vulnerability
 from app.schemas.vulnerability import CamelModel
 from app.services.aggregate_snapshots import (
-    SNAP_INSIGHTS,
+    INSIGHTS_DAYS,
     SNAP_PRIORITIES,
     get_snapshot,
+    insights_snap_key,
 )
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -202,9 +203,9 @@ async def dashboard_insights(
     recent_limit: int = Query(default=5, ge=1, le=20),
 ) -> InsightsResponse:
     """Bundled dashboard metrics with a short TTL cache."""
-    # 기본 파라미터(프론트 대시보드 첫 로드)는 미리 계산된 스냅샷을 즉시 반환.
-    if days == 30 and vendor_limit == 10 and recent_limit == 5:
-        raw = await get_snapshot(SNAP_INSIGHTS)
+    # 기본 파라미터(프론트 대시보드 토글: 7/30/90일)는 미리 계산된 스냅샷 즉시 반환.
+    if vendor_limit == 10 and recent_limit == 5 and days in INSIGHTS_DAYS:
+        raw = await get_snapshot(insights_snap_key(days))
         if raw:
             try:
                 return InsightsResponse.model_validate_json(raw)
