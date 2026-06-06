@@ -32,7 +32,32 @@ _SKIP_PREFIXES = (
     "/api/v1/stats/visitors",
     "/api/v1/healthz",
     "/healthz",
+    "/api/v1/health",
+    "/health",
+    "/api/v1/status",
+    "/status",
 )
+
+# 내부망/루프백 — 헬스체크·SSR·컨테이너 간 호출 출처. 사용자 접속이 아님.
+_HEALTH_PATHS = _SKIP_PREFIXES
+
+
+def _is_internal_ip(ip: str | None) -> bool:
+    """루프백·사설 대역(컨테이너 브리지 172.x, 10.x, 192.168.x)·미상은 내부로 간주."""
+    if not ip:
+        return True
+    import ipaddress
+
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip == "localhost"
+    return addr.is_loopback or addr.is_private
+
+
+def _is_noise(rec: dict) -> bool:
+    path = rec.get("path") or ""
+    return _is_internal_ip(rec.get("ip")) or any(path.startswith(h) for h in _HEALTH_PATHS)
 
 
 def _uid_from_cookie(request: Request) -> str | None:
@@ -47,6 +72,11 @@ async def record_request(request: Request, status: int, duration_ms: float) -> N
     """미들웨어에서 호출 — best-effort, 실패해도 요청 흐름에 영향 없음."""
     path = request.url.path
     if request.method == "OPTIONS" or any(path.startswith(p) for p in _SKIP_PREFIXES):
+        return
+    # 내부 트래픽(헬스체크·SSR·컨테이너 간 호출)은 Caddy 를 거치지 않아
+    # X-Forwarded-For / X-Real-IP 헤더가 없다. 외부 사용자는 반드시 Caddy 를
+    # 경유하므로 두 헤더가 모두 없으면 사용자 접속이 아님 → 기록 제외.
+    if not request.headers.get("x-forwarded-for") and not request.headers.get("x-real-ip"):
         return
     try:
         entry = json.dumps(
@@ -89,21 +119,37 @@ async def _filter_list(redis, key: str, keep_pred) -> None:
     await pipe.execute()
 
 
-async def clear(*, ip: str | None = None, uid: str | None = None) -> None:
-    """접속 로그 삭제. ip/uid 지정 시 해당 항목만, 미지정 시 전체 삭제."""
+async def clear(
+    *,
+    ips: list[str] | None = None,
+    uids: list[str] | None = None,
+    noise: bool = False,
+) -> None:
+    """접속 로그 삭제.
+
+    - noise=True: 내부/헬스체크 등 노이즈 항목만 제거(기존 적재분 정리).
+    - ips/uids 지정: 해당 IP·회원 항목만 제거(다중 선택 가능).
+    - 모두 미지정: 전체 삭제.
+    """
     redis = await get_redis()
-    if not ip and not uid:
+    if noise:
+        await _filter_list(redis, _KEY, lambda r: not _is_noise(r))
+        await _filter_list(redis, "visitors:anon:log", lambda r: not _is_internal_ip(r.get("ip")))
+        return
+    ipset = {i for i in (ips or []) if i}
+    uidset = {u for u in (uids or []) if u}
+    if not ipset and not uidset:
         await redis.delete(_KEY, "visitors:anon:log")
         return
     # 부분 삭제 — 조건에 맞는 항목만 제외하고 재작성.
     await _filter_list(
         redis,
         _KEY,
-        lambda r: not ((ip and r.get("ip") == ip) or (uid and r.get("uid") == uid)),
+        lambda r: not (r.get("ip") in ipset or r.get("uid") in uidset),
     )
-    if ip:
+    if ipset:
         # 비회원 방문 로그도 같은 IP 제외.
-        await _filter_list(redis, "visitors:anon:log", lambda r: r.get("ip") != ip)
+        await _filter_list(redis, "visitors:anon:log", lambda r: r.get("ip") not in ipset)
 
 
 async def read_recent(limit: int) -> list[dict]:

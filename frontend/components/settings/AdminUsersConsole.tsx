@@ -447,6 +447,9 @@ function AccessFeed() {
   const [drill, setDrill] = useState<Drill | null>(null);
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState<Period>("all");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // 뷰 전환 시 선택 초기화 — 회원=uid / 비회원=ip 로 키 의미가 달라짐.
+  useEffect(() => setSelected(new Set()), [who, drill]);
 
   const summaryQ = useQuery({
     queryKey: ["admin-access-summary", who],
@@ -493,6 +496,32 @@ function AccessFeed() {
       method: "DELETE",
       credentials: "include",
     });
+    qc.invalidateQueries({ queryKey: ["admin-access-summary"] });
+    qc.invalidateQueries({ queryKey: ["admin-access-drill"] });
+  };
+
+  const selField = who === "member" ? "uid" : "ip";
+  const selKeyOf = (s: AccessSummary) => (who === "member" ? s.userId || "" : s.ip);
+  const toggleSel = (k: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  const deleteSelected = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`선택한 ${selected.size}건의 접속 로그를 삭제할까요? 되돌릴 수 없습니다.`)) return;
+    const p = new URLSearchParams();
+    selected.forEach((k) => k && p.append(selField, k));
+    await fetch(`${BASE}/admin/access-logs?${p.toString()}`, { method: "DELETE", credentials: "include" });
+    setSelected(new Set());
+    qc.invalidateQueries({ queryKey: ["admin-access-summary"] });
+    qc.invalidateQueries({ queryKey: ["admin-access-drill"] });
+  };
+  const purgeNoise = async () => {
+    if (!confirm("내부 호출·헬스체크 등 노이즈 로그를 정리할까요?")) return;
+    await fetch(`${BASE}/admin/access-logs?noise=true`, { method: "DELETE", credentials: "include" });
     qc.invalidateQueries({ queryKey: ["admin-access-summary"] });
     qc.invalidateQueries({ queryKey: ["admin-access-drill"] });
   };
@@ -571,14 +600,37 @@ function AccessFeed() {
             ← 목록 · <span className="font-mono text-neutral-700 dark:text-neutral-300">{drill.label}</span>
           </button>
         )}
-        <button
-          type="button"
-          onClick={clearLogs}
-          className="ml-auto inline-flex items-center gap-1 rounded-full border border-red-300 px-2.5 py-0.5 text-[11px] font-medium text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/40"
-        >
-          <Trash2 className="h-3 w-3" />
-          {drill ? (drill.kind === "ip" ? "이 IP 로그 비우기" : "이 회원 로그 비우기") : "로그 비우기"}
-        </button>
+        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          {!drill && (
+            <button
+              type="button"
+              onClick={purgeNoise}
+              title="내부 호출·헬스체크 등 의미 없는 로그를 정리"
+              className="inline-flex items-center gap-1 rounded-full border border-neutral-300 px-2.5 py-0.5 text-[11px] font-medium text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-surface-3"
+            >
+              <Trash2 className="h-3 w-3" />
+              노이즈 정리
+            </button>
+          )}
+          {!drill && selected.size > 0 && (
+            <button
+              type="button"
+              onClick={deleteSelected}
+              className="inline-flex items-center gap-1 rounded-full border border-red-300 bg-red-50 px-2.5 py-0.5 text-[11px] font-medium text-red-700 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+            >
+              <Trash2 className="h-3 w-3" />
+              선택 삭제 ({selected.size})
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={clearLogs}
+            className="inline-flex items-center gap-1 rounded-full border border-red-300 px-2.5 py-0.5 text-[11px] font-medium text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/40"
+          >
+            <Trash2 className="h-3 w-3" />
+            {drill ? (drill.kind === "ip" ? "이 IP 로그 비우기" : "이 회원 로그 비우기") : "로그 비우기"}
+          </button>
+        </div>
       </div>
 
       <LogToolbar
@@ -620,7 +672,14 @@ function AccessFeed() {
           {!summaryQ.isPending && !summaryQ.isError && summary.length > 0 && (
             <ul className="space-y-1.5">
               {summary.map((s) => (
-                <li key={s.userId || s.ip}>
+                <li key={s.userId || s.ip} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(selKeyOf(s))}
+                    onChange={() => toggleSel(selKeyOf(s))}
+                    aria-label="선택"
+                    className="h-3.5 w-3.5 shrink-0 rounded border-neutral-300 text-sky-600 focus:ring-sky-500 dark:border-neutral-600 dark:bg-surface-2"
+                  />
                   <button
                     type="button"
                     onClick={() =>

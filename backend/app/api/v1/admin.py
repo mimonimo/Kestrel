@@ -778,20 +778,32 @@ async def access_summary(
 @router.delete("/access-logs", status_code=204)
 async def clear_access_logs(
     request: Request,
-    ip: str | None = Query(default=None),
-    uid: str | None = Query(default=None),
+    ip: list[str] | None = Query(default=None),
+    uid: list[str] | None = Query(default=None),
+    noise: bool = Query(default=False),
     me=Depends(require_admin),
 ) -> None:
-    """접속 로그 비우기. ip/uid 지정 시 해당 출처/회원 로그만, 미지정 시 전체.
-    감사 로그에 기록(별도 commit)."""
+    """접속 로그 비우기.
+
+    - ``noise=true``: 내부/헬스체크 등 노이즈 항목만 정리.
+    - ``ip``/``uid`` (다중 가능): 해당 출처/회원 로그만 선택 삭제.
+    - 미지정: 전체 삭제. 감사 로그에 기록(별도 commit)."""
     from app.core.access_log import clear as _clear
 
-    await _clear(ip=ip, uid=uid)
-    detail = (
-        f"IP {ip} 로그 삭제" if ip
-        else f"회원 {uid} 로그 삭제" if uid
-        else "전체 접속 로그 삭제"
-    )
+    ips = [i for i in (ip or []) if i]
+    uids = [u for u in (uid or []) if u]
+    await _clear(ips=ips, uids=uids, noise=noise)
+    if noise:
+        detail = "노이즈(내부/헬스체크) 로그 정리"
+    elif ips or uids:
+        parts = []
+        if ips:
+            parts.append(f"IP {len(ips)}건")
+        if uids:
+            parts.append(f"회원 {len(uids)}건")
+        detail = f"선택 삭제 — {', '.join(parts)}"
+    else:
+        detail = "전체 접속 로그 삭제"
     async with SessionLocal() as _db:  # type: ignore[misc]
         await record_audit(
             _db, action="access_logs.clear", actor=me, request=request, detail=detail,
