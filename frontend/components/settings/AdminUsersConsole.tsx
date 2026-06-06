@@ -142,26 +142,26 @@ export function AdminUsersConsole() {
   return (
     <div className="space-y-6">
       <Overview />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {(Object.keys(META) as Which[]).map((w) => {
-          const { label, icon: Icon } = META[w];
-          return (
-            <button
-              key={w}
-              type="button"
-              onClick={() => setOpen(w)}
-              className="group flex items-center gap-2.5 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-left transition-colors hover:border-sky-400 hover:bg-sky-50/40 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-sky-500/40 dark:hover:bg-surface-2"
-            >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-500/15 text-sky-700 ring-1 ring-sky-500/30 dark:text-sky-300">
-                <Icon className="h-4 w-4" />
-              </div>
-              <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                {label}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <button
+        type="button"
+        onClick={() => setOpen("users")}
+        className="group flex w-full items-center gap-3 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-left transition-colors hover:border-sky-400 hover:bg-sky-50/40 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-sky-500/40 dark:hover:bg-surface-2"
+      >
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-500/15 text-sky-700 ring-1 ring-sky-500/30 dark:text-sky-300">
+          <UsersIcon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+            이용자 조회 및 감사 열기
+          </p>
+          <p className="text-[11px] text-neutral-500 dark:text-neutral-500">
+            이용자 · 접속 로그 · 활동 로그 · 감사 로그 (한 창에서 탭 전환)
+          </p>
+        </div>
+        <span className="ml-auto shrink-0 text-xs text-neutral-400 transition-colors group-hover:text-sky-600 dark:group-hover:text-sky-300">
+          열기 →
+        </span>
+      </button>
       {open && <ConsoleModal initial={open} onClose={() => setOpen(null)} />}
     </div>
   );
