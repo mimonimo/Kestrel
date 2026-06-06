@@ -49,6 +49,10 @@ RANKING_RULES = [
     "typo",
     "attribute",
     "proximity",
+    # ``sort`` 규칙이 있어야 쿼리 타임 sort 파라미터(publishedAt/severity/cvss
+    # 정렬)를 쓸 수 있다. 빠지면 Meili 가 invalid_search_sort 로 모든 정렬 검색을
+    # 거부 → 백엔드가 매번 느린 Postgres 폴백으로 떨어진다(취약점 조회 지연/실패).
+    "sort",
     "exactness",
     "publishedAt:desc",
 ]
