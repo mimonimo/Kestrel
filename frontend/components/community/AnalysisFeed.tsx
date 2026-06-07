@@ -29,6 +29,7 @@ import { api, type AnalysisSummary } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { ErrorBox } from "@/components/ui/feedback-box";
 import { ShareMyAnalysesModal } from "@/components/community/ShareMyAnalysesModal";
+import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { formatRelativeKo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -500,19 +501,19 @@ function AnalysisDetailModal({
       }}
     >
       <div
-        className="relative w-full max-w-3xl rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/20 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/50 animate-in zoom-in-95 duration-150"
+        className="relative flex max-h-[88vh] w-full max-w-3xl flex-col rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/20 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/50 animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           type="button"
           onClick={onClose}
           aria-label="닫기"
-          className="absolute right-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
+          className="absolute right-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/80 text-neutral-500 backdrop-blur transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:bg-surface-1/80 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
         >
           <X className="h-4 w-4" />
         </button>
 
-        <article className="px-6 py-7">
+        <article className="flex-1 overflow-y-auto px-6 py-7">
           <header className="mb-4 border-b border-neutral-200 pb-4 pr-10 dark:border-neutral-800">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <Link
@@ -552,9 +553,7 @@ function AnalysisDetailModal({
               message="비공개로 전환됐거나 삭제됐을 수 있어요."
             />
           ) : (
-            <div className="prose prose-sm max-w-none whitespace-pre-wrap break-words text-sm leading-relaxed text-neutral-800 dark:prose-invert dark:text-neutral-200">
-              {detail.data?.resultMd}
-            </div>
+            <MarkdownLite source={detail.data?.resultMd ?? ""} />
           )}
         </article>
       </div>
