@@ -2,10 +2,12 @@
 
 import {
   Check,
-  Clock,
   Copy,
   Download,
+  Globe,
+  History,
   Loader2,
+  Lock,
   RotateCcw,
   Send,
   Sparkles,
@@ -14,13 +16,16 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { ApiError, api, type AiAnalysisResponse } from "@/lib/api";
+import { ApiError, api, type AiAnalysisResponse, type AnalysisSummary } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { recordAnalysisFailure, recordAnalysisHistory } from "@/lib/analysis-history";
 import { clearRunning, markRunning, readRunningAnalyses } from "@/lib/analysis-running";
 import { appendQaTurn, clearQaHistory, useQaHistory } from "@/lib/analysis-qa";
 import { clearRunningQa, markRunningQa, readRunningQa } from "@/lib/qa-running";
 import { downloadAnalysisMarkdown } from "@/lib/analysis-report";
+import { formatRelativeKo } from "@/lib/format";
+import { MarkdownLite } from "@/components/ui/markdown-lite";
+import { CopyLinkButton } from "@/components/ui/copy-link-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ErrorBox, FeedbackBoxButton } from "@/components/ui/feedback-box";
@@ -60,17 +65,6 @@ function writeCachedAnalysis(cveId: string, result: AiAnalysisResponse): void {
     // localStorage quota exceeded — silently skip; the in-memory result
     // is still available.
   }
-}
-
-function formatAnalysisAge(epochMs: number): string {
-  const diff = Date.now() - epochMs;
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "방금";
-  if (mins < 60) return `${mins}분 전`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}시간 전`;
-  const days = Math.floor(hours / 24);
-  return `${days}일 전`;
 }
 
 function detectLanguage(source: string): string {
@@ -198,6 +192,29 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
     }
   }, [analyze.data, analyze.error, cveId]);
 
+  // ── 서버 분석 히스토리 (이 CVE 의 저장된 분석들 — 공개 + 본인 비공개) ──
+  // localStorage 캐시만 보던 기존 방식은 다른 기기·다른 사용자·캐시 비움 시
+  // 기록을 못 봤다. 서버에서 직접 목록을 불러와 여러 번 분석한 기록을 관리한다.
+  const historyQ = useQuery({
+    queryKey: ["cve-analyses", cveId],
+    queryFn: () => api.listCveAnalyses(cveId),
+    staleTime: 30_000,
+  });
+  const history: AnalysisSummary[] = historyQ.data?.items ?? [];
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  useEffect(() => setSelectedId(null), [cveId]);
+  // 방금 실행한 결과가 없고 저장된 기록이 있으면 최신 기록을 자동 표시.
+  useEffect(() => {
+    if (selectedId || analyze.data) return;
+    if (history.length > 0) setSelectedId(history[0].id);
+  }, [history, selectedId, analyze.data]);
+  const savedDetailQ = useQuery({
+    queryKey: ["analysis-record", selectedId],
+    queryFn: () => api.getAnalysisRecord(selectedId!),
+    enabled: !!selectedId,
+    staleTime: 60_000,
+  });
+
   const runAnalysis = () => {
     // 로그인 필수 — 비로그인이면 /login 으로 보내고 분석 후 돌아오기.
     if (authLoading) return;
@@ -226,6 +243,9 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
             payloadCount: res.data.payloadExamples.length,
             mitigationCount: res.data.mitigations.length,
           });
+          // 새 기록을 서버 히스토리에 반영 + 방금 결과를 선택 상태로.
+          qc.invalidateQueries({ queryKey: ["cve-analyses", cveId] });
+          if (res.data.analysisId) setSelectedId(res.data.analysisId);
         } else if (res.error) {
           // 분석 실패 — 활동센터에서 빨간 톤으로 표시. 사용자가 페이지를 떠나
           // unmount 된 상태여도 promise 의 then 은 실행되므로 보장.
@@ -260,17 +280,20 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
   // non-null any time the user has either just analyzed OR analyzed
   // this CVE in a previous visit — revisit never falls back to the
   // "분석 요청" form when content is available.
-  const data = analyze.data ?? cached?.result ?? null;
-  const isFromCache = analyze.data == null && cached != null;
+  // 표시 우선순위:
+  //  · 방금 실행한 구조화 결과(showingFresh) → 구조화 뷰 + 후속 Q&A
+  //  · 선택된 저장 기록(viewingSaved) → Markdown 렌더 + 후속 Q&A
+  //  · 둘 다 없으면 요청 CTA
+  const fresh = analyze.data ?? null;
+  const showingFresh = fresh != null && (selectedId == null || selectedId === fresh.analysisId);
+  const viewingSaved = !showingFresh && !!selectedId;
+  const hasContent = showingFresh || viewingSaved;
+  const selectedMeta = history.find((h) => h.id === selectedId) ?? null;
   const error = analyze.error;
   const isKeyMissing = error instanceof ApiError && error.status === 400;
-  // useQuery uses isFetching for in-flight state (isPending is for
-  // first load before any fetch attempt).
   const isRunning = analyze.isFetching;
-  // Surface the global mutation status to the parent QueryClient so
-  // future cross-component features (e.g., AnalysisHistoryButton showing
-  // "분석 중" badge) can read it via qc.getQueryState.
   void qc;
+  void cached;
 
   return (
     <Card>
@@ -280,33 +303,38 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-500">
             AI 심층 분석
           </h2>
-          {isFromCache && cached && (
+          {history.length > 0 && (
             <span
               className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-200"
-              title={`마지막 분석: ${new Date(cached.timestamp).toLocaleString("ko-KR")}`}
+              title={`이 CVE 의 저장된 분석 ${history.length}건`}
             >
-              <Clock className="h-3 w-3" />
-              {formatAnalysisAge(cached.timestamp)} 분석
+              <History className="h-3 w-3" />
+              분석 {history.length}건
             </span>
           )}
         </div>
-        {data && !isRunning && (
+        {hasContent && !isRunning && (
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() =>
-                downloadAnalysisMarkdown({
-                  cveId,
-                  result: data,
-                  qa: [],
-                })
-              }
-              className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
-              title="분석 결과와 Q&A 를 Markdown 으로 내려받기"
-            >
-              <Download className="h-3 w-3" />
-              리포트 다운로드
-            </button>
+            {showingFresh && fresh && (
+              <button
+                type="button"
+                onClick={() =>
+                  downloadAnalysisMarkdown({
+                    cveId,
+                    result: fresh,
+                    qa: [],
+                  })
+                }
+                className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
+                title="분석 결과와 Q&A 를 Markdown 으로 내려받기"
+              >
+                <Download className="h-3 w-3" />
+                리포트 다운로드
+              </button>
+            )}
+            {viewingSaved && selectedId && selectedMeta?.visibility === "public" && (
+              <CopyLinkButton path={`/analyses/${selectedId}`} label="공유" />
+            )}
             {!!user && (
               <button
                 type="button"
@@ -321,7 +349,45 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
         )}
       </CardHeader>
       <CardContent className="space-y-4">
-        {!data && !isRunning && !error && (
+        {/* 분석 히스토리 — 이 CVE 의 저장된 분석들. 칩 클릭으로 전환. */}
+        {history.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-500">
+              <History className="h-3 w-3" />
+              기록
+            </span>
+            {history.map((h) => {
+              const active = selectedId === h.id || (showingFresh && fresh?.analysisId === h.id);
+              return (
+                <button
+                  key={h.id}
+                  type="button"
+                  onClick={() => {
+                    qc.removeQueries({ queryKey: ["ai-analysis", cveId] });
+                    setSelectedId(h.id);
+                  }}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+                    active
+                      ? "border-violet-400 bg-violet-50 text-violet-800 dark:border-violet-500/50 dark:bg-violet-500/15 dark:text-violet-200"
+                      : "border-neutral-300 text-neutral-600 hover:border-violet-300 hover:text-violet-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-violet-200",
+                  )}
+                  title={`${h.author.nickname || h.author.username} · ${h.visibility === "public" ? "공개" : "비공개"}`}
+                >
+                  {h.visibility === "public" ? (
+                    <Globe className="h-2.5 w-2.5" />
+                  ) : (
+                    <Lock className="h-2.5 w-2.5" />
+                  )}
+                  <span className="max-w-[7rem] truncate">{h.author.nickname || h.author.username}</span>
+                  <span className="tabular-nums opacity-70">{formatRelativeKo(h.createdAt)}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {!hasContent && !isRunning && !error && (
           <div className="flex flex-col items-start gap-3">
             <p className="text-sm text-neutral-700 dark:text-neutral-400">
               공격 시나리오 · 재현 가능한 PoC 페이로드 · 즉시 적용 가능한 차단 패치를
@@ -364,23 +430,23 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
           />
         )}
 
-        {data && (
+        {showingFresh && fresh && (
           <div className="space-y-5">
             <section>
               <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-500">
                 공격 기법
               </h3>
               <p className="whitespace-pre-line text-sm leading-relaxed text-neutral-800 dark:text-neutral-200">
-                {data.attackMethod}
+                {fresh.attackMethod}
               </p>
             </section>
 
             <section>
               <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-500">
-                예시 페이로드 ({data.payloadExamples.length}종)
+                예시 페이로드 ({fresh.payloadExamples.length}종)
               </h3>
               <div className="space-y-3">
-                {data.payloadExamples.map((p, i) => (
+                {fresh.payloadExamples.map((p, i) => (
                   <div key={i} className="space-y-1">
                     <div className="text-[11px] font-medium text-neutral-500 dark:text-neutral-500">
                       #{i + 1}
@@ -393,10 +459,10 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
 
             <section>
               <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-500">
-                패치 / 대응 항목 ({data.mitigations.length}개)
+                패치 / 대응 항목 ({fresh.mitigations.length}개)
               </h3>
               <ul className="space-y-2">
-                {data.mitigations.map((item, i) => (
+                {fresh.mitigations.map((item, i) => (
                   <li
                     key={i}
                     className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm leading-relaxed text-neutral-800 dark:border-neutral-800 dark:bg-surface-2 dark:text-neutral-200"
@@ -410,13 +476,33 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
               </ul>
             </section>
 
-            <FollowUpThread cveId={cveId} prior={data} />
+            <FollowUpThread cveId={cveId} prior={fresh} />
 
             <p className="text-[11px] text-neutral-500">
               ※ AI 생성 결과는 참고용입니다. 실제 대응 전에 반드시 전문가 검토를 거치세요.
             </p>
           </div>
         )}
+
+        {viewingSaved &&
+          (savedDetailQ.isPending ? (
+            <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-500">
+              <Loader2 className="h-4 w-4 animate-spin" /> 저장된 분석을 불러오는 중…
+            </div>
+          ) : savedDetailQ.isError ? (
+            <ErrorBox
+              title="분석을 불러오지 못했습니다"
+              message="비공개로 전환됐거나 삭제됐을 수 있어요."
+            />
+          ) : savedDetailQ.data ? (
+            <div className="space-y-5">
+              <MarkdownLite source={savedDetailQ.data.resultMd} />
+              <FollowUpThread cveId={cveId} prior={null} />
+              <p className="text-[11px] text-neutral-500">
+                ※ AI 생성 결과는 참고용입니다. 실제 대응 전에 반드시 전문가 검토를 거치세요.
+              </p>
+            </div>
+          ) : null)}
       </CardContent>
     </Card>
   );
@@ -466,7 +552,7 @@ function RunningIndicator({ cveId }: { cveId: string }) {
 
 // ─────────────────────── Follow-up Q&A thread ─────────────────────────
 
-function FollowUpThread({ cveId, prior }: { cveId: string; prior: AiAnalysisResponse }) {
+function FollowUpThread({ cveId, prior }: { cveId: string; prior: AiAnalysisResponse | null }) {
   const { user } = useAuth();
   const { turns } = useQaHistory(cveId);
   const [question, setQuestion] = useState("");
@@ -483,7 +569,7 @@ function FollowUpThread({ cveId, prior }: { cveId: string; prior: AiAnalysisResp
         const res = await api.askFollowup({
           cveId,
           question: q,
-          prior,
+          prior: prior ?? undefined,
           history: turns.map((t) => ({ question: t.question, answer: t.answer })),
         });
         appendQaTurn(cveId, { question: q, answer: res.answer });
@@ -540,21 +626,23 @@ function FollowUpThread({ cveId, prior }: { cveId: string; prior: AiAnalysisResp
         <div className="flex items-center gap-1">
           {turns.length > 0 && (
             <>
-              <button
-                type="button"
-                onClick={() =>
-                  downloadAnalysisMarkdown({
-                    cveId,
-                    result: prior,
-                    qa: turns,
-                  })
-                }
-                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-100"
-                title="분석 결과 + 이 Q&A 를 Markdown 으로 다운로드"
-              >
-                <Download className="h-3 w-3" />
-                저장
-              </button>
+              {prior && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadAnalysisMarkdown({
+                      cveId,
+                      result: prior,
+                      qa: turns,
+                    })
+                  }
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-100"
+                  title="분석 결과 + 이 Q&A 를 Markdown 으로 다운로드"
+                >
+                  <Download className="h-3 w-3" />
+                  저장
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
