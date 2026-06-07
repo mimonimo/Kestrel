@@ -501,20 +501,12 @@ function AnalysisDetailModal({
       }}
     >
       <div
-        className="relative flex max-h-[88vh] w-full max-w-3xl flex-col rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/20 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/50 animate-in zoom-in-95 duration-150"
+        className="relative flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/20 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/50 animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="닫기"
-          className="absolute right-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/80 text-neutral-500 backdrop-blur transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:bg-surface-1/80 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
-        >
-          <X className="h-4 w-4" />
-        </button>
-
-        <article className="flex-1 overflow-y-auto px-6 py-7">
-          <header className="mb-4 border-b border-neutral-200 pb-4 pr-10 dark:border-neutral-800">
+        {/* 고정 헤더 — 본문만 스크롤되어 스크롤바가 닫기 버튼과 겹치지 않음 */}
+        <header className="flex shrink-0 items-start gap-3 border-b border-neutral-200 bg-white px-6 py-4 dark:border-neutral-800 dark:bg-surface-1">
+          <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <Link
                 href={`/cve/${summary?.cveId ?? detail.data?.cveId ?? ""}`}
@@ -537,12 +529,22 @@ function AnalysisDetailModal({
               )}
             </div>
             {(summary?.title || detail.data?.title) && (
-              <h2 className="mt-2 text-lg font-bold text-neutral-900 dark:text-neutral-100">
+              <h2 className="mt-2 text-lg font-bold leading-snug text-neutral-900 dark:text-neutral-100">
                 {detail.data?.title ?? summary?.title}
               </h2>
             )}
-          </header>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="닫기"
+            className="-mr-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
 
+        <div className="flex-1 overflow-y-auto px-6 py-6">
           {detail.isPending ? (
             <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-500">
               <Loader2 className="h-4 w-4 animate-spin" /> 본문을 불러오는 중…
@@ -555,7 +557,7 @@ function AnalysisDetailModal({
           ) : (
             <MarkdownLite source={detail.data?.resultMd ?? ""} />
           )}
-        </article>
+        </div>
       </div>
     </div>
   );

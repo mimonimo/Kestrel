@@ -147,7 +147,7 @@ export function MarkdownLite({ source, className }: { source: string; className?
         blocks.push(
           <h3
             key={key++}
-            className="mt-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-violet-700 dark:text-violet-300"
+            className="mt-5 flex items-center gap-2 border-l-[3px] border-violet-400 pl-2.5 text-sm font-bold text-neutral-900 first:mt-0 dark:border-violet-500/60 dark:text-neutral-100"
           >
             {renderInline(text)}
           </h3>,
