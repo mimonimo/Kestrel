@@ -10,7 +10,13 @@ import { type ReactNode, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const INLINE = /(`[^`]+`|\*\*[^*]+\*\*|_[^_]+_)/g;
+const INLINE = /(```[^`]+```|``[^`]+``|`[^`]+`|\*\*[^*]+\*\*|_[^_]+_)/g;
+
+function stripCode(tok: string): string {
+  if (tok.startsWith("```")) return tok.slice(3, -3);
+  if (tok.startsWith("``")) return tok.slice(2, -2);
+  return tok.slice(1, -1);
+}
 
 function renderInline(text: string): ReactNode[] {
   const nodes: ReactNode[] = [];
@@ -27,7 +33,7 @@ function renderInline(text: string): ReactNode[] {
           key={key++}
           className="rounded bg-neutral-200/70 px-1 py-0.5 font-mono text-[0.85em] text-violet-700 dark:bg-surface-3 dark:text-violet-300"
         >
-          {tok.slice(1, -1)}
+          {stripCode(tok)}
         </code>,
       );
     } else if (tok.startsWith("**")) {
@@ -48,6 +54,9 @@ function renderInline(text: string): ReactNode[] {
   if (last < text.length) nodes.push(text.slice(last));
   return nodes;
 }
+
+// 한 줄 전체가 코드로 감싸진 항목인지 (예: 저장된 페이로드 "```payload```").
+const FULL_CODE = /^\s*(```|``|`)([\s\S]+?)\1\s*$/;
 
 function CodeBlock({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
@@ -184,12 +193,23 @@ export function MarkdownLite({ source, className }: { source: string; className?
       }
       i--;
       blocks.push(
-        <ul key={key++} className="list-disc space-y-1.5 pl-5 text-neutral-800 marker:text-neutral-400 dark:text-neutral-200 dark:marker:text-neutral-500">
-          {items.map((it, j) => (
-            <li key={j} className="leading-relaxed">
-              {renderInline(it)}
-            </li>
-          ))}
+        <ul key={key++} className="space-y-1.5 text-neutral-800 dark:text-neutral-200">
+          {items.map((it, j) => {
+            const fc = FULL_CODE.exec(it);
+            // 페이로드처럼 항목 전체가 코드로 감싸진 경우 → 코드블록.
+            if (fc) {
+              return (
+                <li key={j} className="list-none">
+                  <CodeBlock code={fc[2]} />
+                </li>
+              );
+            }
+            return (
+              <li key={j} className="ml-5 list-disc leading-relaxed marker:text-neutral-400 dark:marker:text-neutral-500">
+                {renderInline(it)}
+              </li>
+            );
+          })}
         </ul>,
       );
       continue;
