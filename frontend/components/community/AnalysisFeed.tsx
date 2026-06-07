@@ -30,6 +30,7 @@ import { useAuth } from "@/lib/auth-context";
 import { ErrorBox } from "@/components/ui/feedback-box";
 import { ShareMyAnalysesModal } from "@/components/community/ShareMyAnalysesModal";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
+import { CopyLinkButton } from "@/components/ui/copy-link-button";
 import { formatRelativeKo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -534,14 +535,19 @@ function AnalysisDetailModal({
               </h2>
             )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="닫기"
-            className="-mr-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {(summary?.id || analysisId) && (
+              <CopyLinkButton path={`/analyses/${summary?.id ?? analysisId}`} />
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="닫기"
+              className="-mr-1 inline-flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-surface-2 dark:hover:text-neutral-100"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto px-6 py-6">
