@@ -12,6 +12,7 @@ import {
   Send,
   Sparkles,
   Trash2,
+  Users,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -295,6 +296,21 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
   void qc;
   void cached;
 
+  // ── 커뮤니티 공유 토글 — 본인 기록을 공개/비공개 전환 (분석 직후 바로 공유) ──
+  const currentRecordId = showingFresh ? fresh?.analysisId ?? null : selectedId;
+  const isOwn =
+    showingFresh || (!!selectedMeta && !!user && selectedMeta.author.username === user.username);
+  const isPublic = selectedMeta?.visibility === "public";
+  const shareMut = useMutation({
+    mutationFn: (visibility: "public" | "private") =>
+      api.updateAnalysisRecord(currentRecordId!, { visibility }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["cve-analyses", cveId] });
+      qc.invalidateQueries({ queryKey: ["community-analyses"] });
+      if (currentRecordId) qc.invalidateQueries({ queryKey: ["analysis-record", currentRecordId] });
+    },
+  });
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-3">
@@ -314,7 +330,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
           )}
         </div>
         {hasContent && !isRunning && (
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center justify-end gap-1">
             {showingFresh && fresh && (
               <button
                 type="button"
@@ -332,8 +348,42 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
                 리포트 다운로드
               </button>
             )}
-            {viewingSaved && selectedId && selectedMeta?.visibility === "public" && (
-              <CopyLinkButton path={`/analyses/${selectedId}`} label="공유" />
+            {/* 커뮤니티 공유 토글 — 본인 기록만. 분석 직후 한 번에 공개. */}
+            {isOwn && currentRecordId && (
+              isPublic ? (
+                <>
+                  <CopyLinkButton path={`/analyses/${currentRecordId}`} label="링크" />
+                  <button
+                    type="button"
+                    onClick={() => shareMut.mutate("private")}
+                    disabled={shareMut.isPending}
+                    className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+                    title="커뮤니티 분석 피드에 공개 중 — 누르면 비공개로 전환"
+                  >
+                    {shareMut.isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Globe className="h-3 w-3" />
+                    )}
+                    공유 중
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => shareMut.mutate("public")}
+                  disabled={shareMut.isPending}
+                  className="inline-flex items-center gap-1 rounded-full bg-violet-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
+                  title="이 분석을 커뮤니티 분석 피드에 공개"
+                >
+                  {shareMut.isPending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Users className="h-3 w-3" />
+                  )}
+                  커뮤니티에 공유
+                </button>
+              )
             )}
             {!!user && (
               <button
