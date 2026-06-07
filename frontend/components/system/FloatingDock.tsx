@@ -31,7 +31,7 @@ import {
   type AnalysisHistoryEntry,
 } from "@/lib/analysis-history";
 import { useRunningAnalyses } from "@/lib/analysis-running";
-import { markAllAnalysisSeen, markAnalysisSeen, useAnalysisSeen } from "@/lib/analysis-seen";
+import { markAllAnalysisSeen, markAnalysisSeen, ensureSeenBaseline, useAnalysisSeen } from "@/lib/analysis-seen";
 import type { IngestionSnapshot, Source, StatusReport } from "@/lib/types";
 import { cn, timeAgo } from "@/lib/utils";
 
@@ -161,6 +161,8 @@ export function FloatingDock() {
       .then((res) => {
         if (cancelled) return;
         syncAnalysisHistoryFromSummaries(res.items);
+        // 최초 1회: 이미 보유한 분석은 새 알림이 아니므로 기준선으로 읽음 처리.
+        ensureSeenBaseline(res.items.map((i) => i.cveId));
         // 위 sync 가 dispatchEvent 까지 하니 setEntries 호출은 storage event
         // 핸들러가 알아서 처리 — 다만 같은 탭 race 보완용으로 한 번 더.
         setEntries(readAnalysisHistory());

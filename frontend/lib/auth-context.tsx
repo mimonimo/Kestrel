@@ -40,6 +40,10 @@ const KEEP_PREFIX: readonly string[] = [];
 
 function shouldKeep(k: string): boolean {
   if (KEEP_EXACT.has(k)) return true;
+  // analysis-seen / analysis-seen-init 은 사용자별 네임스페이스라
+  // 계정 전환·재로그인 시에도 본인 "읽음" 상태/기준선을 유지해도 격리가 안전.
+  // (단일 키였을 때처럼 날아가면 재로그인 시 모든 분석이 새 알림으로 다시 뜸)
+  if (k.startsWith("kestrel:analysis-seen")) return true;
   for (const p of KEEP_PREFIX) {
     if (k === p || k.startsWith(p + ":") || k.startsWith(p)) return true;
   }
@@ -77,6 +81,9 @@ function reconcileUserCaches(currentUserId: string | null): void {
       } else {
         window.localStorage.removeItem(LAST_USER_KEY);
       }
+      // last-user-id 가 바뀌면 analysis-seen 네임스페이스도 바뀌므로 활동센터가
+      // 새 사용자의 seen 키를 다시 읽도록 알린다.
+      window.dispatchEvent(new Event("kestrel:analysis-seen-changed"));
     }
   } catch {
     /* ignore */
