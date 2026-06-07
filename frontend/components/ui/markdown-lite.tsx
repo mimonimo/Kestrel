@@ -19,8 +19,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// ─── 인라인(굵게·코드·기울임) ────────────────────────────
-const INLINE = /(```[^`]+```|``[^`]+``|`[^`]+`|\*\*[^*]+\*\*|_[^_]+_)/g;
+// 인라인(굵게·코드). _italic_ 은 기술 텍스트의 밑줄(TARGET_HOST 등)을 오인하므로 제외.
+const INLINE = /(```[^`]+```|``[^`]+``|`[^`]+`|\*\*[^*]+\*\*)/g;
 
 function stripCode(tok: string): string {
   if (tok.startsWith("```")) return tok.slice(3, -3);
@@ -46,17 +46,11 @@ function renderInline(text: string): ReactNode[] {
           {stripCode(tok)}
         </code>,
       );
-    } else if (tok.startsWith("**")) {
+    } else {
       nodes.push(
         <strong key={key++} className="font-semibold text-neutral-900 dark:text-neutral-100">
           {tok.slice(2, -2)}
         </strong>,
-      );
-    } else {
-      nodes.push(
-        <em key={key++} className="text-neutral-600 dark:text-neutral-400">
-          {tok.slice(1, -1)}
-        </em>,
       );
     }
     last = m.index + tok.length;
@@ -155,7 +149,11 @@ function CodeBlock({ code }: { code: string }) {
                 {String(i + 1).padStart(2, " ")}
               </span>
               <span className="min-w-0 flex-1 whitespace-pre-wrap break-all pr-4 text-neutral-800 dark:text-neutral-100">
-                {highlightLine(line)}
+                {/^\s*#/.test(line) ? (
+                  <span className="text-neutral-500 dark:text-neutral-500">{line}</span>
+                ) : (
+                  highlightLine(line)
+                )}
               </span>
             </div>
           ))}
@@ -245,15 +243,39 @@ export function MarkdownLite({ source, className }: { source: string; className?
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    if (line.trimStart().startsWith("```")) {
+    // 코드 펜스 — 불릿 접두사(- ```)·여는 줄 같은 줄 내용·줄 끝 닫힘까지 처리.
+    const fence = /^\s*(?:[-*]\s+)?(```+)(.*)$/.exec(line);
+    if (fence) {
       flushPara();
       const buf: string[] = [];
-      i++;
-      while (i < lines.length && !lines[i].trimStart().startsWith("```")) {
-        buf.push(lines[i]);
-        i++;
+      const firstRest = fence[2];
+      let closed = false;
+      if (firstRest) {
+        const ci = firstRest.indexOf("```");
+        if (ci !== -1) {
+          buf.push(firstRest.slice(0, ci));
+          closed = true;
+        } else {
+          buf.push(firstRest);
+        }
       }
-      cur().blocks.push(<CodeBlock key={key++} code={buf.join("\n")} />);
+      if (!closed) {
+        i++;
+        while (i < lines.length) {
+          const l = lines[i];
+          const ci = l.indexOf("```");
+          if (ci !== -1) {
+            const before = l.slice(0, ci);
+            if (before.trim()) buf.push(before);
+            closed = true;
+            break;
+          }
+          buf.push(l);
+          i++;
+        }
+      }
+      const code = buf.join("\n").replace(/^\n+|\n+$/g, "");
+      cur().blocks.push(<CodeBlock key={key++} code={code} />);
       continue;
     }
 

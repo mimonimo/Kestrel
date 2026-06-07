@@ -97,16 +97,11 @@ async def analyze_cve(
     result = await analyze_vulnerability(db, vuln, user_id=user.id)
 
     # 분석 본문을 마크다운으로 직렬화 후 영구 저장.
-    md_lines = [
-        "## 공격 방법",
-        result.attack_method,
-        "",
-        "## 페이로드 예시",
-        *[f"- ```{p}```" for p in result.payload_examples],
-        "",
-        "## 완화 방안",
-        *[f"- {m}" for m in result.mitigations],
-    ]
+    md_lines = ["## 공격 방법", "", result.attack_method, "", "## 페이로드 예시", ""]
+    for idx, p in enumerate(result.payload_examples, 1):
+        md_lines += [f"### 예시 {idx}", "", "```", p, "```", ""]
+    md_lines += ["## 완화 방안", ""]
+    md_lines += [f"- {m}" for m in result.mitigations]
     # 기본 비공개 — 사용자가 명시적으로 "공유" 액션을 취해야 커뮤니티 피드에 노출.
     # 운영자 의도: 분석은 본인 자료고, 공개는 분석 피드의 별도 모달에서 선택.
     visibility = (body.visibility if body else None) or "private"
