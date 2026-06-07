@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AiAnalysisPanel } from "./AiAnalysisPanel";
 import { BookmarkButton } from "./BookmarkButton";
+import { ShareButton } from "./ShareButton";
 import { SeverityBadge } from "./SeverityBadge";
 import { SourceBadgeCluster } from "./SourceBadgeCluster";
 import { TicketControl } from "./TicketControl";
@@ -33,6 +34,7 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
           <SeverityBadge severity={vuln.severity} score={vuln.cvssScore} />
           <SourceBadgeCluster sources={vuln.sources ?? [vuln.source]} size="md" />
           <BookmarkButton cveId={vuln.cveId} size="md" stopPropagation={false} />
+          <ShareButton cveId={vuln.cveId} size="md" stopPropagation={false} />
           <span className="text-xs text-neutral-500">게시일: {formatDate(vuln.publishedAt)}</span>
           <span className="text-xs text-neutral-500">수정일: {formatDate(vuln.modifiedAt)}</span>
         </div>
