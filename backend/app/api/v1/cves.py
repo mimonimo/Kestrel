@@ -93,7 +93,9 @@ async def related_cves(cve_id: str, db: AsyncSession = Depends(get_db)) -> list[
     prod_pairs = list({(p.vendor, p.product) for p in vuln.affected_products})
     type_ids = [t.id for t in vuln.types]
     self_prods = set(prod_pairs)
+    self_vendors = {p.vendor for p in vuln.affected_products if p.vendor}
     self_types = {t.name for t in vuln.types}
+    self_score = float(vuln.cvss_score) if vuln.cvss_score is not None else None
 
     conds = []
     if prod_pairs:
@@ -115,36 +117,65 @@ async def related_cves(cve_id: str, db: AsyncSession = Depends(get_db)) -> list[
     if not conds:
         return []
 
+    # 후보를 넉넉히(최신순) 모은 뒤 Python 에서 다중 신호로 가중 랭킹한다.
+    # 단순 "같은 유형(예: Auth)" 폴백은 너무 느슨해 — 제품 > 같은 벤더 >
+    # 유형 겹침 수 > KEV > CVSS 근접 > 최신 순으로 점수화해 상위 8건만 노출.
     stmt = (
         select(Vulnerability)
         .where(Vulnerability.id != vuln.id, or_(*conds))
         .order_by(Vulnerability.published_at.desc().nulls_last())
-        .limit(40)
+        .limit(120)
     )
     rows = (await db.execute(stmt)).scalars().unique().all()
 
-    prod_items: list[RelatedItem] = []
-    type_items: list[RelatedItem] = []
+    scored: list[tuple[float, float, RelatedItem]] = []
     for r in rows:
         shared_prod = next(
             (p for p in r.affected_products if (p.vendor, p.product) in self_prods), None
         )
-        base = dict(
+        cand_vendors = {p.vendor for p in r.affected_products if p.vendor}
+        shared_vendor = next((v for v in cand_vendors if v in self_vendors), None)
+        shared_types = [t.name for t in r.types if t.name in self_types]
+
+        score = 0.0
+        if shared_prod:
+            score += 100
+        if shared_vendor:
+            score += 35
+        score += 12 * len(shared_types)
+        if r.kev_listed:
+            score += 15
+        if self_score is not None and r.cvss_score is not None:
+            score += max(0.0, 10 - abs(self_score - float(r.cvss_score)) * 2)
+
+        # 사람이 읽을 근거 — 가장 강한 신호 우선.
+        if shared_prod:
+            reason = f"같은 제품 · {f'{shared_prod.vendor} {shared_prod.product}'.strip()}"
+        elif shared_vendor and shared_types:
+            reason = f"{shared_vendor} · {shared_types[0]}"
+        elif shared_vendor:
+            reason = f"같은 벤더 · {shared_vendor}"
+        elif len(shared_types) >= 2:
+            reason = f"유형 {len(shared_types)}개 일치"
+        elif shared_types:
+            reason = f"같은 유형 · {shared_types[0]}"
+        else:
+            reason = "연관"
+
+        item = RelatedItem(
             cve_id=r.cve_id,
             title=r.title,
             severity=r.severity,
             cvss_score=float(r.cvss_score) if r.cvss_score is not None else None,
             published_at=r.published_at,
             kev_listed=bool(r.kev_listed),
+            reason=reason,
         )
-        if shared_prod:
-            label = f"{shared_prod.vendor} {shared_prod.product}".strip()
-            prod_items.append(RelatedItem(**base, reason=f"같은 제품 · {label}"))
-        else:
-            st = next((t.name for t in r.types if t.name in self_types), None)
-            type_items.append(RelatedItem(**base, reason=f"같은 유형 · {st}" if st else "연관"))
+        recency = r.published_at.timestamp() if r.published_at else 0.0
+        scored.append((score, recency, item))
 
-    return (prod_items + type_items)[:8]
+    scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
+    return [item for _, _, item in scored[:8]]
 
 
 class ReferencePreviewOut(CamelModel):
@@ -152,6 +183,7 @@ class ReferencePreviewOut(CamelModel):
     title: str | None = None
     description: str | None = None
     site_name: str | None = None
+    image: str | None = None
     ok: bool = False
 
 

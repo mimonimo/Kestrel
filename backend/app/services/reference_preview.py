@@ -17,7 +17,7 @@ import ipaddress
 import json
 import re
 import socket
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -59,6 +59,18 @@ async def _resolve_safe(host: str | None) -> bool:
     return True
 
 
+# 봇/방화벽 차단·인터스티셜 페이지의 제목 — 실제 콘텐츠 제목이 아니므로 버린다
+# (예: packetstormsecurity 의 "Bot Request Blocked", Cloudflare "Just a moment…").
+_BLOCK_TITLE_RE = re.compile(
+    r"(bot request blocked|just a moment|attention required|access denied|"
+    r"request blocked|are you (?:a )?human|verify(?:ing)? you are human|"
+    r"captcha|forbidden|access to this page has been denied|"
+    r"please enable (?:cookies|javascript)|rate limit|too many requests|"
+    r"service unavailable|not acceptable|page not found|404)",
+    re.IGNORECASE,
+)
+
+
 def _find(pattern: str, text: str) -> str | None:
     m = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
     return m.group(1) if m else None
@@ -71,7 +83,7 @@ def _clean(s: str | None, limit: int) -> str | None:
     return out[:limit] or None
 
 
-def _extract(html_text: str) -> dict:
+def _extract(html_text: str, base_url: str) -> dict:
     head = html_text[:200_000]  # 메타는 head 에 있으므로 앞부분만
     title = (
         _find(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']', head)
@@ -82,15 +94,40 @@ def _extract(html_text: str) -> dict:
         or _find(r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']', head)
     )
     site = _find(r'<meta[^>]+property=["\']og:site_name["\'][^>]+content=["\']([^"\']+)["\']', head)
+    image = (
+        _find(r'<meta[^>]+property=["\']og:image(?::secure_url)?["\'][^>]+content=["\']([^"\']+)["\']', head)
+        or _find(r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']', head)
+    )
+
+    clean_title = _clean(title, 200)
+    # 봇 차단/인터스티셜 제목은 콘텐츠가 아니므로 버린다(프론트는 URL 만 노출).
+    if clean_title and _BLOCK_TITLE_RE.search(clean_title):
+        clean_title = None
+
+    clean_image = _clean(image, 500)
+    if clean_image:
+        # 상대 경로 og:image 를 최종 URL 기준 절대 경로로. http(s) 만 노출.
+        clean_image = urljoin(base_url, clean_image)
+        if not clean_image.startswith(("http://", "https://")):
+            clean_image = None
+
     return {
-        "title": _clean(title, 200),
+        "title": clean_title,
         "description": _clean(desc, 320),
         "siteName": _clean(site, 60),
+        "image": clean_image,
     }
 
 
 async def fetch_preview(url: str) -> dict:
-    base = {"url": url, "title": None, "description": None, "siteName": None, "ok": False}
+    base = {
+        "url": url,
+        "title": None,
+        "description": None,
+        "siteName": None,
+        "image": None,
+        "ok": False,
+    }
     redis = None
     key = f"kestrel:refprev:{url}"
     try:
@@ -116,7 +153,7 @@ async def fetch_preview(url: str) -> dict:
                             if len(buf) >= _MAX_BYTES:
                                 break
                         text = buf.decode(resp.encoding or "utf-8", errors="replace")
-                        base.update(_extract(text))
+                        base.update(_extract(text, str(resp.url) or url))
                         base["ok"] = True
                     else:
                         # 비-HTML(PDF 등) 또는 오류 — 호스트만 사이트명으로.
