@@ -135,6 +135,16 @@ export interface CpeMatch {
   versionEndExcluding?: string | null;
 }
 
+export interface RelatedCve {
+  cveId: string;
+  title: string;
+  severity?: Severity | null;
+  cvssScore?: number | null;
+  publishedAt?: string | null;
+  kevListed?: boolean;
+  reason: string;
+}
+
 export interface Weakness {
   cweId: string;
   name?: string | null;

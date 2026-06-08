@@ -1,10 +1,18 @@
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from sqlalchemy import select
+from datetime import datetime
+from sqlalchemy import or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
 from app.core.database import get_db
-from app.models import AnalysisResult, User, Vulnerability
+from app.models import (
+    AffectedProduct,
+    AnalysisResult,
+    Severity,
+    User,
+    Vulnerability,
+    vulnerability_type_map,
+)
 from app.schemas.vulnerability import CamelModel, VulnerabilityDetail, VulnerabilityListItem
 from app.services.ai_analyzer import analyze_vulnerability
 
@@ -60,6 +68,83 @@ async def get_cve(cve_id: str, db: AsyncSession = Depends(get_db)) -> Vulnerabil
 
     vuln.enrichment = build_enrichment(vuln)  # type: ignore[attr-defined]
     return vuln
+
+
+class RelatedItem(CamelModel):
+    cve_id: str
+    title: str
+    severity: Severity | None = None
+    cvss_score: float | None = None
+    published_at: datetime | None = None
+    kev_listed: bool = False
+    reason: str
+
+
+@router.get(
+    "/{cve_id}/related",
+    response_model=list[RelatedItem],
+    response_model_by_alias=True,
+)
+async def related_cves(cve_id: str, db: AsyncSession = Depends(get_db)) -> list[RelatedItem]:
+    """같은 제품 또는 같은 약점(CWE 유형)을 공유하는 다른 CVE 추천 — 분석 맥락용."""
+    vuln = await db.scalar(select(Vulnerability).where(Vulnerability.cve_id == cve_id))
+    if vuln is None:
+        return []
+    prod_pairs = list({(p.vendor, p.product) for p in vuln.affected_products})
+    type_ids = [t.id for t in vuln.types]
+    self_prods = set(prod_pairs)
+    self_types = {t.name for t in vuln.types}
+
+    conds = []
+    if prod_pairs:
+        conds.append(
+            Vulnerability.id.in_(
+                select(AffectedProduct.vulnerability_id).where(
+                    tuple_(AffectedProduct.vendor, AffectedProduct.product).in_(prod_pairs)
+                )
+            )
+        )
+    if type_ids:
+        conds.append(
+            Vulnerability.id.in_(
+                select(vulnerability_type_map.c.vulnerability_id).where(
+                    vulnerability_type_map.c.type_id.in_(type_ids)
+                )
+            )
+        )
+    if not conds:
+        return []
+
+    stmt = (
+        select(Vulnerability)
+        .where(Vulnerability.id != vuln.id, or_(*conds))
+        .order_by(Vulnerability.published_at.desc().nulls_last())
+        .limit(40)
+    )
+    rows = (await db.execute(stmt)).scalars().unique().all()
+
+    prod_items: list[RelatedItem] = []
+    type_items: list[RelatedItem] = []
+    for r in rows:
+        shared_prod = next(
+            (p for p in r.affected_products if (p.vendor, p.product) in self_prods), None
+        )
+        base = dict(
+            cve_id=r.cve_id,
+            title=r.title,
+            severity=r.severity,
+            cvss_score=float(r.cvss_score) if r.cvss_score is not None else None,
+            published_at=r.published_at,
+            kev_listed=bool(r.kev_listed),
+        )
+        if shared_prod:
+            label = f"{shared_prod.vendor} {shared_prod.product}".strip()
+            prod_items.append(RelatedItem(**base, reason=f"같은 제품 · {label}"))
+        else:
+            st = next((t.name for t in r.types if t.name in self_types), None)
+            type_items.append(RelatedItem(**base, reason=f"같은 유형 · {st}" if st else "연관"))
+
+    return (prod_items + type_items)[:8]
 
 
 class AiAnalysisResponse(CamelModel):

@@ -3,6 +3,7 @@ import { ExternalLink, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AiAnalysisPanel } from "./AiAnalysisPanel";
+import { RelatedCves } from "./RelatedCves";
 import { BookmarkButton } from "./BookmarkButton";
 import { ShareButton } from "./ShareButton";
 import { SeverityBadge } from "./SeverityBadge";
@@ -172,6 +173,8 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
 
       <AiAnalysisPanel cveId={vuln.cveId} />
 
+      <RelatedCves cveId={vuln.cveId} />
+
       {vuln.affectedProducts.length > 0 && (
         <Card>
           <CardHeader>
@@ -310,6 +313,35 @@ function Bar({ pct, className }: { pct: number; className: string }) {
   );
 }
 
+function riskRead(vuln: Vulnerability): { text: string; tone: string } {
+  const score = typeof vuln.cvssScore === "number" ? vuln.cvssScore : 0;
+  const epss = vuln.epssScore ?? null;
+  if (vuln.kevListed)
+    return {
+      text: "실측 악용 확인(KEV 등재) — 최우선으로 즉시 패치하세요.",
+      tone: "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200",
+    };
+  if (epss != null && epss >= 0.5)
+    return {
+      text: `악용 확률 높음(EPSS ${(epss * 100).toFixed(0)}%) — 외부 노출 여부 확인 후 우선 조치 권장.`,
+      tone: "border-orange-300 bg-orange-50 text-orange-800 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-200",
+    };
+  if (score >= 9)
+    return {
+      text: "이론 심각도 매우 높음(Critical) — 노출 자산이 있으면 시급히 조치.",
+      tone: "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200",
+    };
+  if (epss != null && epss >= 0.1)
+    return {
+      text: "악용 가능성 중간 — 패치 계획에 포함하고 모니터링.",
+      tone: "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200",
+    };
+  return {
+    text: "현재 실측 악용·높은 예측 신호는 없음 — 계획된 패치 주기로 처리.",
+    tone: "border-neutral-200 bg-neutral-50 text-neutral-600 dark:border-neutral-800 dark:bg-surface-2 dark:text-neutral-400",
+  };
+}
+
 function ThreatSignals({ vuln }: { vuln: Vulnerability }) {
   const score =
     typeof vuln.cvssScore === "number" && Number.isFinite(vuln.cvssScore) ? vuln.cvssScore : null;
@@ -318,6 +350,7 @@ function ThreatSignals({ vuln }: { vuln: Vulnerability }) {
   const epss = vuln.epssScore ?? null; // 0..1 확률
   const pct = vuln.epssPercentile ?? null; // 0..1 백분위
   const kev = !!vuln.kevListed;
+  const risk = riskRead(vuln);
 
   return (
     <Card>
@@ -326,7 +359,11 @@ function ThreatSignals({ vuln }: { vuln: Vulnerability }) {
           위협 신호 <span className="font-normal text-neutral-400">· CVSS · EPSS · KEV</span>
         </h2>
       </CardHeader>
-      <CardContent className="grid gap-5 sm:grid-cols-3">
+      <CardContent className="space-y-4">
+        <p className={`rounded-lg border px-3 py-2 text-xs font-medium ${risk.tone}`}>
+          {risk.text}
+        </p>
+        <div className="grid gap-5 sm:grid-cols-3">
         {/* CVSS — 이론 심각도 */}
         <div className="space-y-1.5">
           <div className="text-[11px] font-medium text-neutral-500 dark:text-neutral-500">
@@ -385,6 +422,7 @@ function ThreatSignals({ vuln }: { vuln: Vulnerability }) {
               미등재
             </span>
           )}
+        </div>
         </div>
       </CardContent>
     </Card>
