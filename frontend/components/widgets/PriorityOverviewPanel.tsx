@@ -34,6 +34,7 @@ import {
   api,
   type DashboardPriorityBucket,
 } from "@/lib/api";
+import { formatRelativeKo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const TIER_META: Record<
@@ -179,11 +180,16 @@ function TierDetail({ bucket }: { bucket: DashboardPriorityBucket }) {
                     <span className="truncate font-mono text-[11px] font-semibold text-neutral-900 dark:text-neutral-100">
                       {it.cveId}
                     </span>
-                    {it.cvssScore != null && (
-                      <span className="shrink-0 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">
-                        CVSS {it.cvssScore.toFixed(1)}
-                      </span>
-                    )}
+                    <span className="flex shrink-0 items-baseline gap-1.5 text-[10px] text-neutral-500 dark:text-neutral-500">
+                      {it.publishedAt && (
+                        <span className="tabular-nums" title={new Date(it.publishedAt).toLocaleString("ko-KR")}>
+                          {formatRelativeKo(it.publishedAt)}
+                        </span>
+                      )}
+                      {it.cvssScore != null && (
+                        <span className="tabular-nums">CVSS {it.cvssScore.toFixed(1)}</span>
+                      )}
+                    </span>
                   </div>
                   <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-neutral-600 dark:text-neutral-400">
                     {it.title}
