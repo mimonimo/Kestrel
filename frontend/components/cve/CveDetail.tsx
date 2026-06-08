@@ -69,17 +69,30 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
         </CardHeader>
         <CardContent className="space-y-3">
           {decoded.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {decoded.map((m) => (
-                <span
-                  key={m.key}
-                  className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[11px]"
-                  title={m.label}
-                >
-                  <span className="text-neutral-500 dark:text-neutral-500">{m.label}</span>
-                  <span className="font-medium text-neutral-800 dark:text-neutral-200">{m.value}</span>
-                </span>
-              ))}
+            <div className="space-y-2.5">
+              {(["exploit", "impact"] as const).map((grp) => {
+                const chips = decoded.filter((d) => d.group === grp);
+                if (chips.length === 0) return null;
+                return (
+                  <div key={grp}>
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                      {grp === "exploit" ? "악용 경로" : "영향"}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {chips.map((m) => (
+                        <span
+                          key={m.key}
+                          title={m.label}
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${CHIP_TONE[m.tone]}`}
+                        >
+                          <span className="opacity-70">{m.label}</span>
+                          <span className="font-semibold">{m.value}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
           {vuln.cvssVector ? (
@@ -287,6 +300,12 @@ const SEV_TEXT: Record<string, string> = {
   high: "text-orange-600 dark:text-orange-400",
   medium: "text-amber-600 dark:text-amber-400",
   low: "text-emerald-600 dark:text-emerald-400",
+};
+
+const CHIP_TONE: Record<string, string> = {
+  high: "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200",
+  med: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200",
+  low: "bg-neutral-100 text-neutral-600 dark:bg-surface-2 dark:text-neutral-300",
 };
 
 function Bar({ pct, className }: { pct: number; className: string }) {

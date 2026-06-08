@@ -48,6 +48,24 @@ export interface DecodedMetric {
   key: string;
   label: string;
   value: string;
+  group: "exploit" | "impact";
+  tone: "high" | "med" | "low";
+}
+
+// 영향 메트릭 키(영향 그룹). 나머지는 악용 경로 그룹.
+const IMPACT_KEYS = new Set(["C", "I", "A", "VC", "VI", "VA", "SC", "SI", "SA"]);
+
+// 각 (라벨 한글) 값의 위험 강도 — 칩 색상용.
+function toneOf(group: "exploit" | "impact", value: string): "high" | "med" | "low" {
+  if (group === "impact") {
+    if (value === "높음" || value === "완전") return "high";
+    if (value === "낮음" || value === "부분") return "med";
+    return "low"; // 없음
+  }
+  // 악용 경로: 공격이 쉬울수록 high
+  if (["네트워크", "불필요", "낮음", "있음", "능동적"].includes(value)) return "high";
+  if (["인접", "수동적", "중간", "변경", "1회"].includes(value)) return "med";
+  return "low";
 }
 
 /** "CVSS:3.1/AV:N/AC:L/..." → 라벨 디코드된 base 메트릭 목록. 모르면 빈 배열. */
@@ -65,7 +83,8 @@ export function decodeCvssVector(vector?: string | null): DecodedMetric[] {
     if (!dim) continue; // 환경/시간 메트릭 등은 생략(base 만)
     const label = dim.values[v];
     if (!label) continue;
-    out.push({ key: k, label: dim.label, value: label });
+    const group: "exploit" | "impact" = IMPACT_KEYS.has(k) ? "impact" : "exploit";
+    out.push({ key: k, label: dim.label, value: label, group, tone: toneOf(group, label) });
   }
   return out;
 }
