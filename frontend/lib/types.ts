@@ -140,6 +140,7 @@ export interface ReferencePreview {
   title?: string | null;
   description?: string | null;
   siteName?: string | null;
+  image?: string | null;
   ok: boolean;
 }
 

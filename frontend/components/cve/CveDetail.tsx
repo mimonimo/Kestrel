@@ -70,13 +70,21 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
         </CardHeader>
         <CardContent className="space-y-3">
           {decoded.length > 0 && (
-            <div className="space-y-2.5">
+            <div className="grid gap-3 sm:grid-cols-2">
               {(["exploit", "impact"] as const).map((grp) => {
                 const chips = decoded.filter((d) => d.group === grp);
                 if (chips.length === 0) return null;
                 return (
-                  <div key={grp}>
-                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                  <div
+                    key={grp}
+                    className="rounded-xl border border-neutral-200 p-3.5 dark:border-neutral-800"
+                  >
+                    <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+                      {grp === "exploit" ? (
+                        <Gauge className="h-3.5 w-3.5" />
+                      ) : (
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                      )}
                       {grp === "exploit" ? "악용 경로" : "영향"}
                     </div>
                     <div className="flex flex-wrap gap-1.5">
@@ -84,10 +92,10 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
                         <span
                           key={m.key}
                           title={m.label}
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${CHIP_TONE[m.tone]}`}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-1 text-[11px]"
                         >
-                          <span className="opacity-70">{m.label}</span>
-                          <span className="font-semibold">{m.value}</span>
+                          <span className="text-neutral-600 dark:text-neutral-400">{m.label}</span>
+                          <span className={`font-semibold ${CHIP_TONE[m.tone]}`}>{m.value}</span>
                         </span>
                       ))}
                     </div>
@@ -96,30 +104,35 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
               })}
             </div>
           )}
+          {metrics.length > 0 && (
+            <div className="rounded-xl border border-neutral-200 p-3.5 dark:border-neutral-800">
+              <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+                <TrendingUp className="h-3.5 w-3.5" /> 버전별 점수
+              </div>
+              <div className="space-y-1">
+                {metrics.map((m, i) => (
+                  <div key={i} className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-500 dark:text-neutral-400">
+                    <span className="rounded bg-neutral-200/70 px-1.5 py-0.5 font-mono dark:bg-surface-3">
+                      CVSS {m.version}
+                    </span>
+                    {m.baseScore != null && (
+                      <span className="font-semibold text-neutral-800 dark:text-neutral-200">{m.baseScore.toFixed(1)}</span>
+                    )}
+                    {m.baseSeverity && <span className="uppercase">{m.baseSeverity}</span>}
+                    {m.exploitMaturity && <span>· 악용성숙도 {m.exploitMaturity}</span>}
+                    {m.exploitabilityScore != null && <span>· 악용성 {m.exploitabilityScore}</span>}
+                    {m.impactScore != null && <span>· 영향도 {m.impactScore}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {vuln.cvssVector ? (
-            <code className="block break-all font-mono text-xs text-neutral-500">
+            <code className="block break-all font-mono text-[11px] text-neutral-500">
               {vuln.cvssVector}
             </code>
           ) : (
             <p className="text-xs text-neutral-600">CVSS 벡터 정보 없음</p>
-          )}
-          {metrics.length > 0 && (
-            <div className="space-y-1 border-t border-neutral-200 pt-2 dark:border-neutral-800">
-              {metrics.map((m, i) => (
-                <div key={i} className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-500 dark:text-neutral-400">
-                  <span className="rounded bg-neutral-200/70 px-1.5 py-0.5 font-mono dark:bg-surface-3">
-                    CVSS {m.version}
-                  </span>
-                  {m.baseScore != null && (
-                    <span className="font-semibold text-neutral-800 dark:text-neutral-200">{m.baseScore.toFixed(1)}</span>
-                  )}
-                  {m.baseSeverity && <span className="uppercase">{m.baseSeverity}</span>}
-                  {m.exploitMaturity && <span>· 악용성숙도 {m.exploitMaturity}</span>}
-                  {m.exploitabilityScore != null && <span>· 악용성 {m.exploitabilityScore}</span>}
-                  {m.impactScore != null && <span>· 영향도 {m.impactScore}</span>}
-                </div>
-              ))}
-            </div>
           )}
         </CardContent>
       </Card>
@@ -242,10 +255,12 @@ const SEV_TEXT: Record<string, string> = {
   low: "text-emerald-600 dark:text-emerald-400",
 };
 
+// 칩 배경은 중립으로 통일하고 위험도 색은 *값(value)* 에만 입힌다 — 전부
+// 분홍이던 기존안은 시끄럽고 라벨(opacity-70)이 흐려 가독성이 떨어졌다.
 const CHIP_TONE: Record<string, string> = {
-  high: "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200",
-  med: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200",
-  low: "bg-surface-2 text-neutral-500",
+  high: "text-rose-700 dark:text-rose-300",
+  med: "text-amber-700 dark:text-amber-300",
+  low: "text-neutral-500 dark:text-neutral-400",
 };
 
 function Bar({ pct, className }: { pct: number; className: string }) {
@@ -259,31 +274,38 @@ function Bar({ pct, className }: { pct: number; className: string }) {
   );
 }
 
-function riskRead(vuln: Vulnerability): { text: string; tone: string } {
+// 권고를 짧은 라벨 + 보조설명으로 분리해 컴팩트한 인라인 pill 로 렌더한다
+// (기존 문장형 전체폭 배너는 너무 크고 장황했다).
+function riskRead(vuln: Vulnerability): { label: string; hint: string; tone: string } {
   const score = typeof vuln.cvssScore === "number" ? vuln.cvssScore : 0;
   const epss = vuln.epssScore ?? null;
   if (vuln.kevListed)
     return {
-      text: "실측 악용 확인(KEV 등재) — 최우선으로 즉시 패치하세요.",
-      tone: "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200",
+      label: "즉시 패치",
+      hint: "실측 악용 확인 · KEV 등재",
+      tone: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200",
     };
   if (epss != null && epss >= 0.5)
     return {
-      text: `악용 확률 높음(EPSS ${(epss * 100).toFixed(0)}%) — 외부 노출 여부 확인 후 우선 조치 권장.`,
-      tone: "border-orange-300 bg-orange-50 text-orange-800 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-200",
+      label: "우선 조치",
+      hint: `악용 확률 높음 · EPSS ${(epss * 100).toFixed(0)}%`,
+      tone: "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-200",
     };
   if (score >= 9)
     return {
-      text: "이론 심각도 매우 높음(Critical) — 노출 자산이 있으면 시급히 조치.",
-      tone: "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200",
+      label: "시급 검토",
+      hint: "이론 심각도 Critical",
+      tone: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200",
     };
   if (epss != null && epss >= 0.1)
     return {
-      text: "악용 가능성 중간 — 패치 계획에 포함하고 모니터링.",
-      tone: "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200",
+      label: "패치 계획",
+      hint: "악용 가능성 중간",
+      tone: "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200",
     };
   return {
-    text: "현재 실측 악용·높은 예측 신호는 없음 — 계획된 패치 주기로 처리.",
+    label: "정기 패치",
+    hint: "높은 악용 신호 없음",
     tone: "border-neutral-200 bg-neutral-50 text-neutral-600 dark:border-neutral-800 dark:bg-surface-2 dark:text-neutral-400",
   };
 }
@@ -307,9 +329,10 @@ function ThreatSignals({ vuln }: { vuln: Vulnerability }) {
         </h2>
       </CardHeader>
       <CardContent className="space-y-4">
-        <p className={`rounded-lg border px-3 py-2 text-xs font-medium ${risk.tone}`}>
-          {risk.text}
-        </p>
+        <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${risk.tone}`}>
+          <span className="font-semibold">{risk.label}</span>
+          <span className="opacity-75">· {risk.hint}</span>
+        </div>
         <div className="grid gap-3 sm:grid-cols-3">
           {/* CVSS — 이론 심각도 */}
           <div className="rounded-xl border border-neutral-200 p-3.5 dark:border-neutral-800">

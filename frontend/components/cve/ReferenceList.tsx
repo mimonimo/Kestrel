@@ -47,44 +47,63 @@ export function ReferenceList({
             return (
               <li
                 key={i}
-                className="border-b border-neutral-100 pb-3 last:border-0 last:pb-0 dark:border-neutral-800/60"
+                className="flex gap-3 border-b border-neutral-100 pb-3 last:border-0 last:pb-0 dark:border-neutral-800/60"
               >
-                {pv?.title && (
+                {pv?.image && (
+                  // 외부 og:image 썸네일 — 서버는 URL 만 전달하고 로드는 브라우저가.
+                  // referrer 누수 방지 + 깨진 이미지는 숨김.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={pv.image}
+                    alt=""
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                    }}
+                    className="h-16 w-24 shrink-0 rounded-md border border-neutral-200 object-cover dark:border-neutral-800"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  {pv?.title ? (
+                    <a
+                      href={ref.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-sm font-medium text-neutral-900 hover:underline dark:text-neutral-100"
+                    >
+                      {pv.title}
+                    </a>
+                  ) : pv?.siteName ? (
+                    <span className="block text-xs font-medium text-neutral-500">{pv.siteName}</span>
+                  ) : null}
+                  {pv?.description && (
+                    <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
+                      {pv.description}
+                    </p>
+                  )}
                   <a
                     href={ref.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm font-medium text-neutral-900 hover:underline dark:text-neutral-100"
+                    className="mt-1 flex items-center gap-1.5 text-[11px] text-blue-600 hover:underline dark:text-blue-400"
                   >
-                    {pv.title}
+                    <span className="truncate">{ref.url}</span>
+                    <ExternalLink className="h-3 w-3 flex-shrink-0" />
                   </a>
-                )}
-                {pv?.description && (
-                  <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
-                    {pv.description}
-                  </p>
-                )}
-                <a
-                  href={ref.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-0.5 inline-flex items-center gap-1.5 break-all text-[11px] text-blue-400 hover:text-blue-300 hover:underline"
-                >
-                  {ref.url}
-                  <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                </a>
-                {ref.tags.length > 0 && (
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                    {ref.tags.map((t) => (
-                      <span
-                        key={t}
-                        className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
-                      >
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                  {ref.tags.length > 0 && (
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      {ref.tags.map((t) => (
+                        <span
+                          key={t}
+                          className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </li>
             );
           })}
