@@ -12,7 +12,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, case, func, or_, select, true
+from sqlalchemy import Integer, and_, case, cast, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -516,6 +516,8 @@ def _tier_filters():
     cvss_mid = and_(Vulnerability.cvss_score >= 4.0, Vulnerability.cvss_score < 7.0)
     cvss_high = Vulnerability.cvss_score >= 7.0
     epss_low = or_(Vulnerability.epss_score < 0.3, Vulnerability.epss_score.is_(None))
+    # CVE-YYYY-NNNN 에서 연도 추출 — 같은 EPSS 구간 내 '실제 나이'로 최신 우선 정렬.
+    cve_year = cast(func.split_part(Vulnerability.cve_id, "-", 2), Integer)
 
     return [
         {
@@ -537,9 +539,8 @@ def _tier_filters():
             # 최신 등록순 → 오래된 CVE 가 소수점 차이로 상위를 점령하지 않게.
             "order_by": [
                 func.floor(Vulnerability.epss_score * 10).desc(),
-                func.coalesce(Vulnerability.published_at, Vulnerability.modified_at)
-                .desc()
-                .nulls_last(),
+                cve_year.desc().nulls_last(),
+                Vulnerability.published_at.desc().nulls_last(),
                 Vulnerability.cvss_score.desc().nulls_last(),
             ],
         },
@@ -550,9 +551,8 @@ def _tier_filters():
             "where": [cvss_mid, Vulnerability.epss_score >= 0.3, ~kev],
             "order_by": [
                 func.floor(Vulnerability.epss_score * 10).desc(),
-                func.coalesce(Vulnerability.published_at, Vulnerability.modified_at)
-                .desc()
-                .nulls_last(),
+                cve_year.desc().nulls_last(),
+                Vulnerability.published_at.desc().nulls_last(),
                 Vulnerability.cvss_score.desc().nulls_last(),
             ],
         },
