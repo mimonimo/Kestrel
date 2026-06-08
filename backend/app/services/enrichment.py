@@ -117,16 +117,66 @@ def _metrics(cve: dict | None) -> list[CvssMetricOut]:
     return out
 
 
+def _version_from_vector(vec: str | None) -> str | None:
+    m = re.search(r"CVSS:(\d+\.\d+)", vec or "")
+    return m.group(1) if m else None
+
+
+def _gh_references(raw: dict) -> list[EnrichedRefOut]:
+    out: list[EnrichedRefOut] = []
+    seen: set[str] = set()
+    for r in raw.get("references") or []:
+        url = r.get("url") if isinstance(r, dict) else (r if isinstance(r, str) else None)
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        out.append(EnrichedRefOut(url=url, tags=[], source=None))
+    return out
+
+
+def _gh_metrics(raw: dict) -> list[CvssMetricOut]:
+    cvss = raw.get("cvss")
+    if not isinstance(cvss, dict):
+        return []
+    vec = cvss.get("vectorString")
+    score = _f(cvss.get("score"))
+    if not vec and not (score and score > 0):
+        return []
+    sev = raw.get("severity")
+    return [
+        CvssMetricOut(
+            version=_version_from_vector(vec) or "3.1",
+            vector=vec,
+            base_score=score,
+            base_severity=str(sev) if sev else None,
+            source="GitHub Advisory",
+        )
+    ]
+
+
 def build_enrichment(vuln) -> EnrichmentOut | None:
-    """vuln.raw_data + 모델 데이터에서 보강 정보를 구성. 실패해도 None 반환(상세 비차단)."""
+    """vuln.raw_data + 모델 데이터에서 보강 정보를 구성. 실패해도 None 반환(상세 비차단).
+
+    - NVD/MITRE/Exploit-DB: raw_data.cve (NVD 스키마) 공통 처리.
+    - GitHub Advisory: 평탄 구조(cvss/references) 별도 처리, CWE 는 types 폴백.
+    """
     try:
         raw = getattr(vuln, "raw_data", None) or {}
-        cve = raw.get("cve") if isinstance(raw, dict) else None
-        weaknesses = _weaknesses(cve, vuln)
-        references = _references(cve)
-        metrics = _metrics(cve)
+        if not isinstance(raw, dict):
+            raw = {}
+        cve = raw.get("cve")
+        if isinstance(cve, dict):
+            weaknesses = _weaknesses(cve, vuln)
+            references = _references(cve)
+            metrics = _metrics(cve)
+        else:
+            # GitHub Advisory 등 평탄 구조.
+            weaknesses = _weaknesses(None, vuln)  # CWE 없음 → types 폴백
+            references = _gh_references(raw)
+            metrics = _gh_metrics(raw)
         if not weaknesses and not references and not metrics:
             return None
         return EnrichmentOut(weaknesses=weaknesses, references=references, metrics=metrics)
     except Exception:  # noqa: BLE001 — 보강은 best-effort, 상세 응답을 막지 않는다.
         return None
+
