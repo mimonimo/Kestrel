@@ -15,19 +15,7 @@ import { decodeCvssVector } from "@/lib/cvss";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import type { CpeMatch, Vulnerability } from "@/lib/types";
 
-function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return "";
-  }
-}
-
 export function CveDetail({ vuln }: { vuln: Vulnerability }) {
-  const scoreLabel =
-    typeof vuln.cvssScore === "number" && Number.isFinite(vuln.cvssScore)
-      ? vuln.cvssScore.toFixed(1)
-      : "—";
   const decoded = decodeCvssVector(vuln.cvssVector);
   const metrics = vuln.enrichment?.metrics ?? [];
   const weaknesses = vuln.enrichment?.weaknesses ?? [];
@@ -77,13 +65,9 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
 
       <Card>
         <CardHeader>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">CVSS</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">CVSS 벡터 · 메트릭</h2>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex items-baseline gap-3">
-            <span className="text-3xl font-bold text-neutral-100">{scoreLabel}</span>
-            <span className="text-sm uppercase text-neutral-400">{vuln.severity ?? "unknown"}</span>
-          </div>
           {decoded.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {decoded.map((m) => (
@@ -119,7 +103,6 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
                   {m.exploitMaturity && <span>· 악용성숙도 {m.exploitMaturity}</span>}
                   {m.exploitabilityScore != null && <span>· 악용성 {m.exploitabilityScore}</span>}
                   {m.impactScore != null && <span>· 영향도 {m.impactScore}</span>}
-                  {m.source && <span className="text-neutral-400 dark:text-neutral-500">· {m.source}</span>}
                 </div>
               ))}
             </div>
@@ -230,21 +213,18 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
                       {ref.url}
                       <ExternalLink className="h-3 w-3 flex-shrink-0" />
                     </a>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {hostOf(ref.url) && (
-                        <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600 dark:text-neutral-400">
-                          {hostOf(ref.url)}
-                        </span>
-                      )}
-                      {ref.tags.map((t) => (
-                        <span
-                          key={t}
-                          className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
-                        >
-                          {t}
-                        </span>
-                      ))}
-                    </div>
+                    {ref.tags.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {ref.tags.map((t) => (
+                          <span
+                            key={t}
+                            className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
+                          >
+                            {t}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

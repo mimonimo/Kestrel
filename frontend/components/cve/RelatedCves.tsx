@@ -47,7 +47,7 @@ export function RelatedCves({ cveId }: { cveId: string }) {
                         KEV
                       </span>
                     )}
-                    <span className="rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-600 dark:bg-surface-2 dark:text-neutral-400">
+                    <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[10px] text-neutral-500">
                       {it.reason}
                     </span>
                   </div>
