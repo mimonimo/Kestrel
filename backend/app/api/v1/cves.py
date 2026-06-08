@@ -55,6 +55,10 @@ async def get_cve(cve_id: str, db: AsyncSession = Depends(get_db)) -> Vulnerabil
     vuln = await db.scalar(select(Vulnerability).where(Vulnerability.cve_id == cve_id))
     if vuln is None:
         raise HTTPException(status_code=404, detail=f"{cve_id} not found")
+    # 원본 소스(raw_data)에서 약점·레퍼런스·CVSS 메트릭 보강 (best-effort).
+    from app.services.enrichment import build_enrichment
+
+    vuln.enrichment = build_enrichment(vuln)  # type: ignore[attr-defined]
     return vuln
 
 

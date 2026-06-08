@@ -118,6 +118,37 @@ export interface Vulnerability {
   types: VulnType[];
   affectedProducts: AffectedProduct[];
   references: Reference[];
+  enrichment?: Enrichment | null;
+}
+
+export interface Weakness {
+  cweId: string;
+  name?: string | null;
+  url?: string | null;
+}
+
+export interface EnrichedRef {
+  url: string;
+  tags: string[];
+  source?: string | null;
+}
+
+export interface CvssMetric {
+  version: string;
+  vector?: string | null;
+  baseScore?: number | null;
+  baseSeverity?: string | null;
+  source?: string | null;
+  kind?: string | null;
+  exploitabilityScore?: number | null;
+  impactScore?: number | null;
+  exploitMaturity?: string | null;
+}
+
+export interface Enrichment {
+  weaknesses: Weakness[];
+  references: EnrichedRef[];
+  metrics: CvssMetric[];
 }
 
 export type PriorityTier =

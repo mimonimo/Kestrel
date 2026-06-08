@@ -10,13 +10,26 @@ import { SourceBadgeCluster } from "./SourceBadgeCluster";
 import { TicketControl } from "./TicketControl";
 import { CommentThread } from "@/components/community/CommentThread";
 import { formatDate } from "@/lib/utils";
+import { decodeCvssVector } from "@/lib/cvss";
 import type { Vulnerability } from "@/lib/types";
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
 
 export function CveDetail({ vuln }: { vuln: Vulnerability }) {
   const scoreLabel =
     typeof vuln.cvssScore === "number" && Number.isFinite(vuln.cvssScore)
       ? vuln.cvssScore.toFixed(1)
       : "—";
+  const decoded = decodeCvssVector(vuln.cvssVector);
+  const metrics = vuln.enrichment?.metrics ?? [];
+  const weaknesses = vuln.enrichment?.weaknesses ?? [];
+  const richRefs = vuln.enrichment?.references ?? [];
 
   return (
     <article className="relative mx-auto max-w-7xl space-y-6 px-6 py-8">
@@ -54,11 +67,25 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
         <CardHeader>
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">CVSS</h2>
         </CardHeader>
-        <CardContent className="space-y-1.5">
+        <CardContent className="space-y-3">
           <div className="flex items-baseline gap-3">
             <span className="text-3xl font-bold text-neutral-100">{scoreLabel}</span>
             <span className="text-sm uppercase text-neutral-400">{vuln.severity ?? "unknown"}</span>
           </div>
+          {decoded.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {decoded.map((m) => (
+                <span
+                  key={m.key}
+                  className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] dark:bg-surface-2"
+                  title={m.label}
+                >
+                  <span className="text-neutral-500 dark:text-neutral-500">{m.label}</span>
+                  <span className="font-medium text-neutral-800 dark:text-neutral-200">{m.value}</span>
+                </span>
+              ))}
+            </div>
+          )}
           {vuln.cvssVector ? (
             <code className="block break-all font-mono text-xs text-neutral-500">
               {vuln.cvssVector}
@@ -66,8 +93,55 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
           ) : (
             <p className="text-xs text-neutral-600">CVSS 벡터 정보 없음</p>
           )}
+          {metrics.length > 0 && (
+            <div className="space-y-1 border-t border-neutral-200 pt-2 dark:border-neutral-800">
+              {metrics.map((m, i) => (
+                <div key={i} className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-500 dark:text-neutral-400">
+                  <span className="rounded bg-neutral-200/70 px-1.5 py-0.5 font-mono dark:bg-surface-3">
+                    CVSS {m.version}
+                  </span>
+                  {m.baseScore != null && (
+                    <span className="font-semibold text-neutral-800 dark:text-neutral-200">{m.baseScore.toFixed(1)}</span>
+                  )}
+                  {m.baseSeverity && <span className="uppercase">{m.baseSeverity}</span>}
+                  {m.exploitMaturity && <span>· 악용성숙도 {m.exploitMaturity}</span>}
+                  {m.exploitabilityScore != null && <span>· 악용성 {m.exploitabilityScore}</span>}
+                  {m.impactScore != null && <span>· 영향도 {m.impactScore}</span>}
+                  {m.source && <span className="text-neutral-400 dark:text-neutral-500">· {m.source}</span>}
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {weaknesses.length > 0 && (
+        <Card>
+          <CardHeader>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+              약점 (CWE)
+            </h2>
+          </CardHeader>
+          <CardContent>
+            <ul className="flex flex-wrap gap-2">
+              {weaknesses.map((w) => (
+                <li key={w.cweId}>
+                  <a
+                    href={w.url ?? `https://cwe.mitre.org/`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1 text-xs transition-colors hover:border-sky-400 dark:border-neutral-800 dark:hover:border-sky-500/50"
+                  >
+                    <span className="font-mono font-semibold text-neutral-800 dark:text-neutral-100">{w.cweId}</span>
+                    {w.name && <span className="text-neutral-500 dark:text-neutral-400">{w.name}</span>}
+                    <ExternalLink className="h-3 w-3 text-neutral-400" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -111,32 +185,68 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
         </Card>
       )}
 
-      {vuln.references.length > 0 && (
+      {(richRefs.length > 0 || vuln.references.length > 0) && (
         <Card>
           <CardHeader>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-              참고 자료
+              참고 자료{" "}
+              <span className="font-normal text-neutral-400">
+                {(richRefs.length || vuln.references.length).toLocaleString("ko-KR")}
+              </span>
             </h2>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-2">
-              {vuln.references.map((ref, i) => (
-                <li key={i}>
-                  <a
-                    href={ref.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 break-all text-sm text-blue-400 hover:text-blue-300 hover:underline"
-                  >
-                    <span className="text-xs font-semibold uppercase text-neutral-500">
-                      [{ref.type}]
-                    </span>
-                    {ref.url}
-                    <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                  </a>
-                </li>
-              ))}
-            </ul>
+            {richRefs.length > 0 ? (
+              <ul className="space-y-2.5">
+                {richRefs.map((ref, i) => (
+                  <li key={i} className="flex flex-col gap-1">
+                    <a
+                      href={ref.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 break-all text-sm text-blue-400 hover:text-blue-300 hover:underline"
+                    >
+                      {ref.url}
+                      <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                    </a>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {hostOf(ref.url) && (
+                        <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600 dark:bg-surface-2 dark:text-neutral-400">
+                          {hostOf(ref.url)}
+                        </span>
+                      )}
+                      {ref.tags.map((t) => (
+                        <span
+                          key={t}
+                          className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <ul className="space-y-2">
+                {vuln.references.map((ref, i) => (
+                  <li key={i}>
+                    <a
+                      href={ref.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 break-all text-sm text-blue-400 hover:text-blue-300 hover:underline"
+                    >
+                      <span className="text-xs font-semibold uppercase text-neutral-500">
+                        [{ref.type}]
+                      </span>
+                      {ref.url}
+                      <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
           </CardContent>
         </Card>
       )}
