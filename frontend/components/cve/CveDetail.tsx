@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ExternalLink, X } from "lucide-react";
+import { ExternalLink, Flame, Gauge, ShieldCheck, TrendingUp, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AiAnalysisPanel } from "./AiAnalysisPanel";
@@ -282,6 +282,13 @@ const SEV_BAR: Record<string, string> = {
   low: "bg-emerald-500",
 };
 
+const SEV_TEXT: Record<string, string> = {
+  critical: "text-rose-600 dark:text-rose-400",
+  high: "text-orange-600 dark:text-orange-400",
+  medium: "text-amber-600 dark:text-amber-400",
+  low: "text-emerald-600 dark:text-emerald-400",
+};
+
 function Bar({ pct, className }: { pct: number; className: string }) {
   return (
     <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
@@ -327,6 +334,7 @@ function ThreatSignals({ vuln }: { vuln: Vulnerability }) {
     typeof vuln.cvssScore === "number" && Number.isFinite(vuln.cvssScore) ? vuln.cvssScore : null;
   const sev = (vuln.severity ?? "").toLowerCase();
   const sevBar = SEV_BAR[sev] ?? "bg-neutral-400";
+  const sevText = SEV_TEXT[sev] ?? "text-neutral-900 dark:text-neutral-100";
   const epss = vuln.epssScore ?? null; // 0..1 확률
   const pct = vuln.epssPercentile ?? null; // 0..1 백분위
   const kev = !!vuln.kevListed;
@@ -343,66 +351,84 @@ function ThreatSignals({ vuln }: { vuln: Vulnerability }) {
         <p className={`rounded-lg border px-3 py-2 text-xs font-medium ${risk.tone}`}>
           {risk.text}
         </p>
-        <div className="grid gap-5 sm:grid-cols-3">
-        {/* CVSS — 이론 심각도 */}
-        <div className="space-y-1.5">
-          <div className="text-[11px] font-medium text-neutral-500 dark:text-neutral-500">
-            CVSS · 이론 심각도
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-              {score != null ? score.toFixed(1) : "—"}
-            </span>
-            <span className="text-xs uppercase text-neutral-500">{sev || "unknown"}</span>
-          </div>
-          <Bar pct={score != null ? (score / 10) * 100 : 0} className={sevBar} />
-        </div>
-
-        {/* EPSS — 악용 확률 예측 */}
-        <div className="space-y-1.5">
-          <div className="text-[11px] font-medium text-neutral-500 dark:text-neutral-500">
-            EPSS · 30일 내 악용 확률
-          </div>
-          {epss != null ? (
-            <>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-                  {(epss * 100).toFixed(1)}%
-                </span>
-                {pct != null && (
-                  <span className="text-xs text-neutral-500">상위 {(100 - pct * 100).toFixed(1)}%</span>
-                )}
-              </div>
-              <Bar pct={epss * 100} className="bg-violet-500" />
-            </>
-          ) : (
-            <p className="text-xs text-neutral-500">EPSS 데이터 없음</p>
-          )}
-        </div>
-
-        {/* KEV — 실측 악용 */}
-        <div className="space-y-1.5">
-          <div className="text-[11px] font-medium text-neutral-500 dark:text-neutral-500">
-            KEV · 실측 악용
-          </div>
-          {kev ? (
-            <div className="space-y-1">
-              <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800 dark:bg-rose-500/15 dark:text-rose-200">
-                등재됨 — 악용 확인
-              </span>
-              {vuln.kevDateAdded && (
-                <p className="text-[11px] text-neutral-500">등재일: {formatDate(vuln.kevDateAdded)}</p>
-              )}
-              {vuln.kevDueDate && (
-                <p className="text-[11px] text-neutral-500">패치 기한: {formatDate(vuln.kevDueDate)}</p>
-              )}
+        <div className="grid gap-3 sm:grid-cols-3">
+          {/* CVSS — 이론 심각도 */}
+          <div className="rounded-xl border border-neutral-200 p-3.5 dark:border-neutral-800">
+            <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+              <Gauge className="h-3.5 w-3.5" /> CVSS
             </div>
-          ) : (
-            <span className="inline-flex items-center rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-              미등재
-            </span>
-          )}
-        </div>
+            <div className="flex items-baseline gap-2">
+              <span className={`text-2xl font-bold ${sevText}`}>
+                {score != null ? score.toFixed(1) : "—"}
+              </span>
+              <span className="text-xs uppercase text-neutral-500">{sev || "unknown"}</span>
+            </div>
+            <div className="mt-2">
+              <Bar pct={score != null ? (score / 10) * 100 : 0} className={sevBar} />
+            </div>
+            <p className="mt-1.5 text-[10px] text-neutral-500">이론적 심각도 점수</p>
+          </div>
+
+          {/* EPSS — 악용 확률 예측 */}
+          <div className="rounded-xl border border-neutral-200 p-3.5 dark:border-neutral-800">
+            <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+              <TrendingUp className="h-3.5 w-3.5" /> EPSS
+            </div>
+            {epss != null ? (
+              <>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-violet-600 dark:text-violet-400">
+                    {(epss * 100).toFixed(1)}%
+                  </span>
+                  {pct != null && (
+                    <span className="text-xs text-neutral-500">상위 {(100 - pct * 100).toFixed(1)}%</span>
+                  )}
+                </div>
+                <div className="mt-2">
+                  <Bar pct={epss * 100} className="bg-violet-500" />
+                </div>
+                <p className="mt-1.5 text-[10px] text-neutral-500">30일 내 악용 확률 예측</p>
+              </>
+            ) : (
+              <>
+                <span className="text-2xl font-bold text-neutral-300 dark:text-neutral-700">—</span>
+                <p className="mt-1.5 text-[10px] text-neutral-500">예측 데이터 없음</p>
+              </>
+            )}
+          </div>
+
+          {/* KEV — 실측 악용 */}
+          <div
+            className={`rounded-xl border p-3.5 ${
+              kev
+                ? "border-rose-200 bg-rose-50/40 dark:border-rose-500/30 dark:bg-rose-500/5"
+                : "border-neutral-200 dark:border-neutral-800"
+            }`}
+          >
+            <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+              <Flame className={`h-3.5 w-3.5 ${kev ? "text-rose-500" : ""}`} /> KEV
+            </div>
+            {kev ? (
+              <>
+                <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-sm font-semibold text-rose-800 dark:bg-rose-500/20 dark:text-rose-200">
+                  <ShieldCheck className="h-3.5 w-3.5" /> 등재됨
+                </span>
+                <div className="mt-1.5 space-y-0.5">
+                  {vuln.kevDateAdded && (
+                    <p className="text-[10px] text-neutral-500">등재일 {formatDate(vuln.kevDateAdded)}</p>
+                  )}
+                  {vuln.kevDueDate && (
+                    <p className="text-[10px] text-neutral-500">패치 기한 {formatDate(vuln.kevDueDate)}</p>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <span className="text-lg font-semibold text-neutral-400 dark:text-neutral-500">미등재</span>
+                <p className="mt-1.5 text-[10px] text-neutral-500">실측 악용 기록 없음</p>
+              </>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>
