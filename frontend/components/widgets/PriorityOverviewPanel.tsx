@@ -181,11 +181,15 @@ function TierDetail({ bucket }: { bucket: DashboardPriorityBucket }) {
                       {it.cveId}
                     </span>
                     <span className="flex shrink-0 items-baseline gap-1.5 text-[10px] text-neutral-500 dark:text-neutral-500">
-                      {it.publishedAt && (
-                        <span className="tabular-nums" title={new Date(it.publishedAt).toLocaleString("ko-KR")}>
+                      {it.publishedAt ? (
+                        <span className="tabular-nums" title={`발행: ${new Date(it.publishedAt).toLocaleString("ko-KR")}`}>
                           {formatRelativeKo(it.publishedAt)}
                         </span>
-                      )}
+                      ) : it.modifiedAt ? (
+                        <span className="tabular-nums" title={`최종 수정: ${new Date(it.modifiedAt).toLocaleString("ko-KR")}`}>
+                          수정 {formatRelativeKo(it.modifiedAt)}
+                        </span>
+                      ) : null}
                       {it.cvssScore != null && (
                         <span className="tabular-nums">CVSS {it.cvssScore.toFixed(1)}</span>
                       )}

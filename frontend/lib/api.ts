@@ -1279,6 +1279,7 @@ export interface DashboardPriorityItem {
   kevListed: boolean;
   kevDateAdded: string | null;
   publishedAt: string | null;
+  modifiedAt: string | null;
 }
 
 export interface DashboardPriorityBucket {

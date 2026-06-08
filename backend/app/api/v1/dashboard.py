@@ -476,6 +476,7 @@ class PriorityItem(CamelModel):
     kev_listed: bool
     kev_date_added: datetime | None
     published_at: datetime | None
+    modified_at: datetime | None = None
 
 
 class PriorityBucket(CamelModel):
@@ -634,6 +635,7 @@ async def _compute_priorities(
                 Vulnerability.kev_listed,
                 Vulnerability.kev_date_added,
                 Vulnerability.published_at,
+                Vulnerability.modified_at,
             )
             .where(*tier["where"])
             .order_by(*tier["order_by"])
@@ -651,6 +653,7 @@ async def _compute_priorities(
                 kev_listed=bool(r.kev_listed),
                 kev_date_added=r.kev_date_added,
                 published_at=r.published_at,
+                modified_at=r.modified_at,
             )
             for r in rows
         ]
