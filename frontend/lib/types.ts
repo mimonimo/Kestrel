@@ -118,7 +118,21 @@ export interface Vulnerability {
   types: VulnType[];
   affectedProducts: AffectedProduct[];
   references: Reference[];
+  epssScore?: number | null;
+  epssPercentile?: number | null;
+  kevListed?: boolean;
+  kevDateAdded?: string | null;
+  kevDueDate?: string | null;
   enrichment?: Enrichment | null;
+}
+
+export interface CpeMatch {
+  criteria: string;
+  vulnerable: boolean;
+  versionStartIncluding?: string | null;
+  versionStartExcluding?: string | null;
+  versionEndIncluding?: string | null;
+  versionEndExcluding?: string | null;
 }
 
 export interface Weakness {
@@ -149,6 +163,9 @@ export interface Enrichment {
   weaknesses: Weakness[];
   references: EnrichedRef[];
   metrics: CvssMetric[];
+  cpeMatches?: CpeMatch[];
+  vulnStatus?: string | null;
+  cna?: string | null;
 }
 
 export type PriorityTier =

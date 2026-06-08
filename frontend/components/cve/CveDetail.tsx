@@ -11,7 +11,7 @@ import { TicketControl } from "./TicketControl";
 import { CommentThread } from "@/components/community/CommentThread";
 import { formatDate } from "@/lib/utils";
 import { decodeCvssVector } from "@/lib/cvss";
-import type { Vulnerability } from "@/lib/types";
+import type { CpeMatch, Vulnerability } from "@/lib/types";
 
 function hostOf(url: string): string {
   try {
@@ -50,6 +50,14 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
           <ShareButton cveId={vuln.cveId} size="md" stopPropagation={false} />
           <span className="text-xs text-neutral-500">게시일: {formatDate(vuln.publishedAt)}</span>
           <span className="text-xs text-neutral-500">수정일: {formatDate(vuln.modifiedAt)}</span>
+          {vuln.enrichment?.cna && (
+            <span className="text-xs text-neutral-500">CNA: {vuln.enrichment.cna}</span>
+          )}
+          {vuln.enrichment?.vulnStatus && (
+            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-neutral-600 dark:text-neutral-400">
+              {vuln.enrichment.vulnStatus}
+            </span>
+          )}
         </div>
         <h1 className="text-2xl font-bold leading-tight text-neutral-100">{vuln.title}</h1>
         {vuln.types.length > 0 && (
@@ -62,6 +70,8 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
           </div>
         )}
       </header>
+
+      <ThreatSignals vuln={vuln} />
 
       <Card>
         <CardHeader>
@@ -77,7 +87,7 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
               {decoded.map((m) => (
                 <span
                   key={m.key}
-                  className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] dark:bg-surface-2"
+                  className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[11px]"
                   title={m.label}
                 >
                   <span className="text-neutral-500 dark:text-neutral-500">{m.label}</span>
@@ -185,6 +195,8 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
         </Card>
       )}
 
+      <CpeConfigSection matches={vuln.enrichment?.cpeMatches ?? []} />
+
       {(richRefs.length > 0 || vuln.references.length > 0) && (
         <Card>
           <CardHeader>
@@ -211,7 +223,7 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
                     </a>
                     <div className="flex flex-wrap items-center gap-1.5">
                       {hostOf(ref.url) && (
-                        <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600 dark:bg-surface-2 dark:text-neutral-400">
+                        <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600 dark:text-neutral-400">
                           {hostOf(ref.url)}
                         </span>
                       )}
@@ -269,5 +281,162 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
         </p>
       </footer>
     </article>
+  );
+}
+
+
+// ─── 위협 신호 시각화 (CVSS · EPSS · KEV) ───────────────────────────
+const SEV_BAR: Record<string, string> = {
+  critical: "bg-rose-500",
+  high: "bg-orange-500",
+  medium: "bg-amber-500",
+  low: "bg-emerald-500",
+};
+
+function Bar({ pct, className }: { pct: number; className: string }) {
+  return (
+    <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+      <div
+        className={`h-full rounded-full ${className}`}
+        style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+      />
+    </div>
+  );
+}
+
+function ThreatSignals({ vuln }: { vuln: Vulnerability }) {
+  const score =
+    typeof vuln.cvssScore === "number" && Number.isFinite(vuln.cvssScore) ? vuln.cvssScore : null;
+  const sev = (vuln.severity ?? "").toLowerCase();
+  const sevBar = SEV_BAR[sev] ?? "bg-neutral-400";
+  const epss = vuln.epssScore ?? null; // 0..1 확률
+  const pct = vuln.epssPercentile ?? null; // 0..1 백분위
+  const kev = !!vuln.kevListed;
+
+  return (
+    <Card>
+      <CardHeader>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+          위협 신호 <span className="font-normal text-neutral-400">· CVSS · EPSS · KEV</span>
+        </h2>
+      </CardHeader>
+      <CardContent className="grid gap-5 sm:grid-cols-3">
+        {/* CVSS — 이론 심각도 */}
+        <div className="space-y-1.5">
+          <div className="text-[11px] font-medium text-neutral-500 dark:text-neutral-500">
+            CVSS · 이론 심각도
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
+              {score != null ? score.toFixed(1) : "—"}
+            </span>
+            <span className="text-xs uppercase text-neutral-500">{sev || "unknown"}</span>
+          </div>
+          <Bar pct={score != null ? (score / 10) * 100 : 0} className={sevBar} />
+        </div>
+
+        {/* EPSS — 악용 확률 예측 */}
+        <div className="space-y-1.5">
+          <div className="text-[11px] font-medium text-neutral-500 dark:text-neutral-500">
+            EPSS · 30일 내 악용 확률
+          </div>
+          {epss != null ? (
+            <>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
+                  {(epss * 100).toFixed(1)}%
+                </span>
+                {pct != null && (
+                  <span className="text-xs text-neutral-500">상위 {(100 - pct * 100).toFixed(1)}%</span>
+                )}
+              </div>
+              <Bar pct={epss * 100} className="bg-violet-500" />
+            </>
+          ) : (
+            <p className="text-xs text-neutral-500">EPSS 데이터 없음</p>
+          )}
+        </div>
+
+        {/* KEV — 실측 악용 */}
+        <div className="space-y-1.5">
+          <div className="text-[11px] font-medium text-neutral-500 dark:text-neutral-500">
+            KEV · 실측 악용
+          </div>
+          {kev ? (
+            <div className="space-y-1">
+              <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800 dark:bg-rose-500/15 dark:text-rose-200">
+                등재됨 — 악용 확인
+              </span>
+              {vuln.kevDateAdded && (
+                <p className="text-[11px] text-neutral-500">등재일: {formatDate(vuln.kevDateAdded)}</p>
+              )}
+              {vuln.kevDueDate && (
+                <p className="text-[11px] text-neutral-500">패치 기한: {formatDate(vuln.kevDueDate)}</p>
+              )}
+            </div>
+          ) : (
+            <span className="inline-flex items-center rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+              미등재
+            </span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── 영향받는 구성 (CPE) ────────────────────────────────────────────
+function cpeLabel(c: string): string {
+  const p = c.split(":");
+  const pick = (i: number) => (p[i] && p[i] !== "*" && p[i] !== "-" ? p[i] : "");
+  const s = [pick(3), pick(4), pick(5)].filter(Boolean).join(" ");
+  return (s || c).replace(/\\/g, "");
+}
+
+function versionRange(m: CpeMatch): string {
+  const parts: string[] = [];
+  if (m.versionStartIncluding) parts.push(`≥ ${m.versionStartIncluding}`);
+  if (m.versionStartExcluding) parts.push(`> ${m.versionStartExcluding}`);
+  if (m.versionEndIncluding) parts.push(`≤ ${m.versionEndIncluding}`);
+  if (m.versionEndExcluding) parts.push(`< ${m.versionEndExcluding}`);
+  return parts.join("  ");
+}
+
+function CpeConfigSection({ matches }: { matches: CpeMatch[] }) {
+  if (!matches.length) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+          영향받는 구성 (CPE){" "}
+          <span className="font-normal text-neutral-400">{matches.length}</span>
+        </h2>
+      </CardHeader>
+      <CardContent>
+        <ul className="space-y-1.5">
+          {matches.map((m, i) => {
+            const range = versionRange(m);
+            return (
+              <li
+                key={i}
+                className="flex flex-wrap items-center gap-2 border-b border-neutral-100 pb-1.5 text-xs last:border-0 dark:border-neutral-800/60"
+              >
+                <span className="font-medium text-neutral-800 dark:text-neutral-200">
+                  {cpeLabel(m.criteria)}
+                </span>
+                {range && (
+                  <span className="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[10px] text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
+                    {range}
+                  </span>
+                )}
+                <span className="truncate font-mono text-[10px] text-neutral-400 dark:text-neutral-600">
+                  {m.criteria}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }

@@ -11,6 +11,7 @@ import re
 from typing import Any
 
 from app.schemas.vulnerability import (
+    CpeMatchOut,
     CvssMetricOut,
     EnrichedRefOut,
     EnrichmentOut,
@@ -154,6 +155,33 @@ def _gh_metrics(raw: dict) -> list[CvssMetricOut]:
     ]
 
 
+def _cpe_matches(cve: dict | None) -> list[CpeMatchOut]:
+    out: list[CpeMatchOut] = []
+    if not isinstance(cve, dict):
+        return out
+    seen: set[str] = set()
+    for cfg in cve.get("configurations") or []:
+        for node in cfg.get("nodes") or []:
+            for cm in node.get("cpeMatch") or []:
+                crit = cm.get("criteria")
+                if not crit or crit in seen:
+                    continue
+                seen.add(crit)
+                out.append(
+                    CpeMatchOut(
+                        criteria=crit,
+                        vulnerable=bool(cm.get("vulnerable", True)),
+                        version_start_including=cm.get("versionStartIncluding"),
+                        version_start_excluding=cm.get("versionStartExcluding"),
+                        version_end_including=cm.get("versionEndIncluding"),
+                        version_end_excluding=cm.get("versionEndExcluding"),
+                    )
+                )
+                if len(out) >= 60:  # 과다 노이즈 방지 캡
+                    return out
+    return out
+
+
 def build_enrichment(vuln) -> EnrichmentOut | None:
     """vuln.raw_data + 모델 데이터에서 보강 정보를 구성. 실패해도 None 반환(상세 비차단).
 
@@ -169,14 +197,27 @@ def build_enrichment(vuln) -> EnrichmentOut | None:
             weaknesses = _weaknesses(cve, vuln)
             references = _references(cve)
             metrics = _metrics(cve)
+            cpe_matches = _cpe_matches(cve)
+            vuln_status = cve.get("vulnStatus")
+            cna = cve.get("sourceIdentifier")
         else:
             # GitHub Advisory 등 평탄 구조.
             weaknesses = _weaknesses(None, vuln)  # CWE 없음 → types 폴백
             references = _gh_references(raw)
             metrics = _gh_metrics(raw)
-        if not weaknesses and not references and not metrics:
+            cpe_matches = []
+            vuln_status = None
+            cna = None
+        if not weaknesses and not references and not metrics and not cpe_matches:
             return None
-        return EnrichmentOut(weaknesses=weaknesses, references=references, metrics=metrics)
+        return EnrichmentOut(
+            weaknesses=weaknesses,
+            references=references,
+            metrics=metrics,
+            cpe_matches=cpe_matches,
+            vuln_status=vuln_status if isinstance(vuln_status, str) else None,
+            cna=cna if isinstance(cna, str) else None,
+        )
     except Exception:  # noqa: BLE001 — 보강은 best-effort, 상세 응답을 막지 않는다.
         return None
 
