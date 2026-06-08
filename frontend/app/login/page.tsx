@@ -40,6 +40,12 @@ export default function LoginPage() {
   const [needsVerify, setNeedsVerify] = useState(false);
   const [resending, setResending] = useState(false);
   const [resent, setResent] = useState(false);
+  // 유휴 자동 로그아웃으로 돌아온 경우 안내.
+  const [idleNotice] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("reason") === "idle",
+  );
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -92,6 +98,11 @@ export default function LoginPage() {
         onSubmit={onSubmit}
         className="flex flex-col gap-4 rounded-xl border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-surface-1"
       >
+        {idleNotice && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300">
+            일정 시간 활동이 없어 자동 로그아웃되었습니다. 다시 로그인해 주세요.
+          </p>
+        )}
         <label className="flex flex-col gap-1.5 text-sm">
           <span className="text-neutral-700 dark:text-neutral-300">이메일</span>
           <input
