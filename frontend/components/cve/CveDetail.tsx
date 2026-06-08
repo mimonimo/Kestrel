@@ -11,6 +11,7 @@ import { TicketControl } from "./TicketControl";
 import { CommentThread } from "@/components/community/CommentThread";
 import { formatDate } from "@/lib/utils";
 import { decodeCvssVector } from "@/lib/cvss";
+import { MarkdownLite } from "@/components/ui/markdown-lite";
 import type { CpeMatch, Vulnerability } from "@/lib/types";
 
 function hostOf(url: string): string {
@@ -158,9 +159,14 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">상세 설명</h2>
         </CardHeader>
         <CardContent>
-          <p className="whitespace-pre-line text-sm leading-relaxed text-neutral-300">
-            {vuln.description || "설명이 제공되지 않았습니다."}
-          </p>
+          {vuln.description ? (
+            <MarkdownLite
+              source={vuln.description}
+              className="text-neutral-800 dark:text-neutral-300"
+            />
+          ) : (
+            <p className="text-sm text-neutral-500">설명이 제공되지 않았습니다.</p>
+          )}
         </CardContent>
       </Card>
 
