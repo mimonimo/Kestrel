@@ -133,7 +133,7 @@ function TierDetail({ bucket }: { bucket: DashboardPriorityBucket }) {
       {/* 헤더 — 누르면 해당 순위 전체를 취약점 조회에서 봄 */}
       <Link
         href={`/cves?priority=${bucket.key}` as Route}
-        className="flex items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-3 py-2 transition-colors hover:bg-neutral-100 dark:border-neutral-800 dark:bg-surface-2 dark:hover:bg-surface-3"
+        className="flex items-center gap-2 border-b border-neutral-200 bg-neutral-50 px-3 py-2 transition-colors hover:bg-neutral-200 dark:border-neutral-800 dark:bg-surface-2 dark:hover:bg-surface-3"
         title={`${bucket.label} ${bucket.count.toLocaleString("ko-KR")}건 전체 보기`}
       >
         <Icon className={cn("h-4 w-4 shrink-0", meta.tint)} />

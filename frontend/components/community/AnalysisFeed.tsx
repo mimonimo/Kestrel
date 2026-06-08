@@ -361,7 +361,7 @@ export function AnalysisFeed({
                 className={cn(
                   "rounded-full px-2 py-0.5 font-medium",
                   SEVERITY_TONE[a.cveSeverity] ||
-                    "bg-neutral-100 text-neutral-700 dark:bg-surface-2 dark:text-neutral-300",
+                    "bg-surface-2 text-neutral-700 dark:text-neutral-300",
                 )}
               >
                 {SEVERITY_LABEL[a.cveSeverity] || a.cveSeverity}
