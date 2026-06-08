@@ -533,8 +533,13 @@ def _tier_filters():
             "label": "EPSS 상위 + 외부 접점",
             "rationale": "30일 내 악용 예측 + 직접 노출 — 즉시 조치",
             "where": [epss_high, ~kev],
+            # EPSS 0.1 구간으로 묶고, 같은 구간(위험도 사실상 동일) 안에서는
+            # 최신 등록순 → 오래된 CVE 가 소수점 차이로 상위를 점령하지 않게.
             "order_by": [
-                Vulnerability.epss_score.desc().nulls_last(),
+                func.floor(Vulnerability.epss_score * 10).desc(),
+                func.coalesce(Vulnerability.published_at, Vulnerability.modified_at)
+                .desc()
+                .nulls_last(),
                 Vulnerability.cvss_score.desc().nulls_last(),
             ],
         },
@@ -544,8 +549,11 @@ def _tier_filters():
             "rationale": "이론은 낮아도 실제 터질 가능성 — 앞당겨 조치",
             "where": [cvss_mid, Vulnerability.epss_score >= 0.3, ~kev],
             "order_by": [
-                Vulnerability.epss_score.desc().nulls_last(),
-                Vulnerability.published_at.desc().nulls_last(),
+                func.floor(Vulnerability.epss_score * 10).desc(),
+                func.coalesce(Vulnerability.published_at, Vulnerability.modified_at)
+                .desc()
+                .nulls_last(),
+                Vulnerability.cvss_score.desc().nulls_last(),
             ],
         },
         {
