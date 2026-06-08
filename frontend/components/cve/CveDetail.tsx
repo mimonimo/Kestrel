@@ -305,7 +305,7 @@ const SEV_TEXT: Record<string, string> = {
 const CHIP_TONE: Record<string, string> = {
   high: "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200",
   med: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200",
-  low: "bg-neutral-100 text-neutral-600 dark:bg-surface-2 dark:text-neutral-300",
+  low: "bg-surface-2 text-neutral-500",
 };
 
 function Bar({ pct, className }: { pct: number; className: string }) {
