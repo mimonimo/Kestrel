@@ -57,6 +57,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # 운영 EC2 는 arm64(Graviton/t4g) — amd64 단독 빌드면 호스트가 pull 시
+      # "no matching manifest for linux/arm64" 로 실패한다. QEMU 로 arm64 까지
+      # 교차 빌드해 멀티아치 매니페스트를 push.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -65,6 +71,7 @@ jobs:
         with:
           context: ${{ matrix.context }}
           push: true
+          platforms: linux/amd64,linux/arm64
           build-args: ${{ matrix.build_args }}
           tags: |
             ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner }}/kestrel-${{ matrix.name }}:latest
