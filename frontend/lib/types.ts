@@ -135,6 +135,14 @@ export interface CpeMatch {
   versionEndExcluding?: string | null;
 }
 
+export interface ReferencePreview {
+  url: string;
+  title?: string | null;
+  description?: string | null;
+  siteName?: string | null;
+  ok: boolean;
+}
+
 export interface RelatedCve {
   cveId: string;
   title: string;

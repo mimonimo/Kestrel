@@ -618,6 +618,10 @@ export const api = {
     request<AnalysisList>(`/cves/${encodeURIComponent(cveId)}/analyses`),
   getRelatedCves: (cveId: string) =>
     request<import("./types").RelatedCve[]>(`/cves/${encodeURIComponent(cveId)}/related`),
+  getReferencePreviews: (cveId: string) =>
+    request<import("./types").ReferencePreview[]>(
+      `/cves/${encodeURIComponent(cveId)}/reference-previews`,
+    ),
   getAnalysisRecord: (id: string) =>
     request<AnalysisDetail>(`/analyses/${encodeURIComponent(id)}`),
   updateAnalysisRecord: (

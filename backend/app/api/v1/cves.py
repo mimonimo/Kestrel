@@ -147,6 +147,45 @@ async def related_cves(cve_id: str, db: AsyncSession = Depends(get_db)) -> list[
     return (prod_items + type_items)[:8]
 
 
+class ReferencePreviewOut(CamelModel):
+    url: str
+    title: str | None = None
+    description: str | None = None
+    site_name: str | None = None
+    ok: bool = False
+
+
+@router.get(
+    "/{cve_id}/reference-previews",
+    response_model=list[ReferencePreviewOut],
+    response_model_by_alias=True,
+)
+async def reference_previews(cve_id: str, db: AsyncSession = Depends(get_db)) -> list[dict]:
+    """이 CVE 참고 링크들의 페이지 제목·요약을 가져온다(서버측, 캐시·SSRF 안전).
+    사이트로 나가지 않고도 각 레퍼런스 내용을 미리 보기 위함."""
+    vuln = await db.scalar(select(Vulnerability).where(Vulnerability.cve_id == cve_id))
+    if vuln is None:
+        return []
+    urls: list[str] = []
+    raw = vuln.raw_data if isinstance(vuln.raw_data, dict) else {}
+    cve = raw.get("cve") if isinstance(raw, dict) else None
+    if isinstance(cve, dict):
+        for r in cve.get("references") or []:
+            if isinstance(r, dict) and r.get("url"):
+                urls.append(r["url"])
+    if not urls:  # GitHub Advisory 등 평탄 구조 + 모델 references 폴백
+        for r in raw.get("references") or []:
+            if isinstance(r, dict) and r.get("url"):
+                urls.append(r["url"])
+    if not urls:
+        urls = [r.url for r in vuln.references]
+    if not urls:
+        return []
+    from app.services.reference_preview import previews_for
+
+    return await previews_for(urls)
+
+
 class AiAnalysisResponse(CamelModel):
     attack_method: str
     payload_examples: list[str]

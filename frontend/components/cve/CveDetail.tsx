@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AiAnalysisPanel } from "./AiAnalysisPanel";
 import { RelatedCves } from "./RelatedCves";
+import { ReferenceList } from "./ReferenceList";
 import { BookmarkButton } from "./BookmarkButton";
 import { ShareButton } from "./ShareButton";
 import { SeverityBadge } from "./SeverityBadge";
@@ -202,68 +203,7 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
 
       <CpeConfigSection matches={vuln.enrichment?.cpeMatches ?? []} />
 
-      {(richRefs.length > 0 || vuln.references.length > 0) && (
-        <Card>
-          <CardHeader>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-              참고 자료{" "}
-              <span className="font-normal text-neutral-400">
-                {(richRefs.length || vuln.references.length).toLocaleString("ko-KR")}
-              </span>
-            </h2>
-          </CardHeader>
-          <CardContent>
-            {richRefs.length > 0 ? (
-              <ul className="space-y-2.5">
-                {richRefs.map((ref, i) => (
-                  <li key={i} className="flex flex-col gap-1">
-                    <a
-                      href={ref.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 break-all text-sm text-blue-400 hover:text-blue-300 hover:underline"
-                    >
-                      {ref.url}
-                      <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                    </a>
-                    {ref.tags.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {ref.tags.map((t) => (
-                          <span
-                            key={t}
-                            className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
-                          >
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <ul className="space-y-2">
-                {vuln.references.map((ref, i) => (
-                  <li key={i}>
-                    <a
-                      href={ref.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 break-all text-sm text-blue-400 hover:text-blue-300 hover:underline"
-                    >
-                      <span className="text-xs font-semibold uppercase text-neutral-500">
-                        [{ref.type}]
-                      </span>
-                      {ref.url}
-                      <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      <ReferenceList cveId={vuln.cveId} richRefs={richRefs} fallbackRefs={vuln.references} />
 
       <TicketControl cveId={vuln.cveId} />
 
