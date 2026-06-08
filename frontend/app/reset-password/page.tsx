@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { CheckCircle2, KeyRound } from "lucide-react";
+import { AlertTriangle, CheckCircle2, KeyRound, Loader2 } from "lucide-react";
 
 import { ApiError, api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -25,9 +25,28 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // 진입 시 토큰 사전 검증 — null=확인 중, true/false=결과.
+  const [tokenValid, setTokenValid] = useState<boolean | null>(null);
 
   useEffect(() => {
-    setToken(readToken());
+    const t = readToken();
+    setToken(t);
+    if (!t) {
+      setTokenValid(false);
+      return;
+    }
+    let cancelled = false;
+    api
+      .validateResetToken(t)
+      .then((r) => {
+        if (!cancelled) setTokenValid(r.valid);
+      })
+      .catch(() => {
+        if (!cancelled) setTokenValid(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function onSubmit(e: React.FormEvent) {
@@ -67,6 +86,42 @@ export default function ResetPasswordPage() {
         <p className="text-sm text-neutral-600 dark:text-neutral-400">
           새 비밀번호로 로그인해 주세요. 잠시 후 로그인 화면으로 이동합니다.
         </p>
+      </div>
+    );
+  }
+
+  if (tokenValid === null) {
+    return (
+      <div className="mx-auto flex w-full max-w-md flex-col items-center gap-3 px-6 py-20 text-center">
+        <Loader2 className="h-6 w-6 animate-spin text-sky-500" />
+        <p className="text-sm text-neutral-600 dark:text-neutral-400">링크 확인 중…</p>
+      </div>
+    );
+  }
+
+  if (tokenValid === false) {
+    return (
+      <div className="mx-auto flex w-full max-w-md flex-col items-center gap-5 px-6 py-20 text-center">
+        <AlertTriangle className="h-10 w-10 text-amber-500" />
+        <h1 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+          만료되었거나 사용된 링크예요
+        </h1>
+        <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          비밀번호 재설정 링크는 보안을 위해 발급 후 1시간 동안만, 한 번만 사용할 수 있어요.
+          아래에서 재설정을 다시 요청해 주세요.
+        </p>
+        <Link
+          href={"/forgot-password" as never}
+          className="inline-flex items-center gap-2 rounded-full bg-sky-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-600 dark:hover:bg-sky-400"
+        >
+          비밀번호 재설정 다시 요청
+        </Link>
+        <Link
+          href={"/login" as never}
+          className="text-sm font-medium text-sky-600 hover:underline dark:text-sky-400"
+        >
+          로그인으로 돌아가기
+        </Link>
       </div>
     );
   }

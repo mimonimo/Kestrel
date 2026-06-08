@@ -588,6 +588,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ token, newPassword }),
     }),
+  validateResetToken: (token: string) =>
+    request<{ valid: boolean }>(
+      `/auth/reset-password/validate?token=${encodeURIComponent(token)}`,
+    ),
 
   // ─── Profile ─────────────────────────────────────────────────
   getProfile: () => request<Profile>(`/me/profile`),

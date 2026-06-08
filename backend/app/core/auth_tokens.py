@@ -53,6 +53,21 @@ async def create_token(purpose: str, user_id: uuid.UUID | str, ttl_seconds: int)
     return token
 
 
+async def peek_token(purpose: str, token: str) -> uuid.UUID | None:
+    """토큰 유효성만 확인(소비하지 않음). 페이지 진입 시 만료/무효 링크를
+    미리 안내하기 위한 용도 — 실제 사용은 consume_token 으로."""
+    if not token:
+        return None
+    redis = await get_redis()
+    uid = await redis.get(_key(purpose, _hash(token)))
+    if not uid:
+        return None
+    try:
+        return uuid.UUID(uid)
+    except (ValueError, TypeError):
+        return None
+
+
 async def consume_token(purpose: str, token: str) -> uuid.UUID | None:
     """토큰 검증 + 즉시 폐기(일회성). 유효하면 user_id, 아니면 None."""
     if not token:

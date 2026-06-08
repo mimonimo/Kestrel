@@ -25,6 +25,7 @@ from app.core.auth_tokens import (
     PURPOSE_PASSWORD_RESET,
     consume_token,
     create_token,
+    peek_token,
 )
 from app.core.config import get_settings
 from app.core.database import get_db
@@ -90,6 +91,10 @@ class ResetPasswordIn(CamelModel):
 
 class SimpleMessageOut(CamelModel):
     message: str
+
+
+class ValidateResetOut(CamelModel):
+    valid: bool
 
 
 class MeOut(CamelModel):
@@ -425,3 +430,15 @@ async def reset_password(
     # 안전을 위해 현재 브라우저의 세션 쿠키 제거 → 새 비밀번호로 다시 로그인 유도.
     _clear_auth_cookie(response)
     return SimpleMessageOut(message="비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.")
+
+
+@router.get(
+    "/reset-password/validate",
+    response_model=ValidateResetOut,
+    response_model_by_alias=True,
+)
+async def validate_reset_token(token: str = "") -> ValidateResetOut:
+    """재설정 링크 진입 시 토큰 유효성 사전 확인 — 토큰을 소비하지 않는다.
+    만료/사용/무효 링크면 프론트가 폼 대신 안내 화면을 즉시 띄울 수 있게."""
+    uid = await peek_token(PURPOSE_PASSWORD_RESET, token)
+    return ValidateResetOut(valid=uid is not None)
