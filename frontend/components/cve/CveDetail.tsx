@@ -92,7 +92,7 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
                         <div
                           key={m.key}
                           title={`${m.value} — ${m.hint}`}
-                          className="flex cursor-help items-center gap-3 rounded-md px-1.5 py-1 transition-colors hover:bg-surface-2"
+                          className="flex cursor-help items-center gap-3 rounded-md px-1.5 py-1 transition-colors hover:bg-neutral-50 dark:hover:bg-surface-2"
                         >
                           <span className="flex-1 truncate text-xs text-neutral-600 dark:text-neutral-400">
                             {m.label}

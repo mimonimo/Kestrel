@@ -98,7 +98,7 @@ function CopyButton({ text }: { text: string }) {
         "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors",
         copied
           ? "text-emerald-700 dark:text-emerald-300"
-          : "text-neutral-400 hover:bg-surface-3 hover:text-neutral-900 dark:hover:text-neutral-100",
+          : "text-neutral-400 hover:bg-neutral-200 hover:text-neutral-900 dark:hover:bg-surface-3 dark:hover:text-neutral-100",
       )}
       aria-label="페이로드 복사"
     >
