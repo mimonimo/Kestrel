@@ -80,6 +80,16 @@ class RelatedItem(CamelModel):
     reason: str
 
 
+def _prod_label(vendor: str | None, product: str | None) -> str:
+    """벤더+제품을 사람이 읽기 좋게 — 제품명이 이미 벤더로 시작하면 중복 제거
+    ("Red Hat" + "Red Hat Enterprise Linux 10" → "Red Hat Enterprise Linux 10")."""
+    v = (vendor or "").strip()
+    p = (product or "").strip()
+    if v and p:
+        return p if p.lower().startswith(v.lower()) else f"{v} {p}"
+    return p or v
+
+
 @router.get(
     "/{cve_id}/related",
     response_model=list[RelatedItem],
@@ -148,17 +158,28 @@ async def related_cves(cve_id: str, db: AsyncSession = Depends(get_db)) -> list[
         if self_score is not None and r.cvss_score is not None:
             score += max(0.0, 10 - abs(self_score - float(r.cvss_score)) * 2)
 
-        # 사람이 읽을 근거 — 가장 강한 신호 우선.
+        # 사람이 읽을 근거 — 가장 강한 신호를 앞세우고 부가 신호(공격 유형·심각도
+        # 근접)를 덧붙여 "왜 연관인지" 구체적으로. 제품·벤더가 잡히면 공격 유형을
+        # 함께, 유형만 잡히는 약한 매치는 심각도 근접 여부까지 밝혀 정당화한다.
+        cvss_close = (
+            self_score is not None
+            and r.cvss_score is not None
+            and abs(self_score - float(r.cvss_score)) <= 1.0
+        )
         if shared_prod:
-            reason = f"같은 제품 · {f'{shared_prod.vendor} {shared_prod.product}'.strip()}"
-        elif shared_vendor and shared_types:
-            reason = f"{shared_vendor} · {shared_types[0]}"
+            reason = f"같은 제품 · {_prod_label(shared_prod.vendor, shared_prod.product)}"
+            if shared_types:
+                reason += f" · {shared_types[0]} 유형"
         elif shared_vendor:
             reason = f"같은 벤더 · {shared_vendor}"
-        elif len(shared_types) >= 2:
-            reason = f"유형 {len(shared_types)}개 일치"
+            if shared_types:
+                reason += f" · {shared_types[0]} 유형"
         elif shared_types:
             reason = f"같은 유형 · {shared_types[0]}"
+            if len(shared_types) >= 2:
+                reason += f" 외 {len(shared_types) - 1}"
+            if cvss_close:
+                reason += " · 심각도 비슷"
         else:
             reason = "연관"
 
