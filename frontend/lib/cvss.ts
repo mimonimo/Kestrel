@@ -50,10 +50,61 @@ export interface DecodedMetric {
   value: string;
   group: "exploit" | "impact";
   tone: "high" | "med" | "low";
+  /** 이 값이 무엇을 뜻하고 왜 위험/안전한지 — 호버 툴팁용 평문 설명. */
+  hint: string;
 }
 
 // 영향 메트릭 키(영향 그룹). 나머지는 악용 경로 그룹.
 const IMPACT_KEYS = new Set(["C", "I", "A", "VC", "VI", "VA", "SC", "SI", "SA"]);
+
+// 악용 경로 메트릭의 값별 평문 설명(코드 기준). 사용자가 "왜 위험/안전한지"
+// 한눈에 알도록 — 메트릭 의미 + 해당 값의 함의를 함께 적는다.
+const EXPLOIT_HINT: Record<string, Record<string, string>> = {
+  AV: {
+    N: "공격 벡터: 인터넷 등 네트워크를 통해 원격에서 공격 가능 — 접근 장벽이 없어 가장 위험",
+    A: "공격 벡터: 같은 네트워크(인접 망)에 있어야 공격 가능",
+    L: "공격 벡터: 대상에 로컬 접근(셸/계정)이 있어야 공격 가능 — 위험 낮음",
+    P: "공격 벡터: 기기에 물리적으로 접근해야 공격 가능 — 위험 매우 낮음",
+  },
+  AC: {
+    L: "공격 복잡도: 특별한 조건 없이 반복적으로 쉽게 악용 가능 — 위험",
+    M: "공격 복잡도: 악용에 일정 조건이 필요(중간)",
+    H: "공격 복잡도: 경쟁 조건·특수 설정 등 까다로운 선행조건 필요 — 성공률 낮음",
+  },
+  AT: {
+    N: "공격 요건: 별도의 선행 조건 없이 악용 가능",
+    P: "공격 요건: 특정 사전 조건이 갖춰져야 악용 가능",
+  },
+  PR: {
+    N: "필요 권한: 아무 권한 없이(비인증) 공격 가능 — 위험",
+    L: "필요 권한: 일반 사용자 수준의 권한만 있으면 공격 가능",
+    H: "필요 권한: 관리자급 높은 권한이 있어야 공격 가능 — 위험 낮음",
+  },
+  UI: {
+    N: "사용자 상호작용: 피해자의 어떤 행동도 없이 자동 악용 — 위험",
+    R: "사용자 상호작용: 피해자가 링크 클릭·파일 열기 등 행동을 해야 악용",
+    P: "사용자 상호작용: 피해자의 수동적 상호작용이 필요",
+    A: "사용자 상호작용: 피해자의 능동적 상호작용이 필요",
+  },
+  Au: {
+    N: "인증: 인증 절차 없이 공격 가능 — 위험",
+    S: "인증: 1회 인증이 필요",
+    M: "인증: 여러 단계 인증이 필요 — 위험 낮음",
+  },
+  S: {
+    U: "범위: 영향이 취약한 컴포넌트 내부로 한정(범위 불변)",
+    C: "범위: 취약 컴포넌트를 넘어 다른 시스템으로 피해가 확대(범위 변경) — 위험",
+  },
+};
+
+// 영향 메트릭(기밀성/무결성/가용성 등) 설명 — 차원 이름 + 손상 정도.
+function impactHint(label: string, code: string): string {
+  const noun = label.replace(/\s*영향$/, ""); // "기밀성 영향" → "기밀성"
+  if (code === "H" || code === "C")
+    return `${noun}: 완전한 손상 가능(전체 유출·변조·중단 등) — 위험`;
+  if (code === "L" || code === "P") return `${noun}: 제한적·부분적 손상`;
+  return `${noun}: 영향 없음`;
+}
 
 // 각 (라벨 한글) 값의 위험 강도 — 칩 색상용.
 function toneOf(group: "exploit" | "impact", value: string): "high" | "med" | "low" {
@@ -84,7 +135,8 @@ export function decodeCvssVector(vector?: string | null): DecodedMetric[] {
     const label = dim.values[v];
     if (!label) continue;
     const group: "exploit" | "impact" = IMPACT_KEYS.has(k) ? "impact" : "exploit";
-    out.push({ key: k, label: dim.label, value: label, group, tone: toneOf(group, label) });
+    const hint = group === "impact" ? impactHint(dim.label, v) : EXPLOIT_HINT[k]?.[v] ?? dim.label;
+    out.push({ key: k, label: dim.label, value: label, group, tone: toneOf(group, label), hint });
   }
   return out;
 }

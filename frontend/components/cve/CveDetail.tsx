@@ -87,16 +87,21 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
                       )}
                       {grp === "exploit" ? "악용 경로" : "영향"}
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="space-y-0.5">
                       {chips.map((m) => (
-                        <span
+                        <div
                           key={m.key}
-                          title={m.label}
-                          className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-1 text-[11px]"
+                          title={`${m.value} — ${m.hint}`}
+                          className="flex cursor-help items-center gap-3 rounded-md px-1.5 py-1 transition-colors hover:bg-surface-2"
                         >
-                          <span className="text-neutral-600 dark:text-neutral-400">{m.label}</span>
-                          <span className={`font-semibold ${CHIP_TONE[m.tone]}`}>{m.value}</span>
-                        </span>
+                          <span className="flex-1 truncate text-xs text-neutral-600 dark:text-neutral-400">
+                            {m.label}
+                          </span>
+                          <MetricMeter tone={m.tone} />
+                          <span className="w-16 shrink-0 text-right text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+                            {m.value}
+                          </span>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -255,13 +260,28 @@ const SEV_TEXT: Record<string, string> = {
   low: "text-emerald-600 dark:text-emerald-400",
 };
 
-// 칩 배경은 중립으로 통일하고 위험도 색은 *값(value)* 에만 입힌다 — 전부
-// 분홍이던 기존안은 시끄럽고 라벨(opacity-70)이 흐려 가독성이 떨어졌다.
-const CHIP_TONE: Record<string, string> = {
-  high: "text-rose-700 dark:text-rose-300",
-  med: "text-amber-700 dark:text-amber-300",
-  low: "text-neutral-500 dark:text-neutral-400",
+// CVSS 메트릭 위험 강도를 점 3칸(●●○)으로 시각화 — 값 텍스트는 진한 중립색
+// 으로 또렷이 읽히게 두고, 위험 정도는 점의 개수·색으로 전달한다(값에 색을
+// 입히던 이전안은 "낮음"이 빨강으로 보여 헷갈리고 가독성도 떨어졌다).
+const METER: Record<"high" | "med" | "low", { filled: number; color: string }> = {
+  high: { filled: 3, color: "bg-rose-500" },
+  med: { filled: 2, color: "bg-amber-500" },
+  low: { filled: 1, color: "bg-emerald-500" },
 };
+
+function MetricMeter({ tone }: { tone: "high" | "med" | "low" }) {
+  const { filled, color } = METER[tone];
+  return (
+    <span className="flex shrink-0 items-center gap-1" aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className={`h-1.5 w-1.5 rounded-full ${i < filled ? color : "bg-neutral-200 dark:bg-surface-3"}`}
+        />
+      ))}
+    </span>
+  );
+}
 
 function Bar({ pct, className }: { pct: number; className: string }) {
   return (

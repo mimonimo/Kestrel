@@ -304,14 +304,20 @@ function StackedArea({ data }: { data: DashboardTimelineDay[] }) {
         )}
       </svg>
 
-      {/* Floating tooltip — positioned in DOM, easier than SVG foreignObject */}
+      {/* Floating tooltip — positioned in DOM, easier than SVG foreignObject.
+          커서 열 *옆* 으로 비켜 띄운다(왼쪽 절반이면 오른쪽, 오른쪽이면 왼쪽).
+          예전엔 translateX(-50%) 로 커서 바로 위 중앙에 떠 차트를 가렸다. */}
       {hoverIdx != null && data[hoverIdx] && (
         <div
           className="pointer-events-none absolute top-1 z-10 rounded-md border border-neutral-200 bg-white px-2.5 py-1.5 text-[11px] shadow-lg shadow-black/10 dark:border-neutral-700 dark:bg-surface-2 dark:shadow-black/40"
           style={{
             left: `${((PAD_L + stepX * hoverIdx) / VIEW_W) * 100}%`,
-            transform: "translateX(-50%)",
+            transform:
+              (PAD_L + stepX * hoverIdx) / VIEW_W < 0.5
+                ? "translateX(14px)"
+                : "translateX(calc(-100% - 14px))",
             minWidth: 130,
+            maxWidth: 200,
           }}
         >
           <div className="mb-1 font-semibold text-neutral-900 dark:text-neutral-100">

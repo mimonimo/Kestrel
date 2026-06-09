@@ -4,7 +4,7 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { useQuery } from "@tanstack/react-query";
-import { Flame, GitFork } from "lucide-react";
+import { Flame, GitFork, Info } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -21,11 +21,25 @@ export function RelatedCves({ cveId }: { cveId: string }) {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center gap-2">
-        <GitFork className="h-4 w-4 text-neutral-500" />
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-          연관 취약점 <span className="font-normal text-neutral-400">{items.length}</span>
-        </h2>
+      <CardHeader className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          <GitFork className="h-4 w-4 text-neutral-500" />
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+            연관 취약점 <span className="font-normal text-neutral-400">{items.length}</span>
+          </h2>
+          <span
+            className="ml-auto inline-flex cursor-help items-center gap-1 text-[11px] text-neutral-400 dark:text-neutral-500"
+            title={
+              "선정 기준 — 같은 제품 > 같은 벤더 > 공통 약점(공격 유형) > 심각도(CVSS) 근접 > 최신 순으로 " +
+              "가중 점수를 매겨 상위 8건을 보여줍니다. 각 항목 오른쪽의 회색 배지가 그 항목이 선정된 근거입니다."
+            }
+          >
+            <Info className="h-3.5 w-3.5" /> 선정 기준
+          </span>
+        </div>
+        <p className="text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-500">
+          같은 제품·벤더·약점 유형과 심각도(CVSS) 근접도를 가중 점수화해 가까운 순으로 정렬했습니다.
+        </p>
       </CardHeader>
       <CardContent>
         <ul className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
