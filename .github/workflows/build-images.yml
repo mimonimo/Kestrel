@@ -28,7 +28,10 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # 운영 EC2 는 arm64(Graviton/t4g) 단일 호스트 — 유일한 소비자다. amd64 를
+    # QEMU 로 교차빌드하면 프론트(Next/SWC)가 1~2시간씩 걸려 비현실적이라,
+    # GitHub-hosted 네이티브 arm64 러너에서 arm64 만 빌드한다(public 레포 무료).
+    runs-on: ubuntu-24.04-arm
     strategy:
       fail-fast: false
       matrix:
@@ -57,12 +60,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 운영 EC2 는 arm64(Graviton/t4g) — amd64 단독 빌드면 호스트가 pull 시
-      # "no matching manifest for linux/arm64" 로 실패한다. QEMU 로 arm64 까지
-      # 교차 빌드해 멀티아치 매니페스트를 push.
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -71,7 +68,8 @@ jobs:
         with:
           context: ${{ matrix.context }}
           push: true
-          platforms: linux/amd64,linux/arm64
+          # 네이티브 arm64 러너 → 에뮬레이션 없이 arm64 만 빌드(EC2 전용).
+          platforms: linux/arm64
           build-args: ${{ matrix.build_args }}
           tags: |
             ${{ env.REGISTRY }}/${{ steps.owner.outputs.owner }}/kestrel-${{ matrix.name }}:latest
