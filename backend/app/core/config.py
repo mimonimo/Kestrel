@@ -42,9 +42,18 @@ class Settings(BaseSettings):
     # "콘솔 모드" — 로컬 개발/테스트에서 SES 자격증명 없이 흐름을 검증할 수 있다.
     # 운영(SES)에서는 user_data 가 EMAIL_ENABLED=true 로 주입.
     email_enabled: bool = False
-    # 발신 주소 — SES 에서 검증된 도메인/주소여야 한다.
+    # 발송 백엔드 — "ses"(기본) 또는 "smtp"(Resend 등 외부 SMTP).
+    # SES 샌드박스 해제 거절 대비, smtp 로 외부 트랜잭션 메일 서비스 사용 가능.
+    email_provider: str = "ses"
+    # 발신 주소 — SES/SMTP 에서 검증된 도메인/주소여야 한다.
     email_from: str = "no-reply@kestrel.forum"
     email_from_name: str = "Kestrel"
+    # ── SMTP(provider=smtp) 설정 — 예: Resend(smtp.resend.com:465, user=resend, pass=API키) ──
+    smtp_host: str = ""
+    smtp_port: int = 465
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_ssl: bool = True       # 465=SSL(True) / 587=STARTTLS(False)
     # SES 리전 (서울 ap-northeast-2 에서 SES 사용 가능). boto3 가 인스턴스
     # IAM 역할 자격증명을 자동 사용 — 정적 키 불필요.
     aws_region: str = "ap-northeast-2"

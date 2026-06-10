@@ -49,6 +49,8 @@ async def warmup() -> None:
     """
     if not get_settings().email_enabled:
         return
+    if (get_settings().email_provider or "ses").lower() != "ses":
+        return  # SMTP 등은 SES 워밍업 불필요
 
     def _init() -> None:
         _ses_client().get_send_quota()
@@ -108,6 +110,40 @@ async def _send(to: str, subject: str, html_body: str, text_body: str) -> None:
         return
 
     from_addr = f"{settings.email_from_name} <{settings.email_from}>"
+
+    # ── SMTP 발송 (Resend 등 외부 서비스) ──────────────────────────
+    if (settings.email_provider or "ses").lower() == "smtp":
+        def _do_smtp() -> None:
+            import smtplib
+            from email.mime.multipart import MIMEMultipart
+            from email.mime.text import MIMEText
+
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = from_addr
+            msg["To"] = to
+            msg.attach(MIMEText(text_body, "plain", "utf-8"))
+            msg.attach(MIMEText(html_body, "html", "utf-8"))
+            host, port = settings.smtp_host, settings.smtp_port
+            if settings.smtp_ssl:
+                server = smtplib.SMTP_SSL(host, port, timeout=20)
+            else:
+                server = smtplib.SMTP(host, port, timeout=20)
+                server.starttls()
+            try:
+                if settings.smtp_user:
+                    server.login(settings.smtp_user, settings.smtp_password)
+                server.sendmail(settings.email_from, [to], msg.as_string())
+            finally:
+                server.quit()
+
+        try:
+            await asyncio.to_thread(_do_smtp)
+            log.info("email.sent", to=to, subject=subject, provider="smtp")
+        except Exception as exc:  # noqa: BLE001
+            log.error("email.send_failed", to=to, subject=subject, provider="smtp", error=str(exc))
+            raise
+        return
 
     def _do_send() -> str:
         resp = _ses_client().send_email(

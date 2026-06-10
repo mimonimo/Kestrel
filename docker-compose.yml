@@ -65,8 +65,15 @@ services:
       # 로컬은 기본 비활성(콘솔 모드) — 발송 대신 백엔드 로그에 인증 링크 출력.
       # 운영(AWS)은 user_data 가 .env 로 EMAIL_ENABLED=true + SES 설정 주입.
       - EMAIL_ENABLED=${EMAIL_ENABLED:-false}
+      - EMAIL_PROVIDER=${EMAIL_PROVIDER:-ses}
       - EMAIL_FROM=${EMAIL_FROM:-no-reply@localhost}
       - EMAIL_FROM_NAME=${EMAIL_FROM_NAME:-Kestrel}
+      # 외부 SMTP(Resend 등) — EMAIL_PROVIDER=smtp 일 때 사용.
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-465}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_SSL=${SMTP_SSL:-true}
       - AWS_REGION=${AWS_REGION:-ap-northeast-2}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
       # 에러 추적(Sentry) — DSN 설정 시 활성화, 없으면 no-op.
