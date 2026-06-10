@@ -12,7 +12,7 @@ const UPDATED = "2026-06-10";
 
 function Section({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
-    <section className="border-t border-neutral-200 py-5 first:border-0 first:pt-0 dark:border-neutral-800">
+    <section className="border-t border-neutral-200 py-5 first:border-0 dark:border-neutral-800">
       <h2 className="flex items-baseline gap-2 text-base font-semibold text-neutral-100">
         <span className="text-sm font-bold text-sky-500">{n}</span>
         {title}
@@ -48,7 +48,7 @@ export default function PrivacyPage() {
         수집합니다. 본 방침은 수집 항목·이용 목적·보관·이용자 권리를 안내합니다.
       </p>
 
-      <div className="mt-6 rounded-2xl border border-neutral-200 bg-white px-6 dark:border-neutral-800 dark:bg-surface-1">
+      <div className="mt-6 rounded-2xl border border-neutral-200 px-6 py-2 dark:border-neutral-800 bg-surface-1 shadow-sm">
         <Section n={1} title="수집하는 개인정보 항목">
           <ul className="list-disc space-y-1 pl-5">
             <li>회원가입·로그인: 이메일 주소, 비밀번호(단방향 해시 저장), 닉네임</li>

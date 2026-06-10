@@ -12,7 +12,7 @@ const UPDATED = "2026-06-10";
 
 function Section({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
-    <section className="border-t border-neutral-200 py-5 first:border-0 first:pt-0 dark:border-neutral-800">
+    <section className="border-t border-neutral-200 py-5 first:border-0 dark:border-neutral-800">
       <h2 className="flex items-baseline gap-2 text-base font-semibold text-neutral-100">
         <span className="text-sm font-bold text-sky-500">{n}</span>
         {title}
@@ -48,7 +48,7 @@ export default function TermsPage() {
         것으로 간주됩니다.
       </p>
 
-      <div className="mt-6 rounded-2xl border border-neutral-200 bg-white px-6 dark:border-neutral-800 dark:bg-surface-1">
+      <div className="mt-6 rounded-2xl border border-neutral-200 px-6 py-2 dark:border-neutral-800 bg-surface-1 shadow-sm">
         <Section n={1} title="서비스 개요">
           <p>
             Kestrel은 CVE 취약점 정보(NVD·Exploit-DB·GitHub Advisory·MITRE)를 집계·검색하고 AI 기반
