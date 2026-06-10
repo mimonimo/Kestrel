@@ -25,6 +25,16 @@ export function Footer() {
           </span>
           <span>교육 및 방어 목적 정보 제공.</span>
         </div>
+        {/* 법적 페이지 */}
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 pt-1 sm:justify-end">
+          <a href="/privacy" className="text-neutral-600 hover:underline dark:text-neutral-400">
+            개인정보처리방침
+          </a>
+          <span className="text-neutral-300 dark:text-neutral-700">·</span>
+          <a href="/terms" className="text-neutral-600 hover:underline dark:text-neutral-400">
+            이용약관
+          </a>
+        </div>
       </div>
     </footer>
   );
