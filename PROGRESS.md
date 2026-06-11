@@ -2447,6 +2447,12 @@ bad vote → 422, 헤더 누락 → 400
 
 ---
 
+## UX 폴리시 로그
+
+- **2026-06-11 — 패치 우선순위 패널 정렬**: 메인 대시보드 `패치 우선순위`의 각 티어(KEV/EPSS 상위/CVSS 중간+EPSS/CVSS 높음+EPSS 낮음) TOP 5 를 **발행일(published_at) 최신순**이 1순위가 되도록 변경. 동일 날짜는 기존 위험도 신호(KEV 등재일·EPSS 구간·CVSS)로 타이브레이크. 버킷 자체의 우선순위 순서는 유지 — 안에 노출되는 1~5위만 최신 취약점이 위로. `backend/app/api/v1/dashboard.py:_tier_filters()`. 스냅샷(10분 주기 + 부팅 +45s)으로 반영.
+
+---
+
 ## Decisions & Notes
 
 - **Meilisearch 결정 이유**: Elasticsearch는 설정/리소스 부담이 크고, 현 규모엔 Meilisearch의 인스턴트 검색/팩싯 필터로 충분. `search_service.py` 인터페이스로 분리되어 있어 향후 교체 가능.

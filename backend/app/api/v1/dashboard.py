@@ -520,12 +520,16 @@ def _tier_filters():
     cve_year = cast(func.split_part(Vulnerability.cve_id, "-", 2), Integer)
 
     return [
+        # 각 티어(버킷) 자체는 우선순위 순서지만, 그 안에 노출되는 TOP N 은
+        # "최신 취약점부터" 보여준다 — published_at 내림차순을 1순위로 두고,
+        # 같은 날짜(분포가 일 단위라 동률 흔함)는 기존 위험도 신호로 타이브레이크.
         {
             "key": "kev",
             "label": "KEV 등재",
             "rationale": "실측된 악용 — 최우선 패치",
             "where": [kev],
             "order_by": [
+                Vulnerability.published_at.desc().nulls_last(),
                 Vulnerability.kev_date_added.desc().nulls_last(),
                 Vulnerability.cvss_score.desc().nulls_last(),
             ],
@@ -535,12 +539,10 @@ def _tier_filters():
             "label": "EPSS 상위 + 외부 접점",
             "rationale": "30일 내 악용 예측 + 직접 노출 — 즉시 조치",
             "where": [epss_high, ~kev],
-            # EPSS 0.1 구간으로 묶고, 같은 구간(위험도 사실상 동일) 안에서는
-            # 최신 등록순 → 오래된 CVE 가 소수점 차이로 상위를 점령하지 않게.
             "order_by": [
+                Vulnerability.published_at.desc().nulls_last(),
                 func.floor(Vulnerability.epss_score * 10).desc(),
                 cve_year.desc().nulls_last(),
-                Vulnerability.published_at.desc().nulls_last(),
                 Vulnerability.cvss_score.desc().nulls_last(),
             ],
         },
@@ -550,9 +552,9 @@ def _tier_filters():
             "rationale": "이론은 낮아도 실제 터질 가능성 — 앞당겨 조치",
             "where": [cvss_mid, Vulnerability.epss_score >= 0.3, ~kev],
             "order_by": [
+                Vulnerability.published_at.desc().nulls_last(),
                 func.floor(Vulnerability.epss_score * 10).desc(),
                 cve_year.desc().nulls_last(),
-                Vulnerability.published_at.desc().nulls_last(),
                 Vulnerability.cvss_score.desc().nulls_last(),
             ],
         },
@@ -562,8 +564,8 @@ def _tier_filters():
             "rationale": "이론 심각도만 — 계획된 패치 주기로",
             "where": [cvss_high, epss_low, ~kev],
             "order_by": [
-                Vulnerability.cvss_score.desc().nulls_last(),
                 Vulnerability.published_at.desc().nulls_last(),
+                Vulnerability.cvss_score.desc().nulls_last(),
             ],
         },
     ]
