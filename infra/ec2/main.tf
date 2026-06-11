@@ -176,6 +176,7 @@ resource "aws_instance" "host" {
     GIT_BRANCH           = var.git_branch
     DATA_VOLUME_DEVICE   = "/dev/sdb"
     AWS_REGION           = var.aws_region
+    ENV                  = var.env
   })
 
   # user_data 가 EBS 마운트를 시도하므로 인스턴스 생성 직후에 attach 도 필요.
@@ -191,9 +192,9 @@ resource "aws_instance" "host" {
 
 # EBS 를 인스턴스에 attach (sdb = nvme1n1 안에서 보임).
 resource "aws_volume_attachment" "data" {
-  device_name = "/dev/sdb"
-  volume_id   = aws_ebs_volume.data.id
-  instance_id = aws_instance.host.id
+  device_name                    = "/dev/sdb"
+  volume_id                      = aws_ebs_volume.data.id
+  instance_id                    = aws_instance.host.id
   stop_instance_before_detaching = true
 }
 

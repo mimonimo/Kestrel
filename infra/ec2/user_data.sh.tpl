@@ -20,6 +20,8 @@ INITIAL_ADMIN_EMAILS="${INITIAL_ADMIN_EMAILS}"
 GIT_REPO_URL="${GIT_REPO_URL}"
 GIT_BRANCH="${GIT_BRANCH}"
 DATA_DEVICE_HINT="${DATA_VOLUME_DEVICE}"
+ENV_NAME="${ENV}"
+AWS_REGION="${AWS_REGION}"
 
 # ── IMDSv2 helper ────────────────────────────────────────────
 imds() {
@@ -70,11 +72,21 @@ mount -a
 # ── 3) Docker root → /data/docker ────────────────────────────
 mkdir -p /data/docker
 mkdir -p /etc/docker
+# 모든 컨테이너 로그를 CloudWatch Logs 로 전송(에러 추적/알람용 — cloudwatch.tf).
+# 로그그룹은 Terraform 이 미리 생성하므로 create-group=false. CloudWatch 가
+# 일시 불가해도 컨테이너가 멈추지 않도록 non-blocking 모드.
 cat > /etc/docker/daemon.json <<EOF
 {
   "data-root": "/data/docker",
-  "log-driver": "json-file",
-  "log-opts": { "max-size": "10m", "max-file": "5" }
+  "log-driver": "awslogs",
+  "log-opts": {
+    "awslogs-region": "$${AWS_REGION}",
+    "awslogs-group": "/kestrel/$${ENV_NAME}/containers",
+    "awslogs-create-group": "false",
+    "tag": "{{.Name}}",
+    "mode": "non-blocking",
+    "max-buffer-size": "4m"
+  }
 }
 EOF
 systemctl restart docker
