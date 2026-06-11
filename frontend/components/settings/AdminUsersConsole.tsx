@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
+  ArrowDownWideNarrow,
+  ArrowUpNarrowWide,
   CheckSquare,
   ChevronLeft,
   Clock,
@@ -64,6 +66,30 @@ function downloadCsv(filename: string, rows: (string | number | null | undefined
   URL.revokeObjectURL(url);
 }
 
+// ─── 로그 공용: 정렬 ─────────────────────────────────────
+type SortDir = "asc" | "desc";
+interface SortOption {
+  key: string;
+  label: string;
+}
+// accessors 의 키로 값을 뽑아 정렬. 숫자는 수치, 그 외는 한글 로케일 비교.
+function sortRows<T>(
+  rows: T[],
+  key: string,
+  dir: SortDir,
+  accessors: Record<string, (r: T) => string | number>,
+): T[] {
+  const acc = accessors[key];
+  if (!acc) return rows;
+  const sign = dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = acc(a);
+    const vb = acc(b);
+    if (typeof va === "number" && typeof vb === "number") return (va - vb) * sign;
+    return String(va).localeCompare(String(vb), "ko") * sign;
+  });
+}
+
 // 공용 로그 툴바 — 검색 + 기간 토글 + 건수 + CSV. category 필터칩은 children.
 function LogToolbar({
   search,
@@ -73,6 +99,11 @@ function LogToolbar({
   count,
   onCsv,
   placeholder,
+  sortOptions,
+  sortKey,
+  sortDir,
+  onSortKey,
+  onToggleDir,
   children,
 }: {
   search: string;
@@ -82,6 +113,11 @@ function LogToolbar({
   count: number;
   onCsv: () => void;
   placeholder: string;
+  sortOptions?: SortOption[];
+  sortKey?: string;
+  sortDir?: SortDir;
+  onSortKey?: (k: string) => void;
+  onToggleDir?: () => void;
   children?: React.ReactNode;
 }) {
   return (
@@ -114,6 +150,35 @@ function LogToolbar({
             </button>
           ))}
         </div>
+        {sortOptions && sortOptions.length > 0 && (
+          <div className="inline-flex shrink-0 items-center overflow-hidden rounded-full border border-neutral-300 dark:border-neutral-700">
+            <select
+              value={sortKey}
+              onChange={(e) => onSortKey?.(e.target.value)}
+              aria-label="정렬 기준"
+              className="border-0 bg-white py-1 pl-2 pr-1 text-[11px] text-neutral-700 focus:outline-none dark:bg-surface-2 dark:text-neutral-300"
+            >
+              {sortOptions.map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={onToggleDir}
+              title={sortDir === "asc" ? "오름차순 (클릭하면 내림차순)" : "내림차순 (클릭하면 오름차순)"}
+              aria-label={sortDir === "asc" ? "오름차순" : "내림차순"}
+              className="border-l border-neutral-300 px-1.5 py-1 text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-surface-3"
+            >
+              {sortDir === "asc" ? (
+                <ArrowUpNarrowWide className="h-3.5 w-3.5" />
+              ) : (
+                <ArrowDownWideNarrow className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
+        )}
         <span className="shrink-0 text-[11px] tabular-nums text-neutral-600 dark:text-neutral-400">
           {count.toLocaleString("ko-KR")}건
         </span>
@@ -446,12 +511,37 @@ function relFromEpoch(sec: number): string {
 
 type Drill = { kind: "user" | "ip"; key: string; label: string };
 
+const SUMMARY_SORTS: SortOption[] = [
+  { key: "count", label: "요청수" },
+  { key: "recent", label: "최근요청" },
+  { key: "label", label: "대상" },
+  { key: "paths", label: "경로수" },
+];
+const DRILL_SORTS: SortOption[] = [
+  { key: "time", label: "시각" },
+  { key: "status", label: "상태" },
+  { key: "path", label: "경로" },
+  { key: "method", label: "메서드" },
+];
+const STATUS_FILTERS = [
+  { value: "all", label: "전체" },
+  { value: "2", label: "2xx" },
+  { value: "3", label: "3xx" },
+  { value: "4", label: "4xx" },
+  { value: "5", label: "5xx" },
+] as const;
+
 function AccessFeed() {
   const qc = useQueryClient();
   const [who, setWho] = useState<"member" | "anon">("member");
   const [drill, setDrill] = useState<Drill | null>(null);
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState<Period>("all");
+  const [sumSortKey, setSumSortKey] = useState("count");
+  const [sumSortDir, setSumSortDir] = useState<SortDir>("desc");
+  const [drillSortKey, setDrillSortKey] = useState("time");
+  const [drillSortDir, setDrillSortDir] = useState<SortDir>("desc");
+  const [statusFilter, setStatusFilter] = useState<"all" | "2" | "3" | "4" | "5">("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   // 뷰 전환 시 선택 초기화 — 회원=uid / 비회원=ip 로 키 의미가 달라짐.
@@ -539,16 +629,29 @@ function AccessFeed() {
   const allDrill = drillQ.data?.items ?? [];
   const cutoff = periodCutoffMs(period);
   const ql = search.trim().toLowerCase();
-  const summary = allSummary.filter((s) => {
+  const summaryF = allSummary.filter((s) => {
     if (cutoff && s.lastAt > 0 && s.lastAt * 1000 < cutoff) return false;
     if (ql && !`${s.label} ${s.topPath ?? ""} ${s.browserName ?? ""} ${s.osName ?? ""}`.toLowerCase().includes(ql))
       return false;
     return true;
   });
-  const drillItems = allDrill.filter((l) => {
+  const summary = sortRows(summaryF, sumSortKey, sumSortDir, {
+    count: (s) => s.requestCount,
+    recent: (s) => s.lastAt,
+    label: (s) => s.label,
+    paths: (s) => s.distinctPaths,
+  });
+  const drillF = allDrill.filter((l) => {
     if (cutoff && l.createdAt * 1000 < cutoff) return false;
+    if (statusFilter !== "all" && Math.floor(l.status / 100) !== Number(statusFilter)) return false;
     if (ql && !`${l.method} ${l.status} ${l.path} ${l.ip ?? ""}`.toLowerCase().includes(ql)) return false;
     return true;
+  });
+  const drillItems = sortRows(drillF, drillSortKey, drillSortDir, {
+    time: (l) => l.createdAt,
+    status: (l) => l.status,
+    path: (l) => l.path,
+    method: (l) => l.method,
   });
   const exportCsv = () => {
     const stamp = new Date().toISOString().slice(0, 10);
@@ -693,7 +796,33 @@ function AccessFeed() {
         count={drill ? drillItems.length : summary.length}
         onCsv={exportCsv}
         placeholder={drill ? "경로·IP·메서드로 검색" : "대상·경로·브라우저로 검색"}
-      />
+        sortOptions={drill ? DRILL_SORTS : SUMMARY_SORTS}
+        sortKey={drill ? drillSortKey : sumSortKey}
+        sortDir={drill ? drillSortDir : sumSortDir}
+        onSortKey={drill ? setDrillSortKey : setSumSortKey}
+        onToggleDir={() =>
+          drill
+            ? setDrillSortDir((d) => (d === "asc" ? "desc" : "asc"))
+            : setSumSortDir((d) => (d === "asc" ? "desc" : "asc"))
+        }
+      >
+        {drill &&
+          STATUS_FILTERS.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => setStatusFilter(f.value)}
+              className={cn(
+                "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+                statusFilter === f.value
+                  ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
+                  : "border-neutral-300 text-neutral-600 hover:border-sky-300 hover:text-sky-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-sky-200",
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+      </LogToolbar>
 
       {/* 드릴다운: 특정 회원/IP 의 요청 기록 */}
       {drill ? (
@@ -809,11 +938,19 @@ const ACTIVITY_FILTERS = [
   { value: "bookmark", label: "즐겨찾기" },
 ];
 
+const ACTIVITY_SORTS: SortOption[] = [
+  { key: "time", label: "시각" },
+  { key: "kind", label: "유형" },
+  { key: "actor", label: "사용자" },
+];
+
 function ActivityFeed() {
   const [kind, setKind] = useState("");
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState<Period>("all");
   const [limit, setLimit] = useState(150);
+  const [sortKey, setSortKey] = useState("time");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const q = useQuery({
     queryKey: ["admin-activity-logs", kind, limit],
     queryFn: () => getJSON<{ items: ActivityLog[] }>(`/admin/activity-logs?limit=${limit}${kind ? `&kind=${kind}` : ""}`),
@@ -822,11 +959,16 @@ function ActivityFeed() {
   const all = q.data?.items ?? [];
   const cutoff = periodCutoffMs(period);
   const ql = search.trim().toLowerCase();
-  const items = all.filter((a) => {
+  const itemsF = all.filter((a) => {
     if (cutoff && new Date(a.createdAt).getTime() < cutoff) return false;
     if (ql && !`${a.kindLabel} ${a.actorLabel ?? ""} ${a.ref ?? ""}`.toLowerCase().includes(ql))
       return false;
     return true;
+  });
+  const items = sortRows(itemsF, sortKey, sortDir, {
+    time: (a) => new Date(a.createdAt).getTime(),
+    kind: (a) => a.kindLabel,
+    actor: (a) => a.actorLabel ?? "",
   });
   const canMore = all.length >= limit && limit < 300;
   const exportCsv = () =>
@@ -844,6 +986,11 @@ function ActivityFeed() {
         count={items.length}
         onCsv={exportCsv}
         placeholder="사용자·대상·유형으로 검색"
+        sortOptions={ACTIVITY_SORTS}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSortKey={setSortKey}
+        onToggleDir={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
       >
         {ACTIVITY_FILTERS.map((f) => (
           <button
@@ -914,11 +1061,19 @@ function auditTone(action: string): string {
   return "bg-slate-200 text-slate-800 dark:bg-slate-500/25 dark:text-slate-100";
 }
 
+const AUDIT_SORTS: SortOption[] = [
+  { key: "time", label: "시각" },
+  { key: "action", label: "액션" },
+  { key: "actor", label: "행위자" },
+];
+
 function AuditFeed() {
   const [action, setAction] = useState("");
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState<Period>("all");
   const [limit, setLimit] = useState(150);
+  const [sortKey, setSortKey] = useState("time");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const actionsQ = useQuery({
     queryKey: ["admin-audit-actions"],
     queryFn: () => getJSON<{ actions: Record<string, string> }>("/admin/audit/actions"),
@@ -932,7 +1087,7 @@ function AuditFeed() {
   const all = q.data?.items ?? [];
   const cutoff = periodCutoffMs(period);
   const ql = search.trim().toLowerCase();
-  const items = all.filter((l) => {
+  const itemsF = all.filter((l) => {
     if (cutoff && new Date(l.createdAt).getTime() < cutoff) return false;
     if (
       ql &&
@@ -942,6 +1097,11 @@ function AuditFeed() {
     )
       return false;
     return true;
+  });
+  const items = sortRows(itemsF, sortKey, sortDir, {
+    time: (l) => new Date(l.createdAt).getTime(),
+    action: (l) => l.actionLabel ?? l.action,
+    actor: (l) => l.actorLabel ?? "",
   });
   const canMore = all.length >= limit && limit < 200;
   const actionMap = actionsQ.data?.actions ?? {};
@@ -975,6 +1135,11 @@ function AuditFeed() {
         count={items.length}
         onCsv={exportCsv}
         placeholder="행위자·대상·상세·IP·액션으로 검색"
+        sortOptions={AUDIT_SORTS}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSortKey={setSortKey}
+        onToggleDir={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
       >
         {filterOptions.map((f) => (
           <button
