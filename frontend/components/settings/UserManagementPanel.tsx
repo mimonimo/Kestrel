@@ -9,7 +9,7 @@
  */
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Clock, Loader2, Search, ShieldCheck, Trash2, User as UserIcon } from "lucide-react";
+import { BadgeCheck, Check, ChevronDown, ChevronRight, Clock, Copy, KeyRound, Loader2, MailCheck, Search, ShieldAlert, ShieldCheck, Trash2, User as UserIcon } from "lucide-react";
 
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -31,6 +31,8 @@ interface AdminUser {
   nickname: string | null;
   role: "user" | "expert" | "admin";
   isAdmin: boolean;
+  emailVerified: boolean;
+  emailVerifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;
@@ -95,6 +97,28 @@ async function deleteUserApi(id: string): Promise<void> {
     }
     throw new ApiError(res.status, detail);
   }
+}
+
+interface AdminMailResult {
+  sent: boolean;
+  link: string;
+  message: string;
+}
+
+async function adminPost<T>(path: string): Promise<T> {
+  const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+  const res = await fetch(`${BASE}${path}`, { method: "POST", credentials: "include" });
+  if (!res.ok && res.status !== 204) {
+    let detail = `요청 실패 (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = String(body.detail);
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, detail);
+  }
+  return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
 export function UserManagementPanel() {
@@ -195,6 +219,20 @@ export function UserManagementPanel() {
                     <span className="truncate text-xs text-neutral-600 dark:text-neutral-400">
                       {u.email}
                     </span>
+                    {u.emailVerified ? (
+                      <span
+                        title={u.emailVerifiedAt ? `인증 ${formatRelativeKo(u.emailVerifiedAt)}` : "인증됨"}
+                        className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200"
+                      >
+                        <BadgeCheck className="h-3 w-3" />
+                        인증
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
+                        <ShieldAlert className="h-3 w-3" />
+                        미인증
+                      </span>
+                    )}
                   </div>
                   <dl className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-neutral-600 dark:text-neutral-400">
                     <Stat label="분석" value={u.stats.analyses} />
@@ -210,6 +248,7 @@ export function UserManagementPanel() {
                         ? formatRelativeKo(u.stats.lastActivityAt)
                         : "없음"}
                   </p>
+                  <UserActions user={u} />
                   <button
                     type="button"
                     onClick={() => setExpandedId(expandedId === u.id ? null : u.id)}
@@ -260,6 +299,124 @@ export function UserManagementPanel() {
         <p className="text-xs text-rose-700 dark:text-rose-300">
           {(remove.error as Error).message || "삭제에 실패했습니다."}
         </p>
+      )}
+    </div>
+  );
+}
+
+function UserActions({ user }: { user: AdminUser }) {
+  const qc = useQueryClient();
+  const [result, setResult] = useState<AdminMailResult | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const sendVerify = useMutation({
+    mutationFn: () =>
+      adminPost<AdminMailResult>(`/admin/users/${encodeURIComponent(user.id)}/send-verification`),
+    onSuccess: (r) => {
+      setResult(r);
+      setCopied(false);
+    },
+  });
+  const sendReset = useMutation({
+    mutationFn: () =>
+      adminPost<AdminMailResult>(`/admin/users/${encodeURIComponent(user.id)}/send-password-reset`),
+    onSuccess: (r) => {
+      setResult(r);
+      setCopied(false);
+    },
+  });
+  const verifyManual = useMutation({
+    mutationFn: () => adminPost<AdminUser>(`/admin/users/${encodeURIComponent(user.id)}/verify`),
+    onSuccess: () => {
+      setResult(null);
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+  });
+
+  const busy = sendVerify.isPending || sendReset.isPending || verifyManual.isPending;
+  const err = (sendVerify.error || sendReset.error || verifyManual.error) as Error | null;
+
+  const copyLink = async () => {
+    if (!result?.link) return;
+    try {
+      await navigator.clipboard.writeText(result.link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const btn =
+    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors disabled:opacity-40";
+
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {!user.emailVerified && (
+          <>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => sendVerify.mutate()}
+              className={cn(btn, "border-sky-300 text-sky-700 hover:bg-sky-50 dark:border-sky-500/40 dark:text-sky-200 dark:hover:bg-sky-950/30")}
+            >
+              {sendVerify.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <MailCheck className="h-3 w-3" />}
+              인증메일
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                if (confirm(`${user.email} 을(를) 메일 없이 즉시 인증 처리할까요?`)) verifyManual.mutate();
+              }}
+              className={cn(btn, "border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500/40 dark:text-emerald-200 dark:hover:bg-emerald-950/30")}
+            >
+              {verifyManual.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <BadgeCheck className="h-3 w-3" />}
+              수동 인증
+            </button>
+          </>
+        )}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => sendReset.mutate()}
+          className={cn(btn, "border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-500/40 dark:text-violet-200 dark:hover:bg-violet-950/30")}
+        >
+          {sendReset.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <KeyRound className="h-3 w-3" />}
+          비번재설정 메일
+        </button>
+      </div>
+      {err && <p className="text-[10px] text-rose-700 dark:text-rose-300">{err.message}</p>}
+      {result && (
+        <div
+          className={cn(
+            "rounded-md border px-2 py-1.5 text-[10px]",
+            result.sent
+              ? "border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/20"
+              : "border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/20",
+          )}
+        >
+          <p className={result.sent ? "text-emerald-800 dark:text-emerald-200" : "text-amber-800 dark:text-amber-200"}>
+            {result.message}
+          </p>
+          <div className="mt-1 flex items-center gap-1.5">
+            <code
+              className="min-w-0 flex-1 truncate rounded bg-white/60 px-1 py-0.5 font-mono text-[9px] text-neutral-700 dark:bg-black/30 dark:text-neutral-300"
+              title={result.link}
+            >
+              {result.link}
+            </code>
+            <button
+              type="button"
+              onClick={copyLink}
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-neutral-300 px-2 py-0.5 text-[10px] text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-surface-3"
+            >
+              {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+              {copied ? "복사됨" : "복사"}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

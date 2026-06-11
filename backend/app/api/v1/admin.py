@@ -88,9 +88,21 @@ async def get_external_keys(db: AsyncSession = Depends(get_db)) -> ExternalKeysO
 #   - INITIAL_ADMIN_EMAILS 매칭되는 계정은 강등해도 다음 로그인/가입 시 자동 admin 회복
 
 from datetime import datetime as _dt
+from datetime import timezone as _tz
 
 from app.core.audit import ACTION_LABELS, AuditAction, record_audit
+from app.core.auth_tokens import (
+    PURPOSE_EMAIL_VERIFY,
+    PURPOSE_PASSWORD_RESET,
+    create_token,
+)
+from app.core.config import get_settings as _get_settings
 from app.core.security import is_admin_email
+from app.services.email import (
+    public_base_url as _public_base_url,
+    send_password_reset_email,
+    send_verification_email,
+)
 from app.models import AnalysisResult as _AnalysisResult
 from app.models import AuditLog as _AuditLog
 from app.models import Bookmark as _Bookmark
@@ -124,6 +136,8 @@ class _UserOut(_PydBaseModel):
     nickname: str | None = None
     role: str
     is_admin: bool
+    email_verified: bool = False
+    email_verified_at: _dt | None = None
     created_at: _dt
     updated_at: _dt
     last_login_at: _dt | None = None
@@ -276,6 +290,8 @@ def _to_user_out(
         nickname=u.nickname,
         role=role_val,
         is_admin=u.role == _UserRole.ADMIN,
+        email_verified=bool(u.email_verified),
+        email_verified_at=u.email_verified_at,
         created_at=u.created_at,
         updated_at=u.updated_at,
         last_login_at=u.last_login_at,
@@ -1005,6 +1021,134 @@ async def update_user_role(
         db, action=AuditAction.USER_ROLE_CHANGE, actor=me, request=request,
         target=target.email, detail=f"{old_role} → {new_role.value}",
     )
+    return _to_user_out(target)
+
+
+class _AdminMailOut(_PydBaseModel):
+    model_config = _PydConfigDict(populate_by_name=True, alias_generator=lambda s: "".join(
+        [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
+    ))
+    sent: bool
+    link: str
+    message: str
+
+
+async def _resolve_user(user_id: str, db: AsyncSession) -> _User:
+    import uuid as _uuid
+    try:
+        uid = _uuid.UUID(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(404, detail="사용자를 찾을 수 없습니다.") from None
+    target = await db.scalar(select(_User).where(_User.id == uid))
+    if target is None:
+        raise HTTPException(404, detail="사용자를 찾을 수 없습니다.")
+    return target
+
+
+@router.post(
+    "/users/{user_id}/send-verification",
+    response_model=_AdminMailOut,
+    response_model_by_alias=True,
+)
+async def admin_send_verification(
+    user_id: str,
+    request: Request,
+    me=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> _AdminMailOut:
+    """관리자 수동 인증메일 발송. SES 미승인으로 발송이 실패해도 link 를 반환하니
+    관리자가 복사해 다른 경로(카카오톡 등)로 전달할 수 있다."""
+    target = await _resolve_user(user_id, db)
+    if target.email_verified:
+        raise HTTPException(400, detail="이미 이메일 인증이 완료된 계정입니다.")
+    settings = _get_settings()
+    token = await create_token(
+        PURPOSE_EMAIL_VERIFY, target.id, settings.email_verify_token_ttl_hours * 3600
+    )
+    link = f"{_public_base_url()}/verify-email?token={token}"
+    sent = False
+    try:
+        await send_verification_email(target.email, token)
+        sent = True
+    except Exception as exc:  # noqa: BLE001 — 발송 실패해도 링크는 반환
+        log.warning("admin.send_verification_failed", target_id=str(target.id), error=str(exc))
+    await record_audit(
+        db, action=AuditAction.EMAIL_VERIFY_SENT, actor=me, request=request,
+        target=target.email, detail="관리자 수동 발송",
+    )
+    return _AdminMailOut(
+        sent=sent,
+        link=link,
+        message=(
+            "인증 메일을 발송했습니다."
+            if sent
+            else "메일 발송 실패(SES 미승인 등). 아래 링크를 복사해 전달하세요."
+        ),
+    )
+
+
+@router.post(
+    "/users/{user_id}/send-password-reset",
+    response_model=_AdminMailOut,
+    response_model_by_alias=True,
+)
+async def admin_send_password_reset(
+    user_id: str,
+    request: Request,
+    me=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> _AdminMailOut:
+    """관리자 수동 비밀번호 재설정 메일 발송 + 링크 반환(샌드박스 폴백)."""
+    target = await _resolve_user(user_id, db)
+    settings = _get_settings()
+    token = await create_token(
+        PURPOSE_PASSWORD_RESET, target.id, settings.password_reset_token_ttl_minutes * 60
+    )
+    link = f"{_public_base_url()}/reset-password?token={token}"
+    sent = False
+    try:
+        await send_password_reset_email(target.email, token)
+        sent = True
+    except Exception as exc:  # noqa: BLE001
+        log.warning("admin.send_password_reset_failed", target_id=str(target.id), error=str(exc))
+    await record_audit(
+        db, action=AuditAction.PASSWORD_RESET_REQUEST, actor=me, request=request,
+        target=target.email, detail="관리자 수동 발송",
+    )
+    return _AdminMailOut(
+        sent=sent,
+        link=link,
+        message=(
+            "비밀번호 재설정 메일을 발송했습니다."
+            if sent
+            else "메일 발송 실패(SES 미승인 등). 아래 링크를 복사해 전달하세요."
+        ),
+    )
+
+
+@router.post(
+    "/users/{user_id}/verify",
+    response_model=_UserOut,
+    response_model_by_alias=True,
+)
+async def admin_verify_user(
+    user_id: str,
+    request: Request,
+    me=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> _UserOut:
+    """관리자 수동 이메일 인증 처리 — 메일 없이 즉시 인증 완료(샌드박스 대응)."""
+    target = await _resolve_user(user_id, db)
+    if not target.email_verified:
+        target.email_verified = True
+        target.email_verified_at = _dt.now(_tz.utc)
+        await db.commit()
+        await db.refresh(target)
+        log.info("admin.user_verified_manual", target_id=str(target.id))
+        await record_audit(
+            db, action=AuditAction.EMAIL_VERIFIED, actor=me, request=request,
+            target=target.email, detail="관리자 수동 인증",
+        )
     return _to_user_out(target)
 
 
