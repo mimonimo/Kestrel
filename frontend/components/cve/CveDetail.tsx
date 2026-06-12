@@ -91,8 +91,7 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
                       {chips.map((m) => (
                         <div
                           key={m.key}
-                          title={`${m.value} — ${m.hint}`}
-                          className="flex cursor-help items-center gap-3 rounded-md px-1.5 py-1 transition-colors hover:bg-neutral-50 dark:hover:bg-surface-2"
+                          className="group relative flex cursor-help items-center gap-3 rounded-md px-1.5 py-1 transition-colors hover:bg-neutral-50 dark:hover:bg-surface-2"
                         >
                           <span className="flex-1 truncate text-xs text-neutral-600 dark:text-neutral-400">
                             {m.label}
@@ -101,6 +100,17 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
                           <span className="w-16 shrink-0 text-right text-xs font-semibold text-neutral-800 dark:text-neutral-200">
                             {m.value}
                           </span>
+                          {/* 즉시 표시되는 커스텀 툴팁 — 네이티브 title 지연 제거 */}
+                          <div
+                            role="tooltip"
+                            className="pointer-events-none absolute left-0 right-0 top-full z-30 mt-1 hidden rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-[11px] leading-relaxed text-neutral-700 shadow-lg group-hover:block dark:border-neutral-700 dark:bg-surface-3 dark:text-neutral-100"
+                          >
+                            <span className="font-semibold text-neutral-900 dark:text-neutral-50">
+                              {m.value}
+                            </span>
+                            {" — "}
+                            {m.hint}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -150,19 +160,27 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
             </h2>
           </CardHeader>
           <CardContent>
-            <ul className="flex flex-wrap gap-2">
+            <ul className="space-y-2">
               {weaknesses.map((w) => (
-                <li key={w.cweId}>
+                <li
+                  key={w.cweId}
+                  className="rounded-lg border border-neutral-200 p-2.5 dark:border-neutral-800"
+                >
                   <a
                     href={w.url ?? `https://cwe.mitre.org/`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-2.5 py-1 text-xs transition-colors hover:border-sky-400 dark:border-neutral-800 dark:hover:border-sky-500/50"
+                    className="inline-flex items-center gap-1.5 text-xs transition-colors hover:text-sky-600 dark:hover:text-sky-300"
                   >
                     <span className="font-mono font-semibold text-neutral-800 dark:text-neutral-100">{w.cweId}</span>
                     {w.name && <span className="text-neutral-500 dark:text-neutral-400">{w.name}</span>}
                     <ExternalLink className="h-3 w-3 text-neutral-400" />
                   </a>
+                  {w.summary && (
+                    <p className="mt-1 text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+                      {w.summary}
+                    </p>
+                  )}
                 </li>
               ))}
             </ul>

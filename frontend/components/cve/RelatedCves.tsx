@@ -3,11 +3,13 @@
 // 같은 제품/약점을 공유하는 연관 CVE — 분석 맥락 제공. 내부 데이터 기반.
 import Link from "next/link";
 import type { Route } from "next";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Flame, GitFork, Info } from "lucide-react";
+import { Flame, GitFork, Info, List, Share2 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { RelatedCvesGraph } from "./RelatedCvesGraph";
 import { SeverityBadge } from "./SeverityBadge";
 
 export function RelatedCves({ cveId }: { cveId: string }) {
@@ -17,6 +19,7 @@ export function RelatedCves({ cveId }: { cveId: string }) {
     staleTime: 5 * 60_000,
   });
   const items = q.data ?? [];
+  const [view, setView] = useState<"graph" | "list">("graph");
   if (q.isLoading || items.length === 0) return null;
 
   return (
@@ -27,22 +30,55 @@ export function RelatedCves({ cveId }: { cveId: string }) {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
             연관 취약점 <span className="font-normal text-neutral-400">{items.length}</span>
           </h2>
-          <span
-            className="ml-auto inline-flex cursor-help items-center gap-1 text-[11px] text-neutral-400 dark:text-neutral-500"
-            title={
-              "선정 기준 — 같은 제품 > 같은 벤더 > 공통 약점(공격 유형) > 심각도(CVSS) 근접 > 최신 순으로 " +
-              "가중 점수를 매겨 상위 8건을 보여줍니다. 각 항목 오른쪽의 회색 배지가 그 항목이 선정된 근거입니다."
-            }
-          >
-            <Info className="h-3.5 w-3.5" /> 선정 기준
-          </span>
+          <div className="ml-auto flex items-center gap-2">
+            <div className="inline-flex overflow-hidden rounded-full border border-neutral-300 text-[11px] dark:border-neutral-700">
+              <button
+                type="button"
+                onClick={() => setView("graph")}
+                aria-pressed={view === "graph"}
+                className={
+                  "inline-flex items-center gap-1 px-2 py-1 transition-colors " +
+                  (view === "graph"
+                    ? "bg-sky-100 font-medium text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"
+                    : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-surface-3")
+                }
+              >
+                <Share2 className="h-3.5 w-3.5" /> 그래프
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("list")}
+                aria-pressed={view === "list"}
+                className={
+                  "inline-flex items-center gap-1 px-2 py-1 transition-colors " +
+                  (view === "list"
+                    ? "bg-sky-100 font-medium text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"
+                    : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-surface-3")
+                }
+              >
+                <List className="h-3.5 w-3.5" /> 목록
+              </button>
+            </div>
+            <span
+              className="inline-flex cursor-help items-center gap-1 text-[11px] text-neutral-400 dark:text-neutral-500"
+              title={
+                "선정 기준 — 같은 제품 > 같은 벤더 > 공통 약점(공격 유형) > 심각도(CVSS) 근접 > 최신 순으로 " +
+                "가중 점수를 매겨 상위 8건을 보여줍니다. 각 항목 오른쪽의 회색 배지가 그 항목이 선정된 근거입니다."
+              }
+            >
+              <Info className="h-3.5 w-3.5" /> 선정 기준
+            </span>
+          </div>
         </div>
         <p className="text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-500">
           같은 제품·벤더·약점 유형과 심각도(CVSS) 근접도를 가중 점수화해 가까운 순으로 정렬했습니다.
         </p>
       </CardHeader>
       <CardContent>
-        <ul className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
+        {view === "graph" ? (
+          <RelatedCvesGraph centerId={cveId} items={items} />
+        ) : (
+          <ul className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
           {items.map((it) => (
             <li key={it.cveId}>
               <Link
@@ -72,7 +108,8 @@ export function RelatedCves({ cveId }: { cveId: string }) {
               </Link>
             </li>
           ))}
-        </ul>
+          </ul>
+        )}
       </CardContent>
     </Card>
   );

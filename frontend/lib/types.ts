@@ -158,6 +158,7 @@ export interface Weakness {
   cweId: string;
   name?: string | null;
   url?: string | null;
+  summary?: string | null;
 }
 
 export interface EnrichedRef {

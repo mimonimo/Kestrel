@@ -17,9 +17,9 @@ from app.schemas.vulnerability import (
     EnrichmentOut,
     WeaknessOut,
 )
+from app.services.cwe_summaries import cwe_summary
 
 _CWE_RE = re.compile(r"CWE-\d+", re.IGNORECASE)
-
 # NVD metrics 키 → 표시용 버전 라벨 (선호 순서: 4.0 → 3.1 → 3.0 → 2.0)
 _METRIC_KEYS: list[tuple[str, str]] = [
     ("cvssMetricV40", "4.0"),
@@ -53,7 +53,12 @@ def _weaknesses(cve: dict | None, vuln) -> list[WeaknessOut]:
                         continue
                     seen.add(cwe)
                     out.append(
-                        WeaknessOut(cwe_id=cwe, name=name_by_cwe.get(cwe), url=_cwe_url(cwe))
+                        WeaknessOut(
+                            cwe_id=cwe,
+                            name=name_by_cwe.get(cwe),
+                            url=_cwe_url(cwe),
+                            summary=cwe_summary(cwe),
+                        )
                     )
 
     # 폴백 — raw_data 에 weaknesses 가 없으면 우리 분류(types)의 CWE 사용.
@@ -62,7 +67,11 @@ def _weaknesses(cve: dict | None, vuln) -> list[WeaknessOut]:
             cwe = (getattr(t, "cwe_id", None) or "").upper()
             if cwe and cwe not in seen:
                 seen.add(cwe)
-                out.append(WeaknessOut(cwe_id=cwe, name=t.name, url=_cwe_url(cwe)))
+                out.append(
+                    WeaknessOut(
+                        cwe_id=cwe, name=t.name, url=_cwe_url(cwe), summary=cwe_summary(cwe)
+                    )
+                )
     return out
 
 
