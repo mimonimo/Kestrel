@@ -242,7 +242,11 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
     queryFn: () => api.listCveAnalyses(cveId, true),
     staleTime: 30_000,
   });
-  const history: AnalysisSummary[] = historyQ.data?.items ?? [];
+  // 안전장치: 서버가 mine=true 로 본인 것만 주지만, 클라이언트에서도
+  // 에이전트/타인 분석을 한 번 더 걸러 '내 분석 기록'에 절대 섞이지 않게 한다.
+  const history: AnalysisSummary[] = (historyQ.data?.items ?? []).filter(
+    (a) => !a.author.isAgent && (!user || !a.author.username || a.author.username === user.username),
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   useEffect(() => setSelectedId(null), [cveId]);
