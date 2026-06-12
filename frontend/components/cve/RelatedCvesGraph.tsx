@@ -1,145 +1,298 @@
 "use client";
 
-// 연관 취약점 방사형 마인드맵(TTA 용어사전 스타일) — 중심=현재 CVE, 스포크 끝에
-// 알약 라벨(=노드+텍스트 한 몸). 관계 유형별 색상, 심각도별 크기, 클릭 이동.
-// 데스크톱은 방사형, 모바일은 정돈된 그룹 리스트로 반응형 폴백.
-import { useState } from "react";
+// 연관 취약점 force-directed 그래프 — 경량 물리 시뮬레이션(외부 라이브러리 없음).
+// 노드끼리 밀어내며 자연스럽게 퍼지고(겹침 방지), 드래그로 옮길 수 있다.
+// 중심=현재 CVE 고정. 관계 유형별 색상 + 심각도별 크기. 클릭 시 이동.
+// 데스크톱=그래프, 모바일=리스트 폴백(반응형).
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
 
 import type { RelatedCve } from "@/lib/types";
 
-// 관계 유형(reason 키워드) → 색상 분류.
-interface Cat {
-  key: string;
-  label: string;
-  hex: string;
-  pill: string; // 알약 테두리/글자
-}
-const CATS: Cat[] = [
-  { key: "vendor", label: "연관 벤더·제품", hex: "#10b981", pill: "border-emerald-400 text-emerald-700 dark:border-emerald-500/60 dark:text-emerald-300" },
-  { key: "weakness", label: "공통 약점", hex: "#6366f1", pill: "border-indigo-400 text-indigo-700 dark:border-indigo-500/60 dark:text-indigo-300" },
-  { key: "severity", label: "상위·근접 심각도", hex: "#f59e0b", pill: "border-amber-400 text-amber-700 dark:border-amber-500/60 dark:text-amber-300" },
-  { key: "other", label: "기타 연관", hex: "#94a3b8", pill: "border-neutral-300 text-neutral-600 dark:border-neutral-600 dark:text-neutral-300" },
-];
-function catOf(reason: string): Cat {
-  const r = reason || "";
-  if (/(벤더|제품|vendor|product)/i.test(r)) return CATS[0];
-  if (/(약점|유형|cwe|weakness)/i.test(r)) return CATS[1];
-  if (/(심각|상위|근접|cvss|점수|severity)/i.test(r)) return CATS[2];
-  return CATS[3];
-}
-// 심각도 → 크기 등급(분석 시 더 위험한 것이 더 크게).
-function sizeOf(sev?: string | null): "lg" | "md" | "sm" {
-  const s = (sev ?? "").toLowerCase();
-  if (s === "critical") return "lg";
-  if (s === "high") return "md";
-  return "sm";
-}
-const SIZE_CLS: Record<"lg" | "md" | "sm", string> = {
-  lg: "px-2.5 py-1 text-[11px] font-semibold",
-  md: "px-2 py-0.5 text-[11px] font-medium",
-  sm: "px-1.5 py-0.5 text-[10px]",
+interface Cat { label: string; hex: string }
+const CATS: Record<string, Cat> = {
+  vendor: { label: "연관 벤더·제품", hex: "#10b981" },
+  weakness: { label: "공통 약점", hex: "#6366f1" },
+  severity: { label: "상위·근접 심각도", hex: "#f59e0b" },
+  other: { label: "기타 연관", hex: "#94a3b8" },
 };
+function catKey(reason: string): keyof typeof CATS {
+  const r = reason || "";
+  if (/(벤더|제품|vendor|product)/i.test(r)) return "vendor";
+  if (/(약점|유형|cwe|weakness)/i.test(r)) return "weakness";
+  if (/(심각|상위|근접|cvss|점수|severity)/i.test(r)) return "severity";
+  return "other";
+}
+// 심각도 → 글자/알약 크기.
+function fontOf(sev?: string | null): number {
+  const s = (sev ?? "").toLowerCase();
+  if (s === "critical") return 13;
+  if (s === "high") return 12;
+  return 11;
+}
+// 라벨 픽셀 폭 추정(한글은 넓게).
+function labelWidth(text: string, fs: number): number {
+  let w = 0;
+  for (const ch of text) w += /[ -~]/.test(ch) ? fs * 0.58 : fs * 1.02;
+  return w;
+}
+
+const VW = 640;
+const VH = 400;
+const CX = VW / 2;
+const CY = VH / 2;
+
+interface Sim {
+  it: RelatedCve;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  hw: number; // half width
+  fs: number;
+  cat: Cat;
+}
 
 export function RelatedCvesGraph({ centerId, items }: { centerId: string; items: RelatedCve[] }) {
   const router = useRouter();
-  const [hover, setHover] = useState<string | null>(null);
-  const go = (id: string) => router.push(`/cve/${id}` as Route);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const nodesRef = useRef<Sim[]>([]);
+  const alphaRef = useRef(1);
+  const rafRef = useRef<number | null>(null);
+  const dragRef = useRef<{ i: number; moved: boolean } | null>(null);
+  const [, setFrame] = useState(0);
 
-  // 방사형 좌표(viewBox 0~100, 퍼센트). 위에서 시작해 시계방향 균등 배치.
-  const n = Math.max(items.length, 1);
-  const RX = 38;
-  const RY = 40;
-  const placed = items.map((it, i) => {
-    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
-    return { it, cat: catOf(it.reason), x: 50 + RX * Math.cos(a), y: 50 + RY * Math.sin(a) };
-  });
+  // 노드 초기화(items 변경 시).
+  useEffect(() => {
+    const n = Math.max(items.length, 1);
+    nodesRef.current = items.map((it, i) => {
+      const fs = fontOf(it.severity);
+      const hw = labelWidth(it.cveId, fs) / 2 + 12;
+      const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+      return {
+        it,
+        x: CX + 150 * Math.cos(a) + (Math.random() - 0.5) * 20,
+        y: CY + 120 * Math.sin(a) + (Math.random() - 0.5) * 20,
+        vx: 0,
+        vy: 0,
+        hw,
+        fs,
+        cat: CATS[catKey(it.reason)],
+      };
+    });
+    alphaRef.current = 1;
+
+    const LINK = 150;
+    const LINK_K = 0.05;
+    const REP = 5200;
+    const DAMP = 0.82;
+    const PAD = 8;
+
+    const tick = () => {
+      const nodes = nodesRef.current;
+      const drag = dragRef.current;
+      const alpha = alphaRef.current;
+      for (let i = 0; i < nodes.length; i++) {
+        if (drag && drag.i === i) continue; // 드래그 중인 노드는 물리 적용 안 함
+        const a = nodes[i];
+        let fx = 0;
+        let fy = 0;
+        // 중심과의 스프링(고리 거리 유지)
+        let dcx = CX - a.x;
+        let dcy = CY - a.y;
+        const dc = Math.hypot(dcx, dcy) || 0.01;
+        const sp = (dc - LINK) * LINK_K;
+        fx += (dcx / dc) * sp;
+        fy += (dcy / dc) * sp;
+        // 다른 노드와 반발 + 충돌
+        for (let j = 0; j < nodes.length; j++) {
+          if (i === j) continue;
+          const b = nodes[j];
+          let dx = a.x - b.x;
+          let dy = a.y - b.y;
+          let d = Math.hypot(dx, dy) || 0.01;
+          fx += (dx / d) * (REP / (d * d));
+          fy += (dy / d) * (REP / (d * d));
+          const minD = a.hw + b.hw + 6;
+          if (d < minD) {
+            const push = (minD - d) * 0.5;
+            fx += (dx / d) * push;
+            fy += (dy / d) * push;
+          }
+        }
+        // 중심 노드 회피
+        const dCenter = Math.hypot(a.x - CX, a.y - CY) || 0.01;
+        if (dCenter < 46 + a.hw * 0.3) {
+          fx += ((a.x - CX) / dCenter) * (46 - dCenter) * 0.6;
+          fy += ((a.y - CY) / dCenter) * (46 - dCenter) * 0.6;
+        }
+        a.vx = (a.vx + fx * alpha) * DAMP;
+        a.vy = (a.vy + fy * alpha) * DAMP;
+        a.x = Math.max(a.hw + PAD, Math.min(VW - a.hw - PAD, a.x + a.vx));
+        a.y = Math.max(16 + PAD, Math.min(VH - 16 - PAD, a.y + a.vy));
+      }
+      alphaRef.current = Math.max(alpha * 0.985, drag ? 0.25 : 0);
+      setFrame((f) => f + 1);
+      if (alphaRef.current > 0.004 || drag) {
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        rafRef.current = null;
+      }
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [items]);
+
+  const toLocal = (e: React.PointerEvent): { x: number; y: number } | null => {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    const loc = pt.matrixTransform(ctm.inverse());
+    return { x: loc.x, y: loc.y };
+  };
+
+  const onDown = (i: number) => (e: React.PointerEvent) => {
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    dragRef.current = { i, moved: false };
+    alphaRef.current = Math.max(alphaRef.current, 0.3);
+    if (rafRef.current == null) {
+      // 드래그 시작 시 effect 의 tick 이 멈춰 있으면 재시작이 필요 — alpha 재가열 후
+      // setFrame 으로 리렌더만 일으키고, 위치는 onMove 에서 직접 갱신.
+      setFrame((f) => f + 1);
+    }
+  };
+  const onMove = (e: React.PointerEvent) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const loc = toLocal(e);
+    if (!loc) return;
+    const node = nodesRef.current[drag.i];
+    if (!node) return;
+    node.x = Math.max(node.hw + 8, Math.min(VW - node.hw - 8, loc.x));
+    node.y = Math.max(24, Math.min(VH - 24, loc.y));
+    node.vx = 0;
+    node.vy = 0;
+    drag.moved = true;
+    setFrame((f) => f + 1);
+  };
+  const onUp = (cveId: string) => (e: React.PointerEvent) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    (e.target as Element).releasePointerCapture?.(e.pointerId);
+    if (drag && !drag.moved) {
+      router.push(`/cve/${cveId}` as Route);
+    } else {
+      // 드래그 후 살짝 재가열해 주변 노드가 재배치되게.
+      alphaRef.current = Math.max(alphaRef.current, 0.15);
+    }
+  };
+
+  const nodes = nodesRef.current;
 
   return (
     <div>
-      {/* ── 데스크톱: 방사형 마인드맵 ── */}
-      <div className="relative hidden aspect-[3/2] w-full sm:block">
-        {/* 동심원 배경 + 스포크 */}
+      <div className="hidden sm:block">
         <svg
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          className="absolute inset-0 h-full w-full"
-          aria-hidden
+          ref={svgRef}
+          viewBox={`0 0 ${VW} ${VH}`}
+          className="h-auto w-full touch-none select-none"
+          onPointerMove={onMove}
+          role="img"
+          aria-label="연관 취약점 force 그래프"
         >
-          {[46, 34, 22].map((r) => (
-            <circle key={r} cx="50" cy="50" r={r} className="fill-neutral-500/[0.04]" />
+          {[180, 130, 80].map((r) => (
+            <circle key={r} cx={CX} cy={CY} r={r} className="fill-neutral-500/[0.035]" />
           ))}
-          {placed.map((p) => (
+          {/* 링크 */}
+          {nodes.map((nd) => (
             <line
-              key={`s-${p.it.cveId}`}
-              x1="50"
-              y1="50"
-              x2={p.x}
-              y2={p.y}
-              stroke={p.cat.hex}
-              strokeWidth={hover === p.it.cveId ? 1.8 : 1}
-              strokeOpacity={hover === p.it.cveId ? 0.95 : 0.45}
-              vectorEffect="non-scaling-stroke"
+              key={`l-${nd.it.cveId}`}
+              x1={CX}
+              y1={CY}
+              x2={nd.x}
+              y2={nd.y}
+              stroke={nd.cat.hex}
+              strokeWidth={1.5}
+              strokeOpacity={0.5}
             />
           ))}
-        </svg>
-
-        {/* 중심 노드 */}
-        <div
-          className="absolute left-1/2 top-1/2 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border-2 border-sky-500 bg-white text-center shadow-sm dark:bg-surface-1"
-          title={centerId}
-        >
-          <span className="text-[9px] font-medium text-neutral-400 dark:text-neutral-500">현재</span>
-          <span className="px-1 font-mono text-[9px] font-bold leading-tight text-sky-700 dark:text-sky-300">
+          {/* 중심 노드 */}
+          <circle cx={CX} cy={CY} r={30} className="fill-sky-500/15" />
+          <circle cx={CX} cy={CY} r={22} className="fill-sky-500" />
+          <text x={CX} y={CY - 3} textAnchor="middle" className="fill-white" style={{ fontSize: 8 }}>
+            현재
+          </text>
+          <text x={CX} y={CY + 7} textAnchor="middle" className="fill-white font-mono" style={{ fontSize: 8, fontWeight: 700 }}>
             {centerId.replace(/^CVE-/, "")}
+          </text>
+          {/* 노드 알약 */}
+          {nodes.map((nd, i) => (
+            <g
+              key={nd.it.cveId}
+              transform={`translate(${nd.x},${nd.y})`}
+              className="cursor-pointer"
+              onPointerDown={onDown(i)}
+              onPointerUp={onUp(nd.it.cveId)}
+            >
+              <title>{`${nd.it.cveId} · ${nd.it.reason}${nd.it.cvssScore != null ? ` · CVSS ${nd.it.cvssScore}` : ""}\n${nd.it.title}`}</title>
+              <rect
+                x={-nd.hw}
+                y={-11}
+                width={nd.hw * 2}
+                height={22}
+                rx={11}
+                ry={11}
+                className="fill-white dark:fill-[#1c1c1f]"
+                stroke={nd.cat.hex}
+                strokeWidth={2}
+              />
+              {nd.it.kevListed && <circle cx={-nd.hw + 9} cy={0} r={3} fill="#f43f5e" />}
+              <text
+                textAnchor="middle"
+                dy={nd.fs * 0.35}
+                x={nd.it.kevListed ? 5 : 0}
+                className="font-mono font-semibold"
+                style={{ fontSize: nd.fs, fill: nd.cat.hex }}
+              >
+                {nd.it.cveId}
+              </text>
+            </g>
+          ))}
+        </svg>
+        {/* 범례 */}
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-neutral-500 dark:text-neutral-400">
+          {Object.values(CATS).map((c) => (
+            <span key={c.label} className="inline-flex items-center gap-1">
+              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: c.hex }} />
+              {c.label}
+            </span>
+          ))}
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-rose-500" /> KEV
           </span>
+          <span className="text-neutral-400 dark:text-neutral-500">· 크기=심각도 · 드래그로 이동 · 클릭 시 상세</span>
         </div>
-
-        {/* 알약 노드 */}
-        {placed.map((p) => (
-          <button
-            key={p.it.cveId}
-            type="button"
-            onClick={() => go(p.it.cveId)}
-            onMouseEnter={() => setHover(p.it.cveId)}
-            onMouseLeave={() => setHover(null)}
-            style={{ left: `${p.x}%`, top: `${p.y}%` }}
-            className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full border bg-white shadow-sm transition-transform hover:scale-105 dark:bg-surface-1 ${p.cat.pill} ${SIZE_CLS[sizeOf(p.it.severity)]} ${hover === p.it.cveId ? "ring-2 ring-sky-300 dark:ring-sky-500/40" : ""}`}
-            title={`${p.it.cveId} · ${p.it.reason}${p.it.cvssScore != null ? ` · CVSS ${p.it.cvssScore}` : ""}\n${p.it.title}`}
-          >
-            {p.it.kevListed && <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-rose-500 align-middle" />}
-            <span className="font-mono">{p.it.cveId}</span>
-          </button>
-        ))}
       </div>
 
-      {/* 데스크톱 범례 */}
-      <div className="mt-2 hidden flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-neutral-500 sm:flex dark:text-neutral-400">
-        {CATS.map((c) => (
-          <span key={c.key} className="inline-flex items-center gap-1">
-            <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: c.hex }} />
-            {c.label}
-          </span>
-        ))}
-        <span className="inline-flex items-center gap-1">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-rose-500" /> KEV
-        </span>
-        <span className="text-neutral-400 dark:text-neutral-500">· 크기=심각도 · 클릭 시 이동</span>
-      </div>
-
-      {/* ── 모바일: 그룹 리스트 폴백 ── */}
+      {/* 모바일 리스트 폴백 */}
       <ul className="space-y-1.5 sm:hidden">
         {items.map((it) => {
-          const cat = catOf(it.reason);
+          const c = CATS[catKey(it.reason)];
           return (
             <li key={it.cveId}>
               <button
                 type="button"
-                onClick={() => go(it.cveId)}
+                onClick={() => router.push(`/cve/${it.cveId}` as Route)}
                 className="flex w-full items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-left dark:border-neutral-800 dark:bg-surface-1"
               >
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: cat.hex }} />
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.hex }} />
                 <span className="font-mono text-[11px] font-semibold text-neutral-900 dark:text-neutral-100">{it.cveId}</span>
                 {it.cvssScore != null && (
                   <span className="font-mono text-[10px] font-bold tabular-nums text-neutral-500">{it.cvssScore.toFixed(1)}</span>
