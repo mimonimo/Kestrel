@@ -13,8 +13,10 @@ import {
   Sparkles,
   Trash2,
   Users,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ApiError, api, type AiAnalysisResponse, type AnalysisSummary } from "@/lib/api";
@@ -203,7 +205,9 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
   });
   const history: AnalysisSummary[] = historyQ.data?.items ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   useEffect(() => setSelectedId(null), [cveId]);
+  useEffect(() => setHistoryOpen(false), [cveId]);
   // 방금 실행한 결과가 없고 저장된 기록이 있으면 최신 기록을 자동 표시.
   useEffect(() => {
     if (selectedId || analyze.data) return;
@@ -320,13 +324,15 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
             AI 심층 분석
           </h2>
           {history.length > 0 && (
-            <span
-              className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-200"
-              title={`이 CVE 의 저장된 분석 ${history.length}건`}
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+              className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 transition-colors hover:bg-violet-100 dark:bg-violet-500/15 dark:text-violet-200 dark:hover:bg-violet-500/25"
+              title={`이 CVE 의 저장된 분석 ${history.length}건 — 클릭하여 기록 보기·공유`}
             >
               <History className="h-3 w-3" />
-              분석 {history.length}건
-            </span>
+              분석 기록 {history.length}건
+            </button>
           )}
         </div>
         {hasContent && !isRunning && (
@@ -399,43 +405,8 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
         )}
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* 분석 히스토리 — 이 CVE 의 저장된 분석들. 칩 클릭으로 전환. */}
-        {history.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-500">
-              <History className="h-3 w-3" />
-              기록
-            </span>
-            {history.map((h) => {
-              const active = selectedId === h.id || (showingFresh && fresh?.analysisId === h.id);
-              return (
-                <button
-                  key={h.id}
-                  type="button"
-                  onClick={() => {
-                    qc.removeQueries({ queryKey: ["ai-analysis", cveId] });
-                    setSelectedId(h.id);
-                  }}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors",
-                    active
-                      ? "border-violet-400 bg-violet-50 text-violet-800 dark:border-violet-500/50 dark:bg-violet-500/15 dark:text-violet-200"
-                      : "border-neutral-300 text-neutral-600 hover:border-violet-300 hover:text-violet-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-violet-200",
-                  )}
-                  title={`${h.author.nickname || h.author.username} · ${h.visibility === "public" ? "공개" : "비공개"}`}
-                >
-                  {h.visibility === "public" ? (
-                    <Globe className="h-2.5 w-2.5" />
-                  ) : (
-                    <Lock className="h-2.5 w-2.5" />
-                  )}
-                  <span className="max-w-[7rem] truncate">{h.author.nickname || h.author.username}</span>
-                  <span className="tabular-nums opacity-70">{formatRelativeKo(h.createdAt)}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+        {/* 분석 히스토리는 헤더의 "분석 기록" 버튼 → 팝업(AnalysisHistoryModal)에서 관리. */}
+
 
         {!hasContent && !isRunning && !error && (
           <div className="flex flex-col items-start gap-3">
@@ -553,6 +524,25 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
               </p>
             </div>
           ) : null)}
+
+        {historyOpen && (
+          <AnalysisHistoryModal
+            cveId={cveId}
+            items={history}
+            currentUsername={user?.username ?? null}
+            selectedId={selectedId}
+            onView={(id) => {
+              qc.removeQueries({ queryKey: ["ai-analysis", cveId] });
+              setSelectedId(id);
+              setHistoryOpen(false);
+            }}
+            onShared={() => {
+              qc.invalidateQueries({ queryKey: ["cve-analyses", cveId] });
+              qc.invalidateQueries({ queryKey: ["community-analyses"] });
+            }}
+            onClose={() => setHistoryOpen(false)}
+          />
+        )}
       </CardContent>
     </Card>
   );
@@ -833,5 +823,133 @@ function InlineLoginGate({ label }: { label: string }) {
         로그인하기
       </a>
     </div>
+  );
+}
+
+
+// ─────────────────────── 분석 기록 팝업 ───────────────────────
+// 여러 번 분석한 기록을 팝업으로 보고, 마음에 드는 하나를 골라(기본=최신)
+// 하단에서 커뮤니티에 공유한다.
+function AnalysisHistoryModal({
+  cveId,
+  items,
+  currentUsername,
+  selectedId,
+  onView,
+  onShared,
+  onClose,
+}: {
+  cveId: string;
+  items: AnalysisSummary[];
+  currentUsername: string | null;
+  selectedId: string | null;
+  onView: (id: string) => void;
+  onShared: () => void;
+  onClose: () => void;
+}) {
+  // 기본 선택 = 현재 보고 있는 기록, 없으면 최신(목록 첫 항목).
+  const [picked, setPicked] = useState<string | null>(selectedId ?? items[0]?.id ?? null);
+  const current = items.find((it) => it.id === picked) ?? null;
+  const isOwn = !!current && !!currentUsername && current.author.username === currentUsername;
+  const isPublic = current?.visibility === "public";
+
+  const share = useMutation({
+    mutationFn: (visibility: "public" | "private") => api.updateAnalysisRecord(picked!, { visibility }),
+    onSuccess: () => onShared(),
+  });
+
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4" onClick={onClose} role="dialog" aria-modal="true">
+      <div onClick={(e) => e.stopPropagation()} className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-surface-1">
+        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3 dark:border-neutral-800">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            <History className="h-4 w-4 text-violet-500" /> 분석 기록 <span className="font-normal text-neutral-400">{items.length}</span>
+          </h2>
+          <button type="button" onClick={onClose} aria-label="닫기" className="rounded-full p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-surface-2"><X className="h-4 w-4" /></button>
+        </div>
+
+        <p className="px-5 pt-3 text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+          여러 번 분석한 기록입니다. 가장 마음에 드는 분석을 골라 하단에서 커뮤니티에 공유하세요. 기본값은 가장 최근 분석입니다.
+        </p>
+
+        <ul className="flex-1 space-y-1.5 overflow-y-auto px-5 py-3">
+          {items.map((it, i) => {
+            const active = picked === it.id;
+            return (
+              <li key={it.id}>
+                <button
+                  type="button"
+                  onClick={() => setPicked(it.id)}
+                  className={cn(
+                    "flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left transition-colors",
+                    active
+                      ? "border-violet-400 bg-violet-50 dark:border-violet-500/50 dark:bg-violet-500/10"
+                      : "border-neutral-200 hover:border-violet-300 dark:border-neutral-800 dark:hover:border-violet-500/40",
+                  )}
+                >
+                  <span className={cn("mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border", active ? "border-violet-500 bg-violet-500 text-white" : "border-neutral-300 dark:border-neutral-600")}>
+                    {active && <Check className="h-2.5 w-2.5" />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                      <span className="font-medium text-neutral-800 dark:text-neutral-200">{it.author.nickname || it.author.username}</span>
+                      {i === 0 && <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[9px] font-semibold text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">최신</span>}
+                      <span className={cn("inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-medium", it.visibility === "public" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-neutral-100 text-neutral-500 dark:bg-surface-2 dark:text-neutral-400")}>
+                        {it.visibility === "public" ? <><Globe className="h-2.5 w-2.5" /> 공개</> : <><Lock className="h-2.5 w-2.5" /> 비공개</>}
+                      </span>
+                      <span className="ml-auto tabular-nums text-[10px] text-neutral-400">{formatRelativeKo(it.createdAt)}</span>
+                    </div>
+                    {it.attackMethod && <p className="mt-1 line-clamp-2 text-[11px] text-neutral-500 dark:text-neutral-400">{it.attackMethod}</p>}
+                    <div className="mt-1 flex gap-2 text-[10px] text-neutral-400">
+                      <span>페이로드 {it.payloadCount}</span>
+                      <span>완화 {it.mitigationCount}</span>
+                    </div>
+                  </div>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+
+        <div className="border-t border-neutral-200 px-5 py-3 dark:border-neutral-800">
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => picked && onView(picked)}
+              disabled={!picked}
+              className="rounded-full border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-surface-2"
+            >
+              이 분석 보기
+            </button>
+            {isOwn ? (
+              isPublic ? (
+                <button
+                  type="button"
+                  onClick={() => share.mutate("private")}
+                  disabled={share.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-4 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+                >
+                  {share.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Globe className="h-3.5 w-3.5" />} 공유 중 — 비공개 전환
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => share.mutate("public")}
+                  disabled={share.isPending || !picked}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+                >
+                  {share.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Users className="h-3.5 w-3.5" />} 이 분석 공유
+                </button>
+              )
+            ) : (
+              <span className="text-[11px] text-neutral-400">본인 분석만 공유할 수 있습니다.</span>
+            )}
+          </div>
+          {share.isError && <p className="mt-2 text-[11px] text-rose-600 dark:text-rose-300">{(share.error as Error).message || "공유 처리에 실패했습니다."}</p>}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
