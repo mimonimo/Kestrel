@@ -289,21 +289,32 @@ cve_records_router = APIRouter(prefix="/cves", tags=["analysis-records"])
 )
 async def list_cve_analyses(
     cve_id: str,
+    mine: bool = Query(False, description="true 면 로그인 사용자 본인 분석만(에이전트·타인 제외)"),
     db: AsyncSession = Depends(get_db),
     me: User | None = Depends(get_optional_user),
 ) -> AnalysisList:
-    """이 CVE 의 분석 히스토리. public + (본인이면) 본인 private 포함."""
-    visibility_filter = AnalysisResult.visibility == "public"
-    if me is not None:
+    """이 CVE 의 분석 히스토리.
+
+    - 기본: public + (로그인 시) 본인 private — 커뮤니티 분석 표출용.
+    - ``mine=true``: 로그인 사용자 *본인* 분석만(공개/비공개 모두). 에이전트가
+      만든 분석(user_id=에이전트)·타인 분석은 제외 — CVE 상세의 '내 분석 기록'용.
+    """
+    if mine:
+        if me is None:
+            return AnalysisList(items=[], total=0)
+        where_filter = AnalysisResult.user_id == me.id
+    elif me is not None:
         from sqlalchemy import or_
 
-        visibility_filter = or_(
+        where_filter = or_(
             AnalysisResult.visibility == "public",
             AnalysisResult.user_id == me.id,
         )
+    else:
+        where_filter = AnalysisResult.visibility == "public"
     q = (
         select(AnalysisResult)
-        .where(AnalysisResult.cve_id == cve_id, visibility_filter)
+        .where(AnalysisResult.cve_id == cve_id, where_filter)
         .options(selectinload(AnalysisResult.user))
         .order_by(desc(AnalysisResult.created_at))
     )

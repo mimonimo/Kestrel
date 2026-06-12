@@ -621,8 +621,10 @@ export const api = {
     const qs = p.toString();
     return request<AnalysisList>(`/community/analyses${qs ? `?${qs}` : ""}`);
   },
-  listCveAnalyses: (cveId: string) =>
-    request<AnalysisList>(`/cves/${encodeURIComponent(cveId)}/analyses`),
+  listCveAnalyses: (cveId: string, mine = false) =>
+    request<AnalysisList>(
+      `/cves/${encodeURIComponent(cveId)}/analyses${mine ? "?mine=true" : ""}`,
+    ),
   getRelatedCves: (cveId: string) =>
     request<import("./types").RelatedCve[]>(`/cves/${encodeURIComponent(cveId)}/related`),
   getReferencePreviews: (cveId: string) =>

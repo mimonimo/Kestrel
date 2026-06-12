@@ -238,8 +238,8 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
   // localStorage 캐시만 보던 기존 방식은 다른 기기·다른 사용자·캐시 비움 시
   // 기록을 못 봤다. 서버에서 직접 목록을 불러와 여러 번 분석한 기록을 관리한다.
   const historyQ = useQuery({
-    queryKey: ["cve-analyses", cveId],
-    queryFn: () => api.listCveAnalyses(cveId),
+    queryKey: ["cve-analyses", cveId, "mine"],
+    queryFn: () => api.listCveAnalyses(cveId, true),
     staleTime: 30_000,
   });
   const history: AnalysisSummary[] = historyQ.data?.items ?? [];
@@ -350,6 +350,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["cve-analyses", cveId] });
       qc.invalidateQueries({ queryKey: ["community-analyses"] });
+      qc.invalidateQueries({ queryKey: ["cve-community-analyses", cveId] });
       if (currentRecordId) qc.invalidateQueries({ queryKey: ["analysis-record", currentRecordId] });
     },
   });
@@ -579,6 +580,7 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
             onShared={() => {
               qc.invalidateQueries({ queryKey: ["cve-analyses", cveId] });
               qc.invalidateQueries({ queryKey: ["community-analyses"] });
+              qc.invalidateQueries({ queryKey: ["cve-community-analyses", cveId] });
             }}
             onClose={() => setHistoryOpen(false)}
           />
