@@ -64,6 +64,7 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
   const dragRef = useRef<{ i: number; moved: boolean } | null>(null);
   const tickRef = useRef<() => void>(() => {});
   const [, setFrame] = useState(0);
+  const [hover, setHover] = useState<string | null>(null);
 
   // 노드 초기화(items 변경 시).
   useEffect(() => {
@@ -205,76 +206,129 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
 
   return (
     <div>
-      <div className="mx-auto max-w-xl hidden sm:block">
+      <div className="relative mx-auto hidden max-w-xl sm:block">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${VW} ${VH}`}
-          className="h-auto w-full touch-none select-none"
+          className="h-auto w-full touch-none select-none overflow-visible"
           onPointerMove={onMove}
           role="img"
           aria-label="연관 취약점 force 그래프"
         >
+          <defs>
+            <filter id="kx-pill-shadow" x="-30%" y="-30%" width="160%" height="160%">
+              <feDropShadow dx="0" dy="1" stdDeviation="1.3" floodColor="#0f172a" floodOpacity="0.18" />
+            </filter>
+          </defs>
+
           {[120, 82, 46].map((r) => (
-            <circle key={r} cx={CX} cy={CY} r={r} className="fill-neutral-500/[0.035]" />
+            <circle key={r} cx={CX} cy={CY} r={r} className="fill-neutral-500/[0.04]" />
           ))}
-          {/* 링크 */}
-          {nodes.map((nd) => (
-            <line
-              key={`l-${nd.it.cveId}`}
-              x1={CX}
-              y1={CY}
-              x2={nd.x}
-              y2={nd.y}
-              stroke={nd.cat.hex}
-              strokeWidth={1.5}
-              strokeOpacity={0.5}
-            />
-          ))}
+
+          {/* 링크 — 곡선 + 호버 강조 */}
+          {nodes.map((nd) => {
+            const mx = (CX + nd.x) / 2 + (nd.y - CY) * 0.09;
+            const my = (CY + nd.y) / 2 - (nd.x - CX) * 0.09;
+            const on = hover === nd.it.cveId;
+            const dim = hover && !on;
+            return (
+              <path
+                key={`l-${nd.it.cveId}`}
+                d={`M${CX},${CY} Q${mx},${my} ${nd.x},${nd.y}`}
+                fill="none"
+                stroke={nd.cat.hex}
+                strokeWidth={on ? 2.4 : 1.4}
+                strokeOpacity={dim ? 0.15 : on ? 0.95 : 0.45}
+              />
+            );
+          })}
+
           {/* 중심 노드 */}
-          <circle cx={CX} cy={CY} r={30} className="fill-sky-500/15" />
-          <circle cx={CX} cy={CY} r={22} className="fill-sky-500" />
-          <text x={CX} y={CY - 3} textAnchor="middle" className="fill-white" style={{ fontSize: 8 }}>
+          <circle cx={CX} cy={CY} r={29} className="fill-sky-500/10" />
+          <circle cx={CX} cy={CY} r={22} className="fill-sky-500" stroke="#fff" strokeWidth={2} style={{ filter: "url(#kx-pill-shadow)" }} />
+          <text x={CX} y={CY - 3} textAnchor="middle" className="fill-white" style={{ fontSize: 8, opacity: 0.85 }}>
             현재
           </text>
-          <text x={CX} y={CY + 7} textAnchor="middle" className="fill-white font-mono" style={{ fontSize: 8, fontWeight: 700 }}>
+          <text x={CX} y={CY + 7.5} textAnchor="middle" className="fill-white font-mono" style={{ fontSize: 8.5, fontWeight: 700 }}>
             {centerId.replace(/^CVE-/, "")}
           </text>
+
           {/* 노드 알약 */}
-          {nodes.map((nd, i) => (
-            <g
-              key={nd.it.cveId}
-              transform={`translate(${nd.x},${nd.y})`}
-              className="cursor-pointer"
-              onPointerDown={onDown(i)}
-              onPointerUp={onUp(nd.it.cveId)}
-            >
-              <title>{`${nd.it.cveId} · ${nd.it.reason}${nd.it.cvssScore != null ? ` · CVSS ${nd.it.cvssScore}` : ""}\n${nd.it.title}`}</title>
-              <rect
-                x={-nd.hw}
-                y={-11}
-                width={nd.hw * 2}
-                height={22}
-                rx={11}
-                ry={11}
-                className="fill-white dark:fill-[#1c1c1f]"
-                stroke={nd.cat.hex}
-                strokeWidth={2}
-              />
-              {nd.it.kevListed && <circle cx={-nd.hw + 9} cy={0} r={3} fill="#f43f5e" />}
-              <text
-                textAnchor="middle"
-                dy={nd.fs * 0.35}
-                x={nd.it.kevListed ? 5 : 0}
-                className="font-mono font-semibold"
-                style={{ fontSize: nd.fs, fill: nd.cat.hex }}
+          {nodes.map((nd, i) => {
+            const on = hover === nd.it.cveId;
+            const dim = hover && !on;
+            return (
+              <g
+                key={nd.it.cveId}
+                transform={`translate(${nd.x},${nd.y})${on ? " scale(1.08)" : ""}`}
+                className="cursor-pointer"
+                style={{ opacity: dim ? 0.4 : 1, transition: "opacity .15s" }}
+                onPointerDown={onDown(i)}
+                onPointerUp={onUp(nd.it.cveId)}
+                onPointerEnter={() => setHover(nd.it.cveId)}
+                onPointerLeave={() => setHover((h) => (h === nd.it.cveId ? null : h))}
               >
-                {nd.it.cveId}
-              </text>
-            </g>
-          ))}
+                <rect
+                  x={-nd.hw}
+                  y={-11}
+                  width={nd.hw * 2}
+                  height={22}
+                  rx={11}
+                  ry={11}
+                  className="fill-white dark:fill-[#1c1c1f]"
+                  stroke={nd.cat.hex}
+                  strokeWidth={on ? 2.5 : 2}
+                  style={{ filter: "url(#kx-pill-shadow)" }}
+                />
+                {nd.it.kevListed && <circle cx={-nd.hw + 9} cy={0} r={3} fill="#f43f5e" />}
+                <text
+                  textAnchor="middle"
+                  dy={nd.fs * 0.35}
+                  x={nd.it.kevListed ? 5 : 0}
+                  className="font-mono font-semibold"
+                  style={{ fontSize: nd.fs, fill: nd.cat.hex }}
+                >
+                  {nd.it.cveId}
+                </text>
+              </g>
+            );
+          })}
         </svg>
+
+        {/* 호버 즉시 툴팁 */}
+        {(() => {
+          const hv = hover ? nodes.find((n) => n.it.cveId === hover) : null;
+          if (!hv) return null;
+          const below = hv.y < VH * 0.55;
+          return (
+            <div
+              className="pointer-events-none absolute z-20 w-56 -translate-x-1/2 rounded-lg border border-neutral-200 bg-white px-2.5 py-2 text-[11px] shadow-lg dark:border-neutral-700 dark:bg-surface-2"
+              style={{
+                left: `${(hv.x / VW) * 100}%`,
+                top: `${(hv.y / VH) * 100}%`,
+                transform: `translate(-50%, ${below ? "16px" : "calc(-100% - 16px)"})`,
+              }}
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: hv.cat.hex }} />
+                <span className="font-mono font-semibold text-neutral-900 dark:text-neutral-100">{hv.it.cveId}</span>
+                {hv.it.cvssScore != null && (
+                  <span className="font-mono text-[10px] font-bold tabular-nums" style={{ color: hv.cat.hex }}>
+                    {hv.it.cvssScore.toFixed(1)}
+                  </span>
+                )}
+                {hv.it.kevListed && (
+                  <span className="rounded-full bg-rose-100 px-1.5 py-px text-[9px] font-semibold text-rose-700 dark:bg-rose-500/15 dark:text-rose-200">KEV</span>
+                )}
+              </div>
+              <p className="mt-1 line-clamp-2 leading-snug text-neutral-600 dark:text-neutral-400">{hv.it.title}</p>
+              <p className="mt-0.5 text-[9px] text-neutral-400">{hv.it.reason}</p>
+            </div>
+          );
+        })()}
+
         {/* 범례 */}
-        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-neutral-500 dark:text-neutral-400">
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-neutral-500 dark:text-neutral-400">
           {LEGEND_CATS.map((k) => CATS[k]).map((c) => (
             <span key={c.label} className="inline-flex items-center gap-1">
               <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: c.hex }} />
@@ -284,7 +338,7 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
           <span className="inline-flex items-center gap-1">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-rose-500" /> KEV
           </span>
-          <span className="text-neutral-400 dark:text-neutral-500">· 크기=심각도 · 드래그로 이동 · 클릭 시 상세</span>
+          <span className="text-neutral-400 dark:text-neutral-500">· 크기=심각도 · 드래그/클릭</span>
         </div>
       </div>
 
