@@ -1382,6 +1382,7 @@ export interface CommunityPost {
   content: string;
   authorName: string;
   vulnerabilityId: string | null;
+  cveId?: string | null;
   viewCount: number;
   commentCount: number;
   isOwner: boolean;

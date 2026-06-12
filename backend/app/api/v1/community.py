@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_optional_user
 from app.core.database import get_db
-from app.models import Comment, Post, PostLike, User, UserRole
+from app.models import Comment, Post, PostLike, User, UserRole, Vulnerability
 from app.schemas.vulnerability import CamelModel
 
 router = APIRouter(prefix="/community", tags=["community"])
@@ -87,6 +87,7 @@ class PostOut(CamelModel):
     content: str
     author_name: str
     vulnerability_id: UUID | None
+    cve_id: str | None = None  # 연결된 CVE 표시·링크용(vulnerability_id 의 사람용 ID)
     view_count: int
     comment_count: int
     is_owner: bool
@@ -171,6 +172,15 @@ async def list_posts(
         comment_counts = {}
 
     liked = await _liked_post_ids(db, me, [r.id for r in rows])
+    # 연결된 CVE 의 사람용 ID 매핑(UUID → CVE-XXXX) — 피드 태그/링크용.
+    vuln_ids = [r.vulnerability_id for r in rows if r.vulnerability_id]
+    cve_map: dict = {}
+    if vuln_ids:
+        cve_map = dict(
+            (await db.execute(
+                select(Vulnerability.id, Vulnerability.cve_id).where(Vulnerability.id.in_(vuln_ids))
+            )).all()
+        )
     items = [
         PostOut(
             id=r.id,
@@ -178,6 +188,7 @@ async def list_posts(
             content=r.content,
             author_name=r.author_name,
             vulnerability_id=r.vulnerability_id,
+            cve_id=cve_map.get(r.vulnerability_id) if r.vulnerability_id else None,
             view_count=r.view_count,
             comment_count=comment_counts.get(r.id, 0),
             is_owner=_is_owner(r.user_id, r.client_id, me=me, x_client_id=x_client_id),
@@ -215,12 +226,18 @@ async def create_post(
     db.add(post)
     await db.commit()
     await db.refresh(post)
+    cve_id = None
+    if post.vulnerability_id:
+        cve_id = await db.scalar(
+            select(Vulnerability.cve_id).where(Vulnerability.id == post.vulnerability_id)
+        )
     return PostOut(
         id=post.id,
         title=post.title,
         content=post.content,
         author_name=post.author_name,
         vulnerability_id=post.vulnerability_id,
+        cve_id=cve_id,
         view_count=post.view_count,
         comment_count=0,
         is_owner=True,
@@ -252,12 +269,18 @@ async def get_post(
     ).scalar_one()
     post_view_count = (post.view_count or 0) + 1
     liked = await _liked_post_ids(db, me, [post.id])
+    cve_id = None
+    if post.vulnerability_id:
+        cve_id = await db.scalar(
+            select(Vulnerability.cve_id).where(Vulnerability.id == post.vulnerability_id)
+        )
     out = PostOut(
         id=post.id,
         title=post.title,
         content=post.content,
         author_name=post.author_name,
         vulnerability_id=post.vulnerability_id,
+        cve_id=cve_id,
         view_count=post_view_count,
         comment_count=int(cnt),
         is_owner=_is_owner(post.user_id, post.client_id, me=me, x_client_id=x_client_id),

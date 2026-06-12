@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import type { Route } from "next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, Hash, Heart, Loader2, LogIn, MessageSquare, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 
@@ -12,6 +14,21 @@ import { NewPostModal } from "@/components/community/NewPostModal";
 import { PostModal } from "@/components/community/PostModal";
 import { formatRelativeKo, stripMarkdown } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+// 작성자 이름 기반 결정적 아바타 색상 — 피드에서 작성자 구분이 쉽게.
+const AVATAR_TONES = [
+  "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
+  "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
+  "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+  "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+  "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300",
+  "bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300",
+];
+function avatarTone(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return AVATAR_TONES[h % AVATAR_TONES.length];
+}
 
 export default function CommunityPage() {
   const { user } = useAuth();
@@ -154,15 +171,20 @@ export default function CommunityPage() {
           </Button>
         </div>
       ) : (
-        <ul className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-surface-1">
+        <ul className="space-y-3">
           {data?.items.map((p) => (
             <li
               key={p.id}
-              className="border-b border-neutral-200 transition-colors last:border-b-0 hover:bg-neutral-50/70 dark:border-neutral-800 dark:hover:bg-surface-2/40"
+              className="group rounded-2xl border border-neutral-200 bg-white transition-all hover:border-neutral-300 hover:shadow-sm dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-neutral-700"
             >
-              <article className="flex gap-3 px-4 py-4">
-                {/* 아바타 — authorName 이니셜 원형 */}
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
+              <article className="flex gap-3 p-4 sm:gap-4 sm:p-5">
+                {/* 아바타 — authorName 이니셜 원형(이름별 색상) */}
+                <span
+                  className={cn(
+                    "flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-base font-bold",
+                    avatarTone(p.authorName),
+                  )}
+                >
                   {(p.authorName.trim().charAt(0) || "?").toUpperCase()}
                 </span>
 
@@ -181,29 +203,39 @@ export default function CommunityPage() {
                       <span className="tabular-nums text-xs text-neutral-500 dark:text-neutral-500">
                         {formatRelativeKo(p.createdAt)}
                       </span>
-                      {p.vulnerabilityId && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 dark:bg-sky-500/15 dark:text-sky-200">
-                          <Hash className="h-2.5 w-2.5" />
-                          {p.vulnerabilityId}
-                        </span>
-                      )}
                     </div>
                     {p.title && (
-                      <h3 className="mt-0.5 truncate text-[15px] font-semibold text-neutral-900 dark:text-neutral-100">
+                      <h3 className="mt-1 text-[15px] font-semibold leading-snug text-neutral-900 dark:text-neutral-100">
                         {p.title}
                       </h3>
                     )}
-                    <p className="mt-0.5 line-clamp-3 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300">
+                    <p className="mt-1 line-clamp-3 whitespace-pre-line text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
                       {stripMarkdown(p.content)}
                     </p>
                   </button>
 
+                  {/* 연결된 CVE 태그 — 클릭 시 해당 CVE 로 이동 */}
+                  {(p.cveId || p.vulnerabilityId) && (
+                    <div className="mt-2">
+                      {p.cveId ? (
+                        <Link
+                          href={`/cve/${p.cveId}` as Route}
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 font-mono text-[11px] font-medium text-sky-700 ring-1 ring-inset ring-sky-200 transition-colors hover:bg-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/30 dark:hover:bg-sky-500/20"
+                        >
+                          <Hash className="h-3 w-3" />
+                          {p.cveId}
+                        </Link>
+                      ) : null}
+                    </div>
+                  )}
+
                   {/* 액션 바 — 댓글 / 좋아요 / 조회 (+ 관리 삭제) */}
-                  <div className="mt-2.5 flex items-center gap-1 text-neutral-500 dark:text-neutral-500">
+                  <div className="mt-3 flex items-center gap-1 text-neutral-500 dark:text-neutral-500">
                     <button
                       type="button"
                       onClick={() => setOpenPostId(p.id)}
-                      className="group inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs transition-colors hover:bg-sky-50 hover:text-sky-600 dark:hover:bg-sky-500/10 dark:hover:text-sky-300"
+                      className="group/btn inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs transition-colors hover:bg-sky-50 hover:text-sky-600 dark:hover:bg-sky-500/10 dark:hover:text-sky-300"
                       title="댓글"
                     >
                       <MessageSquare className="h-4 w-4" />
@@ -214,7 +246,7 @@ export default function CommunityPage() {
                       onClick={() => toggleLike(p)}
                       aria-pressed={p.isLiked}
                       className={cn(
-                        "group inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-300",
+                        "inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-300",
                         p.isLiked && "text-rose-600 dark:text-rose-400",
                       )}
                       title={p.isLiked ? "좋아요 취소" : "좋아요"}
@@ -240,7 +272,7 @@ export default function CommunityPage() {
                           if (confirm(msg)) deletePost.mutate(p.id);
                         }}
                         title={p.isOwner ? "삭제" : "관리자 권한으로 삭제"}
-                        className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+                        className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-neutral-400 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 disabled:opacity-50 dark:hover:bg-red-950/40 dark:hover:text-red-300"
                       >
                         {deletePost.isPending && deletingId === p.id ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
