@@ -19,8 +19,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// 인라인(굵게·코드). _italic_ 은 기술 텍스트의 밑줄(TARGET_HOST 등)을 오인하므로 제외.
-const INLINE = /(```[^`]+```|``[^`]+``|`[^`]+`|\*\*[^*]+\*\*)/g;
+// 인라인: 코드 → **굵게**/__굵게__ → _기울임_ → 고아 마커 정리.
+// 단일 ``*`` 는 ``/api/*`` · 정규식 ``.*`` 등 보안 텍스트에서 흔해 절대 건드리지
+// 않는다. 모델이 종종 토해내는 깨진 마크업(``**_x_**`` 중첩, 닫히지 않은
+// ``**`` / 끝에 매달린 ``_``)을 안전하게 정리해 ``###`` · ``**`` · ``_`` 가
+// 본문에 글자 그대로 노출되지 않게 한다.
 
 function stripCode(tok: string): string {
   if (tok.startsWith("```")) return tok.slice(3, -3);
@@ -28,35 +31,85 @@ function stripCode(tok: string): string {
   return tok.slice(1, -1);
 }
 
+// 짝이 맞지 않아 남은 강조 마커 제거. ``**`` 런과 *단어 경계가 아닌* ``_`` 만
+// 지운다(식별자 TARGET_HOST 의 ``_`` 는 보존).
+function cleanMarkers(s: string): string {
+  let out = s.replace(/\*\*+/g, "");
+  out = out.replace(/_+/g, (m, off: number) => {
+    const before = out[off - 1] || "";
+    const after = out[off + m.length] || "";
+    const intraword = /[A-Za-z0-9]/.test(before) && /[A-Za-z0-9]/.test(after);
+    return intraword ? m : "";
+  });
+  return out;
+}
+
 function renderInline(text: string): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  let last = 0;
-  let key = 0;
-  let m: RegExpExecArray | null;
-  INLINE.lastIndex = 0;
-  while ((m = INLINE.exec(text)) !== null) {
-    if (m.index > last) nodes.push(text.slice(last, m.index));
-    const tok = m[0];
-    if (tok.startsWith("`")) {
-      nodes.push(
-        <code
-          key={key++}
-          className="rounded bg-neutral-200/70 px-1 py-0.5 font-mono text-[0.85em] text-violet-700 dark:bg-surface-3 dark:text-violet-300"
-        >
-          {stripCode(tok)}
-        </code>,
+  let k = 0;
+  const nextKey = () => `il-${k++}`;
+  const leaf = (s: string): ReactNode[] => {
+    const c = cleanMarkers(s);
+    return c ? [c] : [];
+  };
+
+  const italic = (t: string): ReactNode[] => {
+    const re = /(?<![A-Za-z0-9])_(?!\s)([^_]+?)(?<!\s)_(?![A-Za-z0-9])/g;
+    const out: ReactNode[] = [];
+    let last = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(t)) !== null) {
+      if (m.index > last) out.push(...leaf(t.slice(last, m.index)));
+      out.push(
+        <em key={nextKey()} className="italic text-neutral-800 dark:text-neutral-200">
+          {cleanMarkers(m[1])}
+        </em>,
       );
-    } else {
-      nodes.push(
-        <strong key={key++} className="font-semibold text-neutral-900 dark:text-neutral-100">
-          {tok.slice(2, -2)}
+      last = m.index + m[0].length;
+    }
+    if (last < t.length) out.push(...leaf(t.slice(last)));
+    return out;
+  };
+
+  const bold = (t: string): ReactNode[] => {
+    const re = /\*\*([\s\S]+?)\*\*|(?<![A-Za-z0-9])__([\s\S]+?)__(?![A-Za-z0-9])/g;
+    const out: ReactNode[] = [];
+    let last = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(t)) !== null) {
+      if (m.index > last) out.push(...italic(t.slice(last, m.index)));
+      out.push(
+        <strong key={nextKey()} className="font-semibold text-neutral-900 dark:text-neutral-100">
+          {italic(m[1] ?? m[2] ?? "")}
         </strong>,
       );
+      last = m.index + m[0].length;
     }
-    last = m.index + tok.length;
-  }
-  if (last < text.length) nodes.push(text.slice(last));
-  return nodes;
+    if (last < t.length) out.push(...italic(t.slice(last)));
+    return out;
+  };
+
+  const code = (t: string): ReactNode[] => {
+    const re = /```[^`]+```|``[^`]+``|`[^`]+`/g;
+    const out: ReactNode[] = [];
+    let last = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(t)) !== null) {
+      if (m.index > last) out.push(...bold(t.slice(last, m.index)));
+      out.push(
+        <code
+          key={nextKey()}
+          className="rounded bg-neutral-200/70 px-1 py-0.5 font-mono text-[0.85em] text-violet-700 dark:bg-surface-3 dark:text-violet-300"
+        >
+          {stripCode(m[0])}
+        </code>,
+      );
+      last = m.index + m[0].length;
+    }
+    if (last < t.length) out.push(...bold(t.slice(last)));
+    return out;
+  };
+
+  return code(text);
 }
 
 const FULL_CODE = /^\s*(```|``|`)([\s\S]+?)\1\s*$/;
@@ -285,11 +338,11 @@ export function MarkdownLite({ source, className }: { source: string; className?
       continue;
     }
 
-    const h = /^(#{1,3})\s+(.*)$/.exec(line);
+    const h = /^(#{1,6})\s+(.*)$/.exec(line);
     if (h) {
       flushPara();
       const level = h[1].length;
-      const text = h[2];
+      const text = h[2].replace(/\s*#+\s*$/, ""); // 끝에 매달린 ATX 닫는 # 제거
       if (level === 2) {
         // 새 섹션 카드 시작.
         sections.push({ title: text, blocks: [] });
