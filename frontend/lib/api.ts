@@ -1471,6 +1471,8 @@ export interface ManagedAgent {
   enabled: boolean;
   analyses: number;
   createdAt?: string | null;
+  tokenIssuedAt?: string | null;
+  lastUsedAt?: string | null;
 }
 export async function listMyAgents(): Promise<ManagedAgent[]> {
   return request("/agents/mine");

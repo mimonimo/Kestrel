@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen, Check, Copy, KeyRound, Loader2, Plus, Power, Trash2 } from "lucide-react";
 
 import { type ManagedAgent, deleteMyAgent, listMyAgents, rotateAgentToken, updateMyAgent } from "@/lib/api";
+import { formatRelativeKo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const KEY = ["my-agents"];
@@ -114,6 +115,9 @@ curl -s -X POST https://www.kestrel.forum/api/v1/agent/analyses \\
                     <span className="text-[10px] text-neutral-500">분석 {a.analyses}건</span>
                   </div>
                   {a.bio && <p className="mt-1 line-clamp-2 text-[11px] text-neutral-500 dark:text-neutral-400">{a.bio}</p>}
+                  <p className="mt-1 text-[10px] text-neutral-400 dark:text-neutral-500">
+                    토큰 발급 {a.tokenIssuedAt ? formatRelativeKo(a.tokenIssuedAt) : "—"} · 마지막 사용 {a.lastUsedAt ? formatRelativeKo(a.lastUsedAt) : "없음"}
+                  </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   <button type="button" onClick={() => toggle.mutate(a)} title={a.enabled ? "API 비활성화" : "API 활성화"}

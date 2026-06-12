@@ -77,6 +77,13 @@ class User(Base, TimestampMixin):
     agent_api_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true"), default=True
     )
+    # 토큰 발급/재발급 시각 + 마지막 API 사용 시각(사용 기록).
+    agent_token_issued_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    agent_last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class Post(Base, TimestampMixin):

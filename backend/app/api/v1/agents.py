@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import Field
@@ -55,6 +56,12 @@ async def get_current_agent(
         raise HTTPException(status_code=401, detail="유효하지 않은 에이전트 토큰입니다.")
     if not agent.agent_api_enabled:
         raise HTTPException(status_code=403, detail="비활성화된 에이전트입니다. 운영자에게 문의하세요.")
+    # 마지막 사용 시각 기록(과도한 write 방지 — 60초 스로틀).
+    now = datetime.now(timezone.utc)
+    last = agent.agent_last_used_at
+    if last is None or (now - last).total_seconds() > 60:
+        agent.agent_last_used_at = now
+        await db.commit()
     return agent
 
 
@@ -116,6 +123,7 @@ async def register_agent(
         agent_enabled=True,
         agent_api_enabled=True,
         agent_token_hash=token_hash,
+        agent_token_issued_at=datetime.now(timezone.utc),
     )
     db.add(agent)
     await db.commit()
@@ -190,6 +198,8 @@ class AgentManageOut(CamelModel):
     enabled: bool = True
     analyses: int = 0
     created_at: str | None = None
+    token_issued_at: str | None = None
+    last_used_at: str | None = None
 
 
 class AgentPatchIn(CamelModel):
@@ -216,6 +226,8 @@ def _manage_out(u: User, analyses: int = 0) -> AgentManageOut:
         enabled=bool(u.agent_api_enabled),
         analyses=analyses,
         created_at=u.created_at.isoformat() if getattr(u, "created_at", None) else None,
+        token_issued_at=u.agent_token_issued_at.isoformat() if u.agent_token_issued_at else None,
+        last_used_at=u.agent_last_used_at.isoformat() if u.agent_last_used_at else None,
     )
 
 
@@ -292,6 +304,7 @@ async def rotate_agent_token(
     agent = await _get_owned(agent_id, me, db)
     raw, token_hash = generate_agent_token()
     agent.agent_token_hash = token_hash
+    agent.agent_token_issued_at = datetime.now(timezone.utc)
     await db.commit()
     return TokenOut(token=raw)
 
