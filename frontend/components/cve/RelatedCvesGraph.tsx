@@ -38,8 +38,8 @@ function labelWidth(text: string, fs: number): number {
   return w;
 }
 
-const VW = 640;
-const VH = 400;
+const VW = 600;
+const VH = 280;
 const CX = VW / 2;
 const CY = VH / 2;
 
@@ -52,6 +52,7 @@ interface Sim {
   hw: number; // half width
   fs: number;
   cat: Cat;
+  phase: number;
 }
 
 export function RelatedCvesGraph({ centerId, items }: { centerId: string; items: RelatedCve[] }) {
@@ -72,35 +73,37 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
       const a = (i / n) * Math.PI * 2 - Math.PI / 2;
       return {
         it,
-        x: CX + 150 * Math.cos(a) + (Math.random() - 0.5) * 20,
-        y: CY + 120 * Math.sin(a) + (Math.random() - 0.5) * 20,
+        x: CX + 96 * Math.cos(a) + (Math.random() - 0.5) * 16,
+        y: CY + 66 * Math.sin(a) + (Math.random() - 0.5) * 16,
         vx: 0,
         vy: 0,
         hw,
         fs,
         cat: CATS[catKey(it.reason)],
+        phase: Math.random() * Math.PI * 2,
       };
     });
     alphaRef.current = 1;
 
-    const LINK = 150;
-    const LINK_K = 0.05;
-    const REP = 5200;
-    const DAMP = 0.82;
-    const PAD = 8;
+    const LINK = 104;
+    const LINK_K = 0.06;
+    const REP = 3000;
+    const DAMP = 0.9;
+    const PAD = 6;
+    let t = 0;
 
     const tick = () => {
       const nodes = nodesRef.current;
       const drag = dragRef.current;
-      const alpha = alphaRef.current;
+      t += 1;
       for (let i = 0; i < nodes.length; i++) {
         if (drag && drag.i === i) continue; // 드래그 중인 노드는 물리 적용 안 함
         const a = nodes[i];
         let fx = 0;
         let fy = 0;
         // 중심과의 스프링(고리 거리 유지)
-        let dcx = CX - a.x;
-        let dcy = CY - a.y;
+        const dcx = CX - a.x;
+        const dcy = CY - a.y;
         const dc = Math.hypot(dcx, dcy) || 0.01;
         const sp = (dc - LINK) * LINK_K;
         fx += (dcx / dc) * sp;
@@ -109,9 +112,9 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
         for (let j = 0; j < nodes.length; j++) {
           if (i === j) continue;
           const b = nodes[j];
-          let dx = a.x - b.x;
-          let dy = a.y - b.y;
-          let d = Math.hypot(dx, dy) || 0.01;
+          const dx = a.x - b.x;
+          const dy = a.y - b.y;
+          const d = Math.hypot(dx, dy) || 0.01;
           fx += (dx / d) * (REP / (d * d));
           fy += (dy / d) * (REP / (d * d));
           const minD = a.hw + b.hw + 6;
@@ -123,22 +126,21 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
         }
         // 중심 노드 회피
         const dCenter = Math.hypot(a.x - CX, a.y - CY) || 0.01;
-        if (dCenter < 46 + a.hw * 0.3) {
-          fx += ((a.x - CX) / dCenter) * (46 - dCenter) * 0.6;
-          fy += ((a.y - CY) / dCenter) * (46 - dCenter) * 0.6;
+        if (dCenter < 38 + a.hw * 0.2) {
+          fx += ((a.x - CX) / dCenter) * (38 - dCenter) * 0.6;
+          fy += ((a.y - CY) / dCenter) * (38 - dCenter) * 0.6;
         }
-        a.vx = (a.vx + fx * alpha) * DAMP;
-        a.vy = (a.vy + fy * alpha) * DAMP;
+        // 통통 튀는 느낌 — 은은한 상시 흔들림.
+        fx += Math.sin(t * 0.045 + a.phase) * 0.5;
+        fy += Math.cos(t * 0.038 + a.phase) * 0.5;
+        a.vx = (a.vx + fx) * DAMP;
+        a.vy = (a.vy + fy) * DAMP;
         a.x = Math.max(a.hw + PAD, Math.min(VW - a.hw - PAD, a.x + a.vx));
-        a.y = Math.max(16 + PAD, Math.min(VH - 16 - PAD, a.y + a.vy));
+        a.y = Math.max(14 + PAD, Math.min(VH - 14 - PAD, a.y + a.vy));
       }
-      alphaRef.current = Math.max(alpha * 0.985, drag ? 0.25 : 0);
       setFrame((f) => f + 1);
-      if (alphaRef.current > 0.004 || drag) {
-        rafRef.current = requestAnimationFrame(tick);
-      } else {
-        rafRef.current = null;
-      }
+      // 상시 가동(통통) — 컴포넌트 언마운트 시 정리.
+      rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => {
@@ -198,7 +200,7 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
 
   return (
     <div>
-      <div className="hidden sm:block">
+      <div className="mx-auto max-w-xl hidden sm:block">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${VW} ${VH}`}
@@ -207,7 +209,7 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
           role="img"
           aria-label="연관 취약점 force 그래프"
         >
-          {[180, 130, 80].map((r) => (
+          {[120, 82, 46].map((r) => (
             <circle key={r} cx={CX} cy={CY} r={r} className="fill-neutral-500/[0.035]" />
           ))}
           {/* 링크 */}
