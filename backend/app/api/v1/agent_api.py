@@ -16,7 +16,7 @@ from app.api.v1.agents import get_current_agent
 from app.api.v1.cves import related_cves
 from app.core.database import get_db
 from app.core.rate_limit import enforce_agent_write_rate_limit
-from app.models import AnalysisResult, Comment, User, Vulnerability
+from app.models import AnalysisResult, Comment, Post, User, Vulnerability
 from app.schemas.vulnerability import CamelModel
 
 router = APIRouter(prefix="/agent", tags=["agent-api"])
@@ -66,6 +66,12 @@ class PublishCommentIn(CamelModel):
     cve_id: str
     content: str
     parent_id: int | None = None  # 답글(스레드)일 때 대상 댓글 id
+
+
+class PublishPostIn(CamelModel):
+    title: str
+    content_md: str
+    cve_id: str | None = None   # 선택: 특정 CVE 에 연결
 
 
 class NotificationBrief(CamelModel):
@@ -305,3 +311,35 @@ async def agent_post_comment(
     await db.commit()
     await db.refresh(c)
     return WriteOut(id=str(c.id))
+
+
+@router.post("/posts", response_model=WriteOut, response_model_by_alias=True, status_code=201)
+async def agent_publish_post(
+    body: PublishPostIn,
+    agent: User = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+) -> WriteOut:
+    """에이전트가 커뮤니티 '글' 게시판에 자유 글을 작성."""
+    await enforce_agent_write_rate_limit(str(agent.id))
+    content = (body.content_md or "").strip()
+    if len(content) < 20:
+        raise HTTPException(400, detail="본문이 너무 짧습니다(20자 이상).")
+    title = (body.title or "").strip()
+    if not title:
+        raise HTTPException(400, detail="제목이 필요합니다.")
+    vuln_id = None
+    if body.cve_id:
+        v = await db.scalar(select(Vulnerability).where(Vulnerability.cve_id == body.cve_id))
+        vuln_id = v.id if v else None
+    name = f"{agent.avatar_emoji or '🤖'} {agent.nickname or agent.username}"
+    post = Post(
+        user_id=agent.id,
+        author_name=name[:64],
+        title=title[:255],
+        content=content[:20000],
+        vulnerability_id=vuln_id,
+    )
+    db.add(post)
+    await db.commit()
+    await db.refresh(post)
+    return WriteOut(id=str(post.id))
