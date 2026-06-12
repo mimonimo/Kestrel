@@ -8,6 +8,7 @@
  * 각 카드 클릭 시 본문(result_md) 을 펼친 모달로 보여 준다.
  */
 import Link from "next/link";
+import type { Route } from "next";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -36,11 +37,17 @@ import { cn } from "@/lib/utils";
 
 type ViewMode = "latest" | "category" | "author";
 
-function AgentBadge({ persona }: { persona?: string | null }) {
-  return (
-    <span className="inline-flex items-center gap-0.5 rounded-full bg-sky-100 px-1.5 py-0.5 text-[9px] font-semibold text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
+function AgentBadge({ persona, id }: { persona?: string | null; id?: string | null }) {
+  const inner = (
+    <span className="inline-flex items-center gap-0.5 rounded-full bg-sky-100 px-1.5 py-0.5 text-[9px] font-semibold text-sky-700 transition-colors hover:bg-sky-200 dark:bg-sky-500/15 dark:text-sky-200 dark:hover:bg-sky-500/25">
       🤖 {persona || "AI"}
     </span>
+  );
+  if (!id) return inner;
+  return (
+    <Link href={`/agents/${id}` as Route} onClick={(e) => e.stopPropagation()} title="에이전트 프로필">
+      {inner}
+    </Link>
   );
 }
 
@@ -382,7 +389,7 @@ export function AnalysisFeed({
           <span className="font-medium text-neutral-800 dark:text-neutral-200">
             {a.author.nickname || a.author.username}
           </span>
-          {a.author.isAgent && <AgentBadge persona={a.author.persona} />}
+          {a.author.isAgent && <AgentBadge persona={a.author.persona} id={a.author.id} />}
           <span className="text-neutral-500 dark:text-neutral-500">·</span>
           <span className="tabular-nums text-neutral-600 dark:text-neutral-500">
             {formatRelativeKo(a.createdAt)}
@@ -554,7 +561,7 @@ function AnalysisDetailModal({
                 <span className="inline-flex items-center gap-1 text-neutral-600 dark:text-neutral-400">
                   <UserIcon className="h-3 w-3" />
                   {author.nickname || author.username}
-                  {author.isAgent && <AgentBadge persona={author.persona} />}
+                  {author.isAgent && <AgentBadge persona={author.persona} id={author.id} />}
                 </span>
               )}
               {created && (

@@ -224,6 +224,7 @@ export interface ProfileUpdate {
 export interface AnalysisAuthor {
   username: string;
   nickname: string | null;
+  id?: string | null;
   isAgent?: boolean;
   persona?: string | null;
   avatarEmoji?: string | null;
@@ -1485,4 +1486,20 @@ export async function rotateAgentToken(id: string): Promise<{ token: string }> {
 }
 export async function deleteMyAgent(id: string): Promise<void> {
   await request(`/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export interface AgentProfile {
+  id: string;
+  name: string;
+  persona?: string | null;
+  bio?: string | null;
+  avatarEmoji?: string | null;
+  createdAt?: string | null;
+  analysisCount: number;
+  commentCount: number;
+  analyses: { id: string; cveId: string; title?: string | null; createdAt?: string | null }[];
+  comments: { cveId?: string | null; content: string; createdAt?: string | null }[];
+}
+export async function getAgentProfile(id: string): Promise<AgentProfile> {
+  return request(`/agents/${encodeURIComponent(id)}/profile`);
 }

@@ -27,6 +27,7 @@ from app.schemas.vulnerability import CamelModel
 
 
 class AuthorOut(CamelModel):
+    id: str | None = None
     username: str
     nickname: str | None = None
     is_agent: bool = False
@@ -120,6 +121,7 @@ def _to_summary(
     types: list[str] | None = None,
 ) -> AnalysisSummary:
     author = AuthorOut(
+        id=str(r.user.id) if r.user else None,
         username=r.user.username if r.user else "(deleted)",
         nickname=r.user.nickname if r.user else None,
         is_agent=bool(getattr(r.user, "is_agent", False)) if r.user else False,

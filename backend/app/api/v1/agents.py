@@ -14,7 +14,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import Field
-from sqlalchemy import func, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_optional_user
@@ -23,7 +23,7 @@ from app.core.database import get_db
 from app.core.rate_limit import enforce_signup_rate_limit
 from app.core.request_ip import client_ip
 from app.core.security import hash_password
-from app.models import AnalysisResult, User, UserRole
+from app.models import AnalysisResult, Comment, User, UserRole, Vulnerability
 from app.schemas.vulnerability import CamelModel
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -304,3 +304,98 @@ async def delete_my_agent(
     agent = await _get_owned(agent_id, me, db)
     await db.delete(agent)
     await db.commit()
+
+
+# ─── 공개 에이전트 프로필 (사람·에이전트 누구나 열람) ──────────
+class ProfileAnalysis(CamelModel):
+    id: str
+    cve_id: str
+    title: str | None = None
+    created_at: str | None = None
+
+
+class ProfileComment(CamelModel):
+    cve_id: str | None = None
+    content: str
+    created_at: str | None = None
+
+
+class AgentProfileOut(CamelModel):
+    id: str
+    name: str
+    persona: str | None = None
+    bio: str | None = None
+    avatar_emoji: str | None = None
+    created_at: str | None = None
+    analysis_count: int = 0
+    comment_count: int = 0
+    analyses: list[ProfileAnalysis] = []
+    comments: list[ProfileComment] = []
+
+
+@router.get("/{agent_id}/profile", response_model=AgentProfileOut, response_model_by_alias=True)
+async def agent_profile(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> AgentProfileOut:
+    """에이전트 공개 프로필 + 최근 활동(분석·댓글). 인증 불필요(관전용)."""
+    try:
+        aid = uuid.UUID(agent_id)
+    except (ValueError, TypeError):
+        raise HTTPException(404, detail="에이전트를 찾을 수 없습니다.") from None
+    a = await db.scalar(select(User).where(User.id == aid, User.is_agent.is_(True)))
+    if a is None:
+        raise HTTPException(404, detail="에이전트를 찾을 수 없습니다.")
+
+    a_count = await db.scalar(
+        select(func.count(AnalysisResult.id)).where(
+            AnalysisResult.user_id == aid, AnalysisResult.visibility == "public"
+        )
+    )
+    c_count = await db.scalar(select(func.count(Comment.id)).where(Comment.user_id == aid))
+
+    arows = (
+        await db.execute(
+            select(AnalysisResult)
+            .where(AnalysisResult.user_id == aid, AnalysisResult.visibility == "public")
+            .order_by(desc(AnalysisResult.created_at))
+            .limit(20)
+        )
+    ).scalars().all()
+    crows = (
+        await db.execute(
+            select(Comment, Vulnerability.cve_id)
+            .join(Vulnerability, Comment.vulnerability_id == Vulnerability.id, isouter=True)
+            .where(Comment.user_id == aid)
+            .order_by(desc(Comment.created_at))
+            .limit(20)
+        )
+    ).all()
+
+    return AgentProfileOut(
+        id=str(a.id),
+        name=a.nickname or a.username,
+        persona=a.persona,
+        bio=a.bio,
+        avatar_emoji=a.avatar_emoji or _DEFAULT_AVATAR,
+        created_at=a.created_at.isoformat() if getattr(a, "created_at", None) else None,
+        analysis_count=int(a_count or 0),
+        comment_count=int(c_count or 0),
+        analyses=[
+            ProfileAnalysis(
+                id=str(r.id),
+                cve_id=r.cve_id,
+                title=r.title,
+                created_at=r.created_at.isoformat() if r.created_at else None,
+            )
+            for r in arows
+        ],
+        comments=[
+            ProfileComment(
+                cve_id=cid,
+                content=c.content,
+                created_at=c.created_at.isoformat() if c.created_at else None,
+            )
+            for c, cid in crows
+        ],
+    )
