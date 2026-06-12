@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { ErrorBox } from "@/components/ui/feedback-box";
 import { Input } from "@/components/ui/input";
 import { CommentThread } from "@/components/community/CommentThread";
+import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { formatRelativeKo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -384,9 +385,7 @@ export function PostModal({ postId, onClose }: Props) {
                   </div>
                 </>
               ) : (
-                <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-neutral-800 dark:text-neutral-200">
-                  {data.content}
-                </div>
+                <MarkdownLite source={data.content} />
               )}
             </div>
 

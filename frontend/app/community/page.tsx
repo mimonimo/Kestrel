@@ -2,28 +2,28 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, MessageSquare, Plus, Eye, Hash, LogIn, RefreshCw, Share2, Sparkles, Trash2 } from "lucide-react";
+import { Eye, Hash, Heart, Loader2, LogIn, MessageSquare, Plus, RefreshCw, Share2, Sparkles, Trash2 } from "lucide-react";
 
-import { api } from "@/lib/api";
+import { api, type CommunityPost, type PostListResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { ErrorBox, FeedbackBoxButton } from "@/components/ui/feedback-box";
-import { AnalysisFeed } from "@/components/community/AnalysisFeed";
 import { NewPostModal } from "@/components/community/NewPostModal";
 import { PostModal } from "@/components/community/PostModal";
-import { formatRelativeKo } from "@/lib/format";
+import { ShareMyAnalysesModal } from "@/components/community/ShareMyAnalysesModal";
+import { formatRelativeKo, stripMarkdown } from "@/lib/format";
 import { cn } from "@/lib/utils";
-
-type CommunityTab = "posts" | "analyses";
 
 export default function CommunityPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<CommunityTab>("posts");
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  // null = no post open. Set to post.id when user clicks a feed row.
+  // Keeps scroll position + pagination intact.
+  const [openPostId, setOpenPostId] = useState<number | null>(null);
 
   const requireLogin = (): boolean => {
     if (user) return true;
@@ -36,6 +36,16 @@ export default function CommunityPage() {
   const openShare = () => {
     if (requireLogin()) setShareOpen(true);
   };
+  // 새 글 작성 진입 — 비로그인이면 /login 우회.
+  const openNewPost = () => {
+    if (requireLogin()) setOpen(true);
+  };
+
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: ["community-posts", page],
+    queryFn: () => api.listPosts(page, 20),
+    staleTime: 10_000,
+  });
 
   // 글 목록 카드 자체에서 빠르게 삭제 — owner / admin 모두 사용.
   const deletePost = useMutation({
@@ -45,99 +55,92 @@ export default function CommunityPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["community-posts"] }),
   });
 
-  // 새 글 작성 진입 — 비로그인이면 /login 우회.
-  const openNewPost = () => {
-    if (!user) {
-      if (typeof window !== "undefined") {
-        const next = window.location.pathname + window.location.search;
-        window.location.href = `/login?next=${encodeURIComponent(next)}`;
+  // 좋아요 인라인 토글 — 현재 페이지의 목록 쿼리에 낙관적 반영 후 정합화.
+  const like = useMutation({
+    mutationFn: ({ id, next }: { id: number; next: boolean }) =>
+      next ? api.likePost(id) : api.unlikePost(id),
+    onMutate: async ({ id, next }) => {
+      await qc.cancelQueries({ queryKey: ["community-posts", page] });
+      const prev = qc.getQueryData<PostListResponse>(["community-posts", page]);
+      if (prev) {
+        qc.setQueryData<PostListResponse>(["community-posts", page], {
+          ...prev,
+          items: prev.items.map((p) =>
+            p.id === id
+              ? {
+                  ...p,
+                  isLiked: next,
+                  likeCount: next
+                    ? p.likeCount + (p.isLiked ? 0 : 1)
+                    : Math.max(0, p.likeCount - (p.isLiked ? 1 : 0)),
+                }
+              : p,
+          ),
+        });
       }
-      return;
-    }
-    setOpen(true);
-  };
-  // null = no post open. Set to post.id when user clicks a list row.
-  // Keeps scroll position + pagination + filter state intact.
-  const [openPostId, setOpenPostId] = useState<number | null>(null);
-  const { data, isPending, isError, refetch } = useQuery({
-    queryKey: ["community-posts", page],
-    queryFn: () => api.listPosts(page, 20),
-    staleTime: 10_000,
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(["community-posts", page], ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["community-posts"] }),
   });
+  const toggleLike = (p: CommunityPost) => {
+    if (!requireLogin()) return;
+    like.mutate({ id: p.id, next: !p.isLiked });
+  };
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
   return (
-    <div className="mx-auto min-h-[calc(100vh-3.5rem)] max-w-7xl px-6 py-10">
+    <div className="mx-auto min-h-[calc(100vh-3.5rem)] max-w-2xl px-4 py-8 sm:px-6 sm:py-10">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-3 border-b border-neutral-200 pb-4 dark:border-neutral-800">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">커뮤니티</h1>
           <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-500">
-            보안 운영자들이 공유한 글과 AI 분석 결과를 한 곳에서 확인하세요.
+            보안 운영자들의 글을 타임라인으로 확인하세요.
           </p>
         </div>
-        {/* 우상단 액션 — 탭이 바뀌어도 항상 버튼 1개를 유지해 헤더가 들썩이지
-            않게 한다. 글 탭=새 글, 분석 피드 탭=내 분석 공유. */}
-        {tab === "posts" ? (
-          user ? (
-            <Button onClick={openNewPost} className="gap-2">
+        <div className="flex items-center gap-2">
+          {/* 내 분석 공유 — 분석 자체는 CVE 상세·프로필에서 보지만, 공개 진입점은 유지. */}
+          {user ? (
+            <Button onClick={openShare} variant="outline" size="sm" className="gap-2">
+              <Share2 className="h-4 w-4" />
+              <span className="hidden sm:inline">내 분석 공유</span>
+            </Button>
+          ) : (
+            <Button onClick={openShare} variant="outline" size="sm" className="gap-2">
+              <LogIn className="h-4 w-4" />
+              <span className="hidden sm:inline">로그인 후 공유</span>
+            </Button>
+          )}
+          {user ? (
+            <Button onClick={openNewPost} size="sm" className="gap-2">
               <Plus className="h-4 w-4" />새 글
             </Button>
           ) : (
-            <Button onClick={openNewPost} variant="outline" className="gap-2">
+            <Button onClick={openNewPost} variant="outline" size="sm" className="gap-2">
               <LogIn className="h-4 w-4" />
               로그인 후 작성
             </Button>
-          )
-        ) : user ? (
-          <Button
-            onClick={openShare}
-            className="gap-2 bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-400"
-          >
-            <Share2 className="h-4 w-4" />내 분석 공유
-          </Button>
-        ) : (
-          <Button onClick={openShare} variant="outline" className="gap-2">
-            <LogIn className="h-4 w-4" />
-            로그인 후 공유
-          </Button>
-        )}
+          )}
+        </div>
       </header>
 
-      {/* 글 / 분석 피드 탭 */}
-      <div className="mb-5 flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-50 p-1 text-xs dark:border-neutral-800 dark:bg-surface-1 w-fit">
-        {(
-          [
-            { id: "posts" as const, label: "글" },
-            { id: "analyses" as const, label: "분석 피드" },
-          ]
-        ).map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "rounded-full px-3 py-1.5 font-medium transition-colors",
-              tab === t.id
-                ? "bg-white text-neutral-900 shadow-sm dark:bg-surface-2 dark:text-neutral-100"
-                : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
-            )}
-            aria-pressed={tab === t.id}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "analyses" ? (
-        <AnalysisFeed shareOpen={shareOpen} onShareOpenChange={setShareOpen} />
-      ) : isPending ? (
-        <div className="space-y-3">
+      {isPending ? (
+        <div className="overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-800">
           {Array.from({ length: 5 }).map((_, i) => (
             <div
               key={i}
-              className="h-20 animate-pulse rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-1/50"
-            />
+              className="flex gap-3 border-b border-neutral-200 p-4 last:border-b-0 dark:border-neutral-800"
+            >
+              <div className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-neutral-100 dark:bg-surface-2" />
+              <div className="flex-1 space-y-2">
+                <div className="h-3 w-32 animate-pulse rounded bg-neutral-100 dark:bg-surface-2" />
+                <div className="h-3 w-full animate-pulse rounded bg-neutral-100 dark:bg-surface-2" />
+                <div className="h-3 w-2/3 animate-pulse rounded bg-neutral-100 dark:bg-surface-2" />
+              </div>
+            </div>
           ))}
         </div>
       ) : isError ? (
@@ -162,84 +165,110 @@ export default function CommunityPage() {
           <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
             CVE 분석, 완화 방안, 실전 사례 — 어떤 주제든 공유해 주세요.
           </p>
-          {user ? (
-            <Button onClick={openNewPost} className="mt-5 gap-2">
-              <Plus className="h-4 w-4" />첫 글 작성하기
-            </Button>
-          ) : (
-            <Button onClick={openNewPost} variant="outline" className="mt-5 gap-2">
-              <LogIn className="h-4 w-4" />
-              로그인하고 첫 글 작성하기
-            </Button>
-          )}
+          <Button onClick={openNewPost} className="mt-5 gap-2" variant={user ? "default" : "outline"}>
+            {user ? <Plus className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
+            {user ? "첫 글 작성하기" : "로그인하고 첫 글 작성하기"}
+          </Button>
         </div>
       ) : (
-        <ul className="space-y-3">
+        <ul className="overflow-hidden rounded-xl border border-neutral-200 bg-white dark:border-neutral-800 dark:bg-surface-1">
           {data?.items.map((p) => (
-            <li key={p.id}>
-              <button
-                type="button"
-                onClick={() => setOpenPostId(p.id)}
-                className="w-full rounded-lg border border-neutral-200 bg-white p-4 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-neutral-300 hover:shadow-md hover:shadow-neutral-900/5 active:translate-y-0 active:shadow-sm dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-neutral-700 dark:hover:shadow-black/30"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="block truncate text-base font-semibold text-neutral-900 dark:text-neutral-100">
-                      {p.title}
-                    </h3>
-                    <p className="mt-1 line-clamp-2 text-sm text-neutral-700 dark:text-neutral-400">
-                      {p.content}
-                    </p>
-                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-600 dark:text-neutral-500">
-                      <span>{p.authorName}</span>
-                      <span>·</span>
-                      <span className="tabular-nums">{formatRelativeKo(p.createdAt)}</span>
+            <li
+              key={p.id}
+              className="border-b border-neutral-200 transition-colors last:border-b-0 hover:bg-neutral-50/70 dark:border-neutral-800 dark:hover:bg-surface-2/40"
+            >
+              <article className="flex gap-3 px-4 py-4">
+                {/* 아바타 — authorName 이니셜 원형 */}
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
+                  {(p.authorName.trim().charAt(0) || "?").toUpperCase()}
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  {/* 본문 — 클릭 시 상세 모달 */}
+                  <button
+                    type="button"
+                    onClick={() => setOpenPostId(p.id)}
+                    className="block w-full text-left"
+                  >
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
+                      <span className="font-semibold text-neutral-900 dark:text-neutral-100">
+                        {p.authorName}
+                      </span>
+                      <span className="text-neutral-400 dark:text-neutral-600">·</span>
+                      <span className="tabular-nums text-xs text-neutral-500 dark:text-neutral-500">
+                        {formatRelativeKo(p.createdAt)}
+                      </span>
                       {p.vulnerabilityId && (
-                        <>
-                          <span>·</span>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-1.5 py-0.5 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200">
-                            <Hash className="h-3 w-3" />
-                            CVE 연결
-                          </span>
-                        </>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 dark:bg-sky-500/15 dark:text-sky-200">
+                          <Hash className="h-2.5 w-2.5" />
+                          {p.vulnerabilityId}
+                        </span>
                       )}
                     </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-3 text-xs text-neutral-600 dark:text-neutral-500">
-                    <span className="inline-flex items-center gap-1 tabular-nums">
-                      <MessageSquare className="h-3.5 w-3.5" />
-                      {p.commentCount}
-                    </span>
-                    <span className="inline-flex items-center gap-1 tabular-nums">
-                      <Eye className="h-3.5 w-3.5" />
-                      {p.viewCount}
+                    {p.title && (
+                      <h3 className="mt-0.5 truncate text-[15px] font-semibold text-neutral-900 dark:text-neutral-100">
+                        {p.title}
+                      </h3>
+                    )}
+                    <p className="mt-0.5 line-clamp-3 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300">
+                      {stripMarkdown(p.content)}
+                    </p>
+                  </button>
+
+                  {/* 액션 바 — 댓글 / 좋아요 / 조회 (+ 관리 삭제) */}
+                  <div className="mt-2.5 flex items-center gap-1 text-neutral-500 dark:text-neutral-500">
+                    <button
+                      type="button"
+                      onClick={() => setOpenPostId(p.id)}
+                      className="group inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs transition-colors hover:bg-sky-50 hover:text-sky-600 dark:hover:bg-sky-500/10 dark:hover:text-sky-300"
+                      title="댓글"
+                    >
+                      <MessageSquare className="h-4 w-4" />
+                      <span className="tabular-nums">{p.commentCount}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleLike(p)}
+                      aria-pressed={p.isLiked}
+                      className={cn(
+                        "group inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-300",
+                        p.isLiked && "text-rose-600 dark:text-rose-400",
+                      )}
+                      title={p.isLiked ? "좋아요 취소" : "좋아요"}
+                    >
+                      <Heart className={cn("h-4 w-4", p.isLiked && "fill-current")} />
+                      <span className="tabular-nums">{p.likeCount}</span>
+                    </button>
+                    <span
+                      className="inline-flex items-center gap-1.5 px-2 py-1 text-xs"
+                      title="조회수"
+                    >
+                      <Eye className="h-4 w-4" />
+                      <span className="tabular-nums">{p.viewCount}</span>
                     </span>
                     {p.canManage && (
                       <button
                         type="button"
                         disabled={deletePost.isPending && deletingId === p.id}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
+                        onClick={() => {
                           const msg = p.isOwner
                             ? "이 글을 삭제할까요?"
                             : "관리자 권한으로 이 글을 삭제할까요?";
                           if (confirm(msg)) deletePost.mutate(p.id);
                         }}
                         title={p.isOwner ? "삭제" : "관리자 권한으로 삭제"}
-                        className="inline-flex items-center gap-1 rounded-full border border-red-300 px-2 py-1 text-[11px] text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/40"
+                        className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950/40 dark:hover:text-red-300"
                       >
                         {deletePost.isPending && deletingId === p.id ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
-                          <Trash2 className="h-3 w-3" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         )}
-                        삭제
                       </button>
                     )}
                   </div>
                 </div>
-              </button>
+              </article>
             </li>
           ))}
         </ul>
@@ -271,6 +300,7 @@ export default function CommunityPage() {
 
       <NewPostModal open={open} onClose={() => setOpen(false)} />
       <PostModal postId={openPostId} onClose={() => setOpenPostId(null)} />
+      <ShareMyAnalysesModal open={shareOpen} onClose={() => setShareOpen(false)} />
     </div>
   );
 }

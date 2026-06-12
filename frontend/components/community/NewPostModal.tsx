@@ -13,11 +13,12 @@
  *  - body scroll lock + ESC 외부클릭 닫기
  */
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Hash, Loader2, Send, User as UserIcon, X } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Hash, Loader2, Search, Send, User as UserIcon, X } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useDebounce } from "@/hooks/useDebounce";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,21 @@ export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
+  // CVE 연결 — CVE 상세에서 열리면(vulnerabilityId prop) 고정, 커뮤니티에서
+  // 열리면 검색해서 직접 첨부할 수 있다.
+  const locked = !!vulnerabilityId;
+  const [attached, setAttached] = useState<{ cveId: string; title?: string } | null>(
+    vulnerabilityId ? { cveId: vulnerabilityId } : null,
+  );
+  const [cveQuery, setCveQuery] = useState("");
+  const debouncedCve = useDebounce(cveQuery, 250);
+  const cveSearch = useQuery({
+    queryKey: ["post-cve-search", debouncedCve],
+    queryFn: () => api.searchVulnerabilities({ query: debouncedCve }, 1, 8),
+    enabled: open && !locked && !attached && debouncedCve.trim().length >= 2,
+    staleTime: 30_000,
+  });
+
   const displayName = (user?.nickname || user?.username || "").trim();
   const initial = displayName.trim().charAt(0).toUpperCase() || "?";
 
@@ -47,7 +63,7 @@ export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
       api.createPost({
         title: title.trim(),
         content: content.trim(),
-        vulnerabilityId,
+        vulnerabilityId: attached?.cveId,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["community-posts"] });
@@ -61,9 +77,12 @@ export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
     },
   });
 
-  // 진입 시 제목 input focus + body scroll lock + ESC 닫기
+  // 진입 시 제목 input focus + body scroll lock + ESC 닫기.
+  // 열릴 때마다 CVE 연결 상태를 prop 기준으로 초기화한다.
   useEffect(() => {
     if (!open) return;
+    setAttached(vulnerabilityId ? { cveId: vulnerabilityId } : null);
+    setCveQuery("");
     const t = window.setTimeout(() => titleRef.current?.focus(), 80);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -76,7 +95,7 @@ export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [open, onClose]);
+  }, [open, onClose, vulnerabilityId]);
 
   if (!open) return null;
 
@@ -144,13 +163,13 @@ export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {vulnerabilityId && (
+            {attached && (
               <span
                 className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200"
                 title="이 CVE 에 연결되어 게시됩니다"
               >
                 <Hash className="h-3 w-3" />
-                CVE 연결
+                {attached.cveId}
               </span>
             )}
             <button
@@ -194,6 +213,88 @@ export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
             />
           </div>
 
+          {/* CVE 연결 (선택) — CVE 상세에서 열렸으면(locked) 헤더 칩으로 고정 표시,
+              커뮤니티에서 열렸으면 검색해 직접 연결할 수 있다. */}
+          {!locked && (
+            <div className="space-y-1.5">
+              <label
+                htmlFor="np-cve"
+                className="block text-xs font-medium text-neutral-700 dark:text-neutral-300"
+              >
+                연결할 CVE <span className="font-normal text-neutral-500">(선택)</span>
+              </label>
+              {attached ? (
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm dark:border-violet-500/30 dark:bg-violet-500/10">
+                  <span className="inline-flex min-w-0 items-center gap-1.5 font-medium text-violet-800 dark:text-violet-200">
+                    <Hash className="h-3.5 w-3.5 shrink-0" />
+                    <span className="shrink-0">{attached.cveId}</span>
+                    {attached.title && (
+                      <span className="truncate font-normal text-violet-700/80 dark:text-violet-300/80">
+                        — {attached.title}
+                      </span>
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAttached(null)}
+                    aria-label="CVE 연결 해제"
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-violet-700 transition-colors hover:bg-violet-200 dark:text-violet-300 dark:hover:bg-violet-500/20"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-500" />
+                  <input
+                    id="np-cve"
+                    type="search"
+                    value={cveQuery}
+                    onChange={(e) => setCveQuery(e.target.value)}
+                    placeholder="CVE ID · 제품명 · 키워드로 검색해 연결"
+                    autoComplete="off"
+                    className="block w-full rounded-lg border border-neutral-300 bg-white py-2 pl-9 pr-3 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-sky-500/30"
+                  />
+                  {debouncedCve.trim().length >= 2 && (
+                    <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-surface-2">
+                      {cveSearch.isPending ? (
+                        <p className="flex items-center gap-2 px-3 py-2 text-xs text-neutral-500">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" /> 검색 중…
+                        </p>
+                      ) : cveSearch.data && cveSearch.data.items.length > 0 ? (
+                        <ul>
+                          {cveSearch.data.items.map((v) => (
+                            <li key={v.cveId}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAttached({ cveId: v.cveId, title: v.title });
+                                  setCveQuery("");
+                                }}
+                                className="flex w-full items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-sky-50 dark:hover:bg-sky-500/10"
+                              >
+                                <span className="shrink-0 font-mono text-[11px] font-semibold text-sky-700 dark:text-sky-300">
+                                  {v.cveId}
+                                </span>
+                                <span className="min-w-0 flex-1 truncate text-xs text-neutral-700 dark:text-neutral-300">
+                                  {v.title}
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="px-3 py-2 text-xs text-neutral-500">
+                          일치하는 CVE 가 없어요.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <label
               htmlFor="np-content"
@@ -207,7 +308,7 @@ export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
             <textarea
               id="np-content"
               className="block min-h-[220px] w-full resize-y rounded-lg border border-neutral-300 bg-white p-3 text-sm leading-relaxed text-neutral-900 placeholder:text-neutral-400 transition-colors focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-sky-500/30"
-              placeholder="배경 · 발견 경위 · 영향 · 완화 방안 · 참고 링크 등 자유롭게.&#10;&#10;마크다운은 아직 지원하지 않습니다 — 일반 텍스트로 작성해 주세요."
+              placeholder="배경 · 발견 경위 · 영향 · 완화 방안 · 참고 링크 등 자유롭게.&#10;&#10;마크다운을 지원합니다 — 제목(#), 목록(-), 코드(`), 링크 등을 쓸 수 있어요."
               value={content}
               onChange={(e) => setContent(e.target.value)}
               onKeyDown={onContentKey}

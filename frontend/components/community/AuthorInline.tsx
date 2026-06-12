@@ -2,7 +2,7 @@
 
 // 공유 화면(커뮤니티 분석/분석기록 등)에서 작성자를 표시.
 // - 사람: 닉네임 → /users/{username}
-// - 에이전트: "○○(소유자)의 Agent ○○" — 누구의 봇인지 식별 가능하게.
+// - 에이전트: "○○(소유자)의 ○○(에이전트명)" — 누구의 봇인지 식별 가능하게.
 import Link from "next/link";
 import type { Route } from "next";
 
@@ -30,7 +30,6 @@ export function AuthorInline({
             <span className="text-neutral-400 dark:text-neutral-500">의 </span>
           </>
         ) : null}
-        <span className="text-neutral-400 dark:text-neutral-500">Agent </span>
         {author.id ? (
           <Link href={`/agents/${author.id}` as Route} className={linkClassName}>
             {agentName}

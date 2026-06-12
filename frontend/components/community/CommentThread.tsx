@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogIn, MessageSquare, Trash2 } from "lucide-react";
+import { CornerDownRight, LogIn, MessageSquare, Trash2 } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -32,20 +32,24 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
 
   const [content, setContent] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // 대댓글 — 답글을 달 부모 댓글 id 와 입력값(루트 입력과 분리).
+  const [replyTo, setReplyTo] = useState<number | null>(null);
+  const [replyContent, setReplyContent] = useState("");
 
   // 댓글 작성자명은 백엔드가 user.nickname || user.username 으로 강제.
   // frontend 는 입력란을 보여 주지 않고 사용자 메타로만 표시.
   const displayName = (user?.nickname || user?.username || "").trim();
 
   const create = useMutation({
-    mutationFn: () =>
+    mutationFn: (vars: { content: string; parentId?: number }) =>
       api.createComment({
-        content: content.trim(),
+        content: vars.content.trim(),
         postId,
         vulnerabilityId,
         analysisId,
+        parentId: vars.parentId,
       }),
-    onSuccess: (created) => {
+    onSuccess: (created, vars) => {
       recordCommentHistory({
         id: created.id,
         postId,
@@ -53,7 +57,12 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
         cveId: vulnerabilityId,
         excerpt: created.content,
       });
-      setContent("");
+      if (vars.parentId != null) {
+        setReplyContent("");
+        setReplyTo(null);
+      } else {
+        setContent("");
+      }
       setError(null);
       qc.invalidateQueries({ queryKey });
     },
@@ -65,6 +74,50 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
     mutationFn: (id: number) => api.deleteComment(id),
     onSuccess: () => qc.invalidateQueries({ queryKey }),
   });
+
+  // 1-depth 스레드 구성: 최상위(parentId 없음) + 부모별 답글 묶음.
+  const items = list.data?.items ?? [];
+  const roots = items.filter((c) => c.parentId == null);
+  const repliesByParent = new Map<number, typeof items>();
+  for (const c of items) {
+    if (c.parentId != null) {
+      const arr = repliesByParent.get(c.parentId) ?? [];
+      arr.push(c);
+      repliesByParent.set(c.parentId, arr);
+    }
+  }
+
+  // 댓글 1건의 머리말(작성자·시간·삭제) + 본문.
+  const commentBody = (c: (typeof items)[number]) => (
+    <>
+      <div className="mb-1 flex items-center justify-between text-[11px] text-neutral-500 dark:text-neutral-500">
+        <div>
+          <span className="font-medium text-neutral-800 dark:text-neutral-300">
+            {c.authorName}
+          </span>
+          <span className="mx-1.5">·</span>
+          <span>{formatRelativeKo(c.createdAt)}</span>
+        </div>
+        {c.canManage && (
+          <button
+            type="button"
+            onClick={() => {
+              const msg = c.isOwner
+                ? "이 댓글을 삭제할까요?"
+                : "관리자 권한으로 이 댓글을 삭제할까요?";
+              if (confirm(msg)) remove.mutate(c.id);
+            }}
+            title={c.isOwner ? "댓글 삭제" : "관리자 권한으로 삭제"}
+            className="inline-flex items-center gap-1 rounded-full p-1 text-neutral-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-500/15 dark:hover:text-rose-300"
+            aria-label="댓글 삭제"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+      <p className="whitespace-pre-wrap break-words leading-relaxed">{c.content}</p>
+    </>
+  );
 
   return (
     <Card>
@@ -83,7 +136,7 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
             onSubmit={(e) => {
               e.preventDefault();
               if (!content.trim()) return;
-              create.mutate();
+              create.mutate({ content });
             }}
             className="space-y-2"
           >
@@ -98,7 +151,7 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
               onChange={(e) => setContent(e.target.value)}
               maxLength={4000}
             />
-            {error && (
+            {error && replyTo == null && (
               <p className="text-xs text-rose-700 dark:text-rose-300">{error}</p>
             )}
             <div className="flex justify-end">
@@ -108,7 +161,7 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
                 disabled={create.isPending || !content.trim()}
                 className="rounded-full bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-50 dark:bg-sky-500 dark:hover:bg-sky-400"
               >
-                {create.isPending ? "등록 중…" : "댓글 등록"}
+                {create.isPending && replyTo == null ? "등록 중…" : "댓글 등록"}
               </Button>
             </div>
           </form>
@@ -123,47 +176,102 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
           <p className="text-xs text-neutral-600 dark:text-neutral-500">
             불러오는 중…
           </p>
-        ) : list.data && list.data.items.length === 0 ? (
+        ) : items.length === 0 ? (
           <p className="rounded-lg border border-dashed border-neutral-300 bg-neutral-50 py-6 text-center text-xs font-medium text-neutral-700 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-400">
             아직 댓글이 없어요. 가장 먼저 의견을 남겨 보세요.
           </p>
         ) : (
           <ul className="space-y-2.5">
-            {list.data?.items.map((c) => (
-              <li
-                key={c.id}
-                className="rounded-lg border border-neutral-200 bg-neutral-50/60 p-3 text-sm text-neutral-800 dark:border-neutral-800 dark:bg-surface-2 dark:text-neutral-200"
-              >
-                <div className="mb-1 flex items-center justify-between text-[11px] text-neutral-500 dark:text-neutral-500">
-                  <div>
-                    <span className="font-medium text-neutral-800 dark:text-neutral-300">
-                      {c.authorName}
-                    </span>
-                    <span className="mx-1.5">·</span>
-                    <span>{formatRelativeKo(c.createdAt)}</span>
-                  </div>
-                  {c.canManage && (
+            {roots.map((c) => {
+              const replies = repliesByParent.get(c.id) ?? [];
+              return (
+                <li
+                  key={c.id}
+                  className="rounded-lg border border-neutral-200 bg-neutral-50/60 p-3 text-sm text-neutral-800 dark:border-neutral-800 dark:bg-surface-2 dark:text-neutral-200"
+                >
+                  {commentBody(c)}
+
+                  {/* 답글 토글 — 로그인 사용자만 */}
+                  {user && (
                     <button
                       type="button"
                       onClick={() => {
-                        const msg = c.isOwner
-                          ? "이 댓글을 삭제할까요?"
-                          : "관리자 권한으로 이 댓글을 삭제할까요?";
-                        if (confirm(msg)) remove.mutate(c.id);
+                        setReplyTo(replyTo === c.id ? null : c.id);
+                        setReplyContent("");
+                        setError(null);
                       }}
-                      title={c.isOwner ? "댓글 삭제" : "관리자 권한으로 삭제"}
-                      className="inline-flex items-center gap-1 rounded-full p-1 text-neutral-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-500/15 dark:hover:text-rose-300"
-                      aria-label="댓글 삭제"
+                      className="mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-neutral-500 transition-colors hover:bg-sky-100 hover:text-sky-700 dark:text-neutral-400 dark:hover:bg-sky-500/15 dark:hover:text-sky-200"
+                      aria-expanded={replyTo === c.id}
                     >
-                      <Trash2 className="h-3 w-3" />
+                      <CornerDownRight className="h-3 w-3" />
+                      답글
                     </button>
                   )}
-                </div>
-                <p className="whitespace-pre-wrap break-words leading-relaxed">
-                  {c.content}
-                </p>
-              </li>
-            ))}
+
+                  {/* 답글 입력 폼 */}
+                  {replyTo === c.id && user && (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!replyContent.trim()) return;
+                        create.mutate({ content: replyContent, parentId: c.id });
+                      }}
+                      className="mt-2 space-y-2"
+                    >
+                      <textarea
+                        autoFocus
+                        className="block min-h-[60px] w-full rounded-lg border border-neutral-300 bg-white p-2.5 text-sm text-neutral-900 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-1 dark:text-neutral-100"
+                        placeholder={`${c.authorName} 님에게 답글…`}
+                        value={replyContent}
+                        onChange={(e) => setReplyContent(e.target.value)}
+                        maxLength={4000}
+                      />
+                      {error && replyTo === c.id && (
+                        <p className="text-xs text-rose-700 dark:text-rose-300">{error}</p>
+                      )}
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setReplyTo(null);
+                            setReplyContent("");
+                            setError(null);
+                          }}
+                          disabled={create.isPending}
+                          className="rounded-full"
+                        >
+                          취소
+                        </Button>
+                        <Button
+                          type="submit"
+                          size="sm"
+                          disabled={create.isPending || !replyContent.trim()}
+                          className="rounded-full bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-50 dark:bg-sky-500 dark:hover:bg-sky-400"
+                        >
+                          {create.isPending && replyTo === c.id ? "등록 중…" : "답글 등록"}
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* 답글 목록 — 들여쓰기 */}
+                  {replies.length > 0 && (
+                    <ul className="mt-2.5 space-y-2 border-l-2 border-neutral-200 pl-3 dark:border-neutral-700/60">
+                      {replies.map((r) => (
+                        <li
+                          key={r.id}
+                          className="rounded-lg border border-neutral-200 bg-white/70 p-2.5 dark:border-neutral-800 dark:bg-surface-1/70"
+                        >
+                          {commentBody(r)}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </CardContent>
