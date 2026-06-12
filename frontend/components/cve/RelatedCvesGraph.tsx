@@ -12,18 +12,18 @@ import type { RelatedCve } from "@/lib/types";
 
 interface Cat { label: string; hex: string }
 const CATS: Record<string, Cat> = {
-  vendor: { label: "연관 벤더·제품", hex: "#10b981" },
+  product: { label: "연관 제품·벤더", hex: "#10b981" },
+  weakness_high: { label: "상위 약점(더 위험)", hex: "#f43f5e" },
+  weakness_low: { label: "하위 약점", hex: "#0ea5e9" },
   weakness: { label: "공통 약점", hex: "#6366f1" },
-  severity: { label: "상위·근접 심각도", hex: "#f59e0b" },
-  other: { label: "기타 연관", hex: "#94a3b8" },
+  related: { label: "기타 연관", hex: "#94a3b8" },
 };
-function catKey(reason: string): keyof typeof CATS {
-  const r = reason || "";
-  if (/(벤더|제품|vendor|product)/i.test(r)) return "vendor";
-  if (/(약점|유형|cwe|weakness)/i.test(r)) return "weakness";
-  if (/(심각|상위|근접|cvss|점수|severity)/i.test(r)) return "severity";
-  return "other";
+function catOf(relation?: string): Cat {
+  if (relation === "product" || relation === "vendor") return CATS.product;
+  return (relation && CATS[relation]) || CATS.related;
 }
+// 범례에 노출할 순서.
+const LEGEND_CATS = ["product", "weakness_high", "weakness", "weakness_low", "related"];
 // 심각도 → 글자/알약 크기.
 function fontOf(sev?: string | null): number {
   const s = (sev ?? "").toLowerCase();
@@ -80,7 +80,7 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
         vy: 0,
         hw,
         fs,
-        cat: CATS[catKey(it.reason)],
+        cat: catOf(it.relation),
         phase: Math.random() * Math.PI * 2,
       };
     });
@@ -275,7 +275,7 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
         </svg>
         {/* 범례 */}
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-neutral-500 dark:text-neutral-400">
-          {Object.values(CATS).map((c) => (
+          {LEGEND_CATS.map((k) => CATS[k]).map((c) => (
             <span key={c.label} className="inline-flex items-center gap-1">
               <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: c.hex }} />
               {c.label}
@@ -291,7 +291,7 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
       {/* 모바일 리스트 폴백 */}
       <ul className="space-y-1.5 sm:hidden">
         {items.map((it) => {
-          const c = CATS[catKey(it.reason)];
+          const c = catOf(it.relation);
           return (
             <li key={it.cveId}>
               <button

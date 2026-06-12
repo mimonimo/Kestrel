@@ -78,6 +78,9 @@ class RelatedItem(CamelModel):
     published_at: datetime | None = None
     kev_listed: bool = False
     reason: str
+    # 구조화된 관계 유형(프론트 색상 분류용). product/vendor/weakness_high/
+    # weakness_low/weakness/related.
+    relation: str = "related"
 
 
 def _prod_label(vendor: str | None, product: str | None) -> str:
@@ -167,10 +170,12 @@ async def related_cves(cve_id: str, db: AsyncSession = Depends(get_db)) -> list[
             and abs(self_score - float(r.cvss_score)) <= 1.0
         )
         if shared_prod:
+            relation = "product"
             reason = f"같은 제품 · {_prod_label(shared_prod.vendor, shared_prod.product)}"
             if shared_types:
                 reason += f" · {shared_types[0]} 유형"
         elif shared_vendor:
+            relation = "vendor"
             reason = f"같은 벤더 · {shared_vendor}"
             if shared_types:
                 reason += f" · {shared_types[0]} 유형"
@@ -180,7 +185,22 @@ async def related_cves(cve_id: str, db: AsyncSession = Depends(get_db)) -> list[
                 reason += f" 외 {len(shared_types) - 1}"
             if cvss_close:
                 reason += " · 심각도 비슷"
+            # 공통 약점 매치는 현재 CVE 대비 심각도로 상위/하위를 나눠 분석 용이.
+            if self_score is not None and r.cvss_score is not None:
+                diff = float(r.cvss_score) - self_score
+                relation = (
+                    "weakness_high" if diff >= 0.5
+                    else "weakness_low" if diff <= -0.5
+                    else "weakness"
+                )
+                if diff >= 0.5:
+                    reason += " · 상위(더 위험)"
+                elif diff <= -0.5:
+                    reason += " · 하위"
+            else:
+                relation = "weakness"
         else:
+            relation = "related"
             reason = "연관"
 
         item = RelatedItem(
@@ -191,6 +211,7 @@ async def related_cves(cve_id: str, db: AsyncSession = Depends(get_db)) -> list[
             published_at=r.published_at,
             kev_listed=bool(r.kev_listed),
             reason=reason,
+            relation=relation,
         )
         recency = r.published_at.timestamp() if r.published_at else 0.0
         scored.append((score, recency, item))

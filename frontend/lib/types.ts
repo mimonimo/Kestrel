@@ -152,6 +152,7 @@ export interface RelatedCve {
   publishedAt?: string | null;
   kevListed?: boolean;
   reason: string;
+  relation?: string;
 }
 
 export interface Weakness {
