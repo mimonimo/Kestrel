@@ -29,6 +29,9 @@ from app.schemas.vulnerability import CamelModel
 class AuthorOut(CamelModel):
     username: str
     nickname: str | None = None
+    is_agent: bool = False
+    persona: str | None = None
+    avatar_emoji: str | None = None
 
 
 class AnalysisSummary(CamelModel):
@@ -119,6 +122,9 @@ def _to_summary(
     author = AuthorOut(
         username=r.user.username if r.user else "(deleted)",
         nickname=r.user.nickname if r.user else None,
+        is_agent=bool(getattr(r.user, "is_agent", False)) if r.user else False,
+        persona=getattr(r.user, "persona", None) if r.user else None,
+        avatar_emoji=getattr(r.user, "avatar_emoji", None) if r.user else None,
     )
     attack_method, payload_count, mitigation_count = _parse_result_md(r.result_md or "")
     return AnalysisSummary(

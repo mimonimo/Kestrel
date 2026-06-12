@@ -36,6 +36,14 @@ import { cn } from "@/lib/utils";
 
 type ViewMode = "latest" | "category" | "author";
 
+function AgentBadge({ persona }: { persona?: string | null }) {
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded-full bg-sky-100 px-1.5 py-0.5 text-[9px] font-semibold text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
+      🤖 {persona || "AI"}
+    </span>
+  );
+}
+
 const VIEW_LABELS: Record<ViewMode, { label: string; icon: typeof Clock }> = {
   latest: { label: "최신순", icon: Clock },
   category: { label: "유형·위험도별", icon: Folder },
@@ -74,6 +82,8 @@ export function AnalysisFeed({
   const [expandedAuthors, setExpandedAuthors] = useState<Set<string>>(new Set());
   // 검색어 — CVE ID / 제목 / 작성자 / excerpt 매칭. client-side.
   const [search, setSearch] = useState("");
+  // 작성자 유형 필터 — 전체 / AI 에이전트 / 사람.
+  const [agentFilter, setAgentFilter] = useState<"all" | "agent" | "human">("all");
 
   const list = useQuery({
     queryKey: ["community-analyses"],
@@ -85,13 +95,17 @@ export function AnalysisFeed({
   const visibleItems = useMemo(() => {
     if (!list.data) return [] as AnalysisSummary[];
     const q = search.trim().toLowerCase();
-    if (!q) return list.data.items;
     return list.data.items.filter((a) => {
-      const hay =
-        `${a.cveId} ${a.title ?? ""} ${a.excerpt} ${a.author.nickname ?? ""} ${a.author.username} ${a.cveTypes.join(" ")} ${a.cveSeverity ?? ""}`.toLowerCase();
-      return hay.includes(q);
+      if (agentFilter === "agent" && !a.author.isAgent) return false;
+      if (agentFilter === "human" && a.author.isAgent) return false;
+      if (q) {
+        const hay =
+          `${a.cveId} ${a.title ?? ""} ${a.excerpt} ${a.author.nickname ?? ""} ${a.author.username} ${a.cveTypes.join(" ")} ${a.cveSeverity ?? ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
     });
-  }, [list.data, search]);
+  }, [list.data, search, agentFilter]);
 
   // 그룹화 — view 가 category(types/severity) / author 일 때 사용.
   // CVE 의 cveTypes 는 array 라 한 분석이 여러 유형 그룹에 동시 속할 수 있음 (의도).
@@ -186,6 +200,24 @@ export function AnalysisFeed({
             <X className="h-3 w-3" />
           </button>
         )}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+        {([["all", "전체"], ["agent", "🤖 에이전트"], ["human", "사람"]] as const).map(([v, l]) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setAgentFilter(v)}
+            className={cn(
+              "rounded-full border px-2.5 py-1 font-medium transition-colors",
+              agentFilter === v
+                ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
+                : "border-neutral-300 text-neutral-600 hover:border-sky-300 dark:border-neutral-700 dark:text-neutral-400",
+            )}
+            aria-pressed={agentFilter === v}
+          >
+            {l}
+          </button>
+        ))}
       </div>
       <div className="inline-flex w-full items-center gap-1 rounded-full border border-neutral-200 bg-neutral-50 p-1 text-xs dark:border-neutral-800 dark:bg-surface-1 sm:w-auto">
         {(Object.keys(VIEW_LABELS) as ViewMode[]).map((m) => {
@@ -350,6 +382,7 @@ export function AnalysisFeed({
           <span className="font-medium text-neutral-800 dark:text-neutral-200">
             {a.author.nickname || a.author.username}
           </span>
+          {a.author.isAgent && <AgentBadge persona={a.author.persona} />}
           <span className="text-neutral-500 dark:text-neutral-500">·</span>
           <span className="tabular-nums text-neutral-600 dark:text-neutral-500">
             {formatRelativeKo(a.createdAt)}
@@ -521,6 +554,7 @@ function AnalysisDetailModal({
                 <span className="inline-flex items-center gap-1 text-neutral-600 dark:text-neutral-400">
                   <UserIcon className="h-3 w-3" />
                   {author.nickname || author.username}
+                  {author.isAgent && <AgentBadge persona={author.persona} />}
                 </span>
               )}
               {created && (

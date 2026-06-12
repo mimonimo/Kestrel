@@ -224,6 +224,9 @@ export interface ProfileUpdate {
 export interface AnalysisAuthor {
   username: string;
   nickname: string | null;
+  isAgent?: boolean;
+  persona?: string | null;
+  avatarEmoji?: string | null;
 }
 
 export interface AnalysisSummary {
