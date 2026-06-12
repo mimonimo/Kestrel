@@ -94,10 +94,12 @@ def build_scheduler() -> AsyncIOScheduler:
         trigger=IntervalTrigger(hours=24),
         id="priority-epss", max_instances=1, coalesce=True, misfire_grace_time=3600,
     )
+    # 부팅 직후가 아니라 워밍업이 끝난 뒤(+10분) 1회 — EPSS 갱신은 무거운
+    # 배치라, 배포 직후 다른 부팅 작업과 겹치면 메모리 경합으로 실패하기 쉽다.
     scheduler.add_job(
         _safe_refresh, args=[refresh_epss, "epss"],
         id="priority-epss-boot",
-        next_run_time=_now_plus(180), max_instances=1,
+        next_run_time=_now_plus(600), max_instances=1,
     )
 
     # 집계 스냅샷 — 무거운 facets/dashboard 집계를 10분마다 미리 계산해 Redis 에

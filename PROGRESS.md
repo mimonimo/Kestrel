@@ -2447,6 +2447,10 @@ bad vote → 422, 헤더 누락 → 400
 
 ---
 
+## 운영 점검 로그
+
+- **2026-06-12 — EPSS 일일 갱신 OOM 장애 수정**: 프로덕션 EPSS job 이 시작 ~17초 만에 `priority_signals.refresh_failed` 로 간헐 실패(마지막 성공 06-11 08:00 UTC). 원인 추적(DB 변경 없이 롤백 프로브로 재현): 다운로드·파싱은 정상(34만 행), 실패 지점은 **34만 행을 `list()` 로 적재 + 335k행을 단일 UPDATE(~150초)로 재기록** → 1.8GB EC2(`statement_timeout=0`)에서 동시 부하 시 OOM kill. 수정: ① `refresh_epss` 를 스트리밍 청크 적재 + `cve_id` keyset 페이지네이션 배치 UPDATE(배치당 커밋)로 재작성해 메모리/WAL/락 상한, ② `EPSS_URL` 을 정식 호스트 `epss.empiricalsecurity.com` 로 갱신(구 cyentia 리다이렉트 의존 제거), ③ structlog 에 `format_exc_info` 추가 — `log.exception` 이 트레이스백을 실제로 남기도록(그동안 `"exc_info": true` 불린만 찍혀 원인 불가시였음), ④ `priority-epss-boot` 시점 +180s→+600s(배포 워밍업과 분리). `backend/app/services/priority_signals.py`·`core/logging.py`·`scheduler/jobs.py`. **운영 메모**: `dmesg` 상 ~2일 전 host 에서 `git`(899MB)·`meilisearch` OOM-kill 흔적 — EC2 호스트 빌드 금지 규칙 재확인 필요.
+
 ## UX 폴리시 로그
 
 - **2026-06-11 — 패치 우선순위 패널 정렬**: 메인 대시보드 `패치 우선순위`의 각 티어(KEV/EPSS 상위/CVSS 중간+EPSS/CVSS 높음+EPSS 낮음) TOP 5 를 **발행일(published_at) 최신순**이 1순위가 되도록 변경. 동일 날짜는 기존 위험도 신호(KEV 등재일·EPSS 구간·CVSS)로 타이브레이크. 버킷 자체의 우선순위 순서는 유지 — 안에 노출되는 1~5위만 최신 취약점이 위로. `backend/app/api/v1/dashboard.py:_tier_filters()`. 스냅샷(10분 주기 + 부팅 +45s)으로 반영.

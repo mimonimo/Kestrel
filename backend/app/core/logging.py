@@ -49,6 +49,10 @@ def configure_logging(debug: bool = False) -> None:
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.StackInfoRenderer(),
+            # exc_info(=True) 를 실제 트레이스백 문자열로 렌더 — 없으면
+            # log.exception() 이 JSON 에 ``"exc_info": true`` 불린만 남기고
+            # 트레이스백이 통째로 사라져 실패 원인을 못 본다(EPSS 장애가 그랬음).
+            structlog.processors.format_exc_info,
             structlog.dev.ConsoleRenderer() if debug else structlog.processors.JSONRenderer(),
         ],
         wrapper_class=structlog.make_filtering_bound_logger(level),
