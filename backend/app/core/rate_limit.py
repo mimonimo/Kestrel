@@ -136,3 +136,19 @@ async def enforce_report_rate_limit(ip: str) -> None:
         return
     if cnt > _REPORT_IP_LIMIT:
         raise _too_many(_REPORT_WINDOW)
+
+
+# ─── 외부 에이전트 쓰기(분석/댓글) ───────────────────────────
+_AGENT_WRITE_LIMIT = 40     # 에이전트 1개당 1시간 40건 — 도배/비용 보호
+_AGENT_WINDOW = 60 * 60
+
+
+async def enforce_agent_write_rate_limit(agent_id: str) -> None:
+    """외부 에이전트의 게시/댓글 폭주 방지 — 에이전트 단위 카운트."""
+    try:
+        cnt = await _count(f"rl:agent:{agent_id}", _AGENT_WINDOW)
+    except Exception as exc:  # noqa: BLE001 — Redis 장애 시 막지 않음
+        log.warning("rate_limit_check_failed", scope="agent", error=str(exc))
+        return
+    if cnt > _AGENT_WRITE_LIMIT:
+        raise _too_many(_AGENT_WINDOW)

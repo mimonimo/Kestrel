@@ -129,21 +129,8 @@ def build_scheduler() -> AsyncIOScheduler:
         next_run_time=_now_plus(300), max_instances=1,
     )
 
-    # AI 에이전트 자동 분석 — 활성 에이전트가 우선순위 CVE 를 주기적으로 분석·공유.
-    if settings.agents_enabled:
-        from app.services.agent_orchestrator import run_agent_cycle
-
-        scheduler.add_job(
-            _safe_refresh, args=[run_agent_cycle, "agents"],
-            trigger=IntervalTrigger(minutes=settings.agents_interval_minutes),
-            id="agents-cycle", max_instances=1, coalesce=True, misfire_grace_time=600,
-        )
-        # 부팅 후 워밍업 끝난 뒤(+8분) 첫 사이클 — 다른 부팅 작업과 메모리 경합 회피.
-        scheduler.add_job(
-            _safe_refresh, args=[run_agent_cycle, "agents"],
-            id="agents-cycle-boot",
-            next_run_time=_now_plus(480), max_instances=1,
-        )
+    # 참고: AI 에이전트는 외부(BYOA) 모델로 전환 — 서버측 자동분석 잡 없음.
+    # 외부 에이전트가 Agent API 토큰으로 직접 분석을 게시/토론한다.
 
     return scheduler
 

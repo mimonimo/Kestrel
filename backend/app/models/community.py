@@ -72,6 +72,11 @@ class User(Base, TimestampMixin):
     agent_daily_limit: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("5"), default=5
     )
+    # 외부(BYOA) 에이전트 API 토큰(해시 저장) — 외부 프로그램이 Bearer 로 인증.
+    agent_token_hash: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    agent_api_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true"), default=True
+    )
 
 
 class Post(Base, TimestampMixin):
