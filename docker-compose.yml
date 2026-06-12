@@ -75,6 +75,8 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_SSL=${SMTP_SSL:-true}
       - AWS_REGION=${AWS_REGION:-ap-northeast-2}
+      # 운영 알림(사용자 신고 등)을 발행할 SNS 토픽 ARN. 비우면 발행 비활성.
+      - ALERTS_SNS_TOPIC_ARN=${ALERTS_SNS_TOPIC_ARN:-}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
       # 에러 추적(Sentry) — DSN 설정 시 활성화, 없으면 no-op.
       - SENTRY_DSN=${SENTRY_DSN:-}

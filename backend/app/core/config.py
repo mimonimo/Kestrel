@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     # SES 리전 (서울 ap-northeast-2 에서 SES 사용 가능). boto3 가 인스턴스
     # IAM 역할 자격증명을 자동 사용 — 정적 키 불필요.
     aws_region: str = "ap-northeast-2"
+    # 운영 알림(사용자 신고 등)을 발행할 SNS 토픽 ARN. 비우면 발행 비활성(no-op).
+    alerts_sns_topic_arn: str | None = None
     # 이메일 링크에 쓰는 공개 베이스 URL. 비우면 cors_origins[0] 로 폴백.
     # 운영은 https://www.kestrel.forum.
     public_base_url: str = ""

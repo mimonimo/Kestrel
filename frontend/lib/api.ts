@@ -1423,3 +1423,16 @@ export interface TicketListResponse {
   total: number;
   counts: Record<TicketStatus, number>;
 }
+
+// ─── 사용자 신고/문의 ─────────────────────────────────────
+export interface ReportInput {
+  category: string;
+  message: string;
+  url?: string;
+}
+
+export async function submitReport(
+  input: ReportInput,
+): Promise<{ ok: boolean; message: string }> {
+  return request("/reports", { method: "POST", body: JSON.stringify(input) });
+}

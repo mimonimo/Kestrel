@@ -177,6 +177,7 @@ resource "aws_instance" "host" {
     DATA_VOLUME_DEVICE   = "/dev/sdb"
     AWS_REGION           = var.aws_region
     ENV                  = var.env
+    ALERTS_SNS_TOPIC_ARN = aws_sns_topic.alerts.arn
   })
 
   # user_data 가 EBS 마운트를 시도하므로 인스턴스 생성 직후에 attach 도 필요.

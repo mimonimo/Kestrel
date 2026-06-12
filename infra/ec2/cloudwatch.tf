@@ -58,13 +58,14 @@ resource "aws_sns_topic_subscription" "alerts_email" {
 }
 
 # ── 에러 메트릭 필터 ──────────────────────────────────────────
-# 비정형(plain text) 로그에서 강한 에러 신호(미처리 예외 Traceback,
-# CRITICAL/ERROR 레벨)를 OR 매칭해 카운트. 노이즈가 많으면 알람 임계치를
-# 올리거나 패턴을 좁히면 된다.
+# 비정형(plain text) 로그에서 *강한* 에러 신호만 카운트한다.
+#   - "Traceback (most recent call last)": 미처리 예외(앱 크래시) — 가장 확실한 신호
+#   - "CRITICAL": 치명 로그 레벨
+# 일반 "ERROR" 는 접속로그/외부 API 일시 오류 등 노이즈가 많아 제외한다.
 resource "aws_cloudwatch_log_metric_filter" "app_errors" {
   name           = "${local.name_prefix}-app-errors"
   log_group_name = aws_cloudwatch_log_group.containers.name
-  pattern        = "?\"Traceback (most recent call last)\" ?\"CRITICAL\" ?\"ERROR\""
+  pattern        = "?\"Traceback (most recent call last)\" ?\"CRITICAL\""
 
   metric_transformation {
     name          = "AppErrors"
@@ -76,19 +77,37 @@ resource "aws_cloudwatch_log_metric_filter" "app_errors" {
 }
 
 # ── 에러 알람 → SNS ──────────────────────────────────────────
+# 노이즈 억제: 일시적 단발 에러로는 알람이 울리지 않게 한다.
+#   - 5분 구간마다 심각 에러 3건 이상이고(threshold=3),
+#   - 그런 구간이 연속 3개(15분) 모두 충족할 때만(datapoints=3/3) 발화.
+# 즉 "반복·지속되는 큰 문제"에서만 통지. 복구(OK) 메일은 노이즈라 생략.
 resource "aws_cloudwatch_metric_alarm" "app_errors" {
   alarm_name          = "${local.name_prefix}-app-errors"
-  alarm_description   = "Kestrel 컨테이너 로그에서 에러(Traceback/ERROR/CRITICAL) 발생"
+  alarm_description   = "Kestrel: 심각 에러(Traceback/CRITICAL)가 15분(5분×3구간) 연속 다발"
   namespace           = "Kestrel/${var.env}"
   metric_name         = "AppErrors"
   statistic           = "Sum"
   period              = 300
-  evaluation_periods  = 1
-  threshold           = 1
+  evaluation_periods  = 3
+  datapoints_to_alarm = 3
+  threshold           = 3
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.alerts.arn]
-  ok_actions          = [aws_sns_topic.alerts.arn]
+}
+
+# 백엔드(신고 기능)가 알림 토픽으로 직접 발행할 수 있게 권한 부여.
+resource "aws_iam_role_policy" "sns_publish" {
+  name = "${local.name_prefix}-sns-publish"
+  role = aws_iam_role.host.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["sns:Publish"]
+      Resource = aws_sns_topic.alerts.arn
+    }]
+  })
 }
 
 # 편의 출력.

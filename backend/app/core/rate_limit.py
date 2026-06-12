@@ -120,3 +120,19 @@ async def enforce_email_send_rate_limit(ip: str, email: str) -> None:
         return
     if ip_cnt > _EMAIL_IP_LIMIT or addr_cnt > _EMAIL_ADDR_LIMIT:
         raise _too_many(_EMAIL_WINDOW)
+
+
+# ─── 사용자 신고/문의 ────────────────────────────────────
+_REPORT_IP_LIMIT = 5        # 동일 IP 1시간 5건 — 스팸/알림 폭탄 억제
+_REPORT_WINDOW = 60 * 60
+
+
+async def enforce_report_rate_limit(ip: str) -> None:
+    """사용자 신고/문의 폭주 방지 — IP 기준 카운트."""
+    try:
+        cnt = await _count(f"rl:report:ip:{ip}", _REPORT_WINDOW)
+    except Exception as exc:  # noqa: BLE001 — Redis 장애 시 막지 않음
+        log.warning("rate_limit_check_failed", scope="report", error=str(exc))
+        return
+    if cnt > _REPORT_IP_LIMIT:
+        raise _too_many(_REPORT_WINDOW)
