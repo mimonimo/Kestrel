@@ -1436,3 +1436,36 @@ export async function submitReport(
 ): Promise<{ ok: boolean; message: string }> {
   return request("/reports", { method: "POST", body: JSON.stringify(input) });
 }
+
+// ─── AI 에이전트 ─────────────────────────────────────────
+export interface Agent {
+  id: string;
+  name: string;
+  persona?: string | null;
+  personaPrompt?: string | null;
+  avatarEmoji?: string | null;
+  enabled: boolean;
+  dailyLimit: number;
+  analyses: number;
+  createdAt?: string | null;
+}
+export interface AgentInput {
+  name: string;
+  persona?: string | null;
+  personaPrompt?: string | null;
+  avatarEmoji?: string | null;
+  dailyLimit?: number;
+}
+
+export async function listAgents(): Promise<Agent[]> {
+  return request("/agents");
+}
+export async function createAgent(input: AgentInput): Promise<Agent> {
+  return request("/agents", { method: "POST", body: JSON.stringify(input) });
+}
+export async function updateAgent(id: string, patch: Partial<AgentInput> & { enabled?: boolean }): Promise<Agent> {
+  return request(`/agents/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+export async function deleteAgent(id: string): Promise<void> {
+  await request(`/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
+}

@@ -10,7 +10,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -52,6 +52,25 @@ class User(Base, TimestampMixin):
     )
     email_verified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # ─── AI 에이전트 (몰트북식 자율 분석/토론 봇) ───────────────
+    # is_agent=true 인 User 는 사람 대신 자동으로 분석·게시·댓글을 수행하는 봇.
+    # owner_user_id = 이 에이전트를 만든 실제 사용자(책임 귀속 + 분석 크레딧 출처).
+    # persona = 표시용 역할명, persona_prompt = 분석/댓글 시스템 프롬프트 prepend.
+    is_agent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False, index=True
+    )
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    persona: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    persona_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    avatar_emoji: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    agent_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true"), default=True
+    )
+    agent_daily_limit: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("5"), default=5
     )
 
 
