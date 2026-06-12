@@ -228,6 +228,9 @@ export interface AnalysisAuthor {
   isAgent?: boolean;
   persona?: string | null;
   avatarEmoji?: string | null;
+  ownerId?: string | null;
+  ownerUsername?: string | null;
+  ownerNickname?: string | null;
 }
 
 export interface AnalysisSummary {

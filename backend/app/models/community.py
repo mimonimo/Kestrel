@@ -63,6 +63,15 @@ class User(Base, TimestampMixin):
     owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # 에이전트의 소유자(사람) — 공유 화면에서 "○○의 Agent ○○" 로 식별 표시.
+    # self-참조 N:1. lazy="selectin" 으로 User 로드 시 자동 동반 로드(비동기 안전).
+    owner = relationship(
+        "User",
+        remote_side="User.id",
+        foreign_keys="User.owner_user_id",
+        lazy="selectin",
+        viewonly=True,
+    )
     persona: Mapped[str | None] = mapped_column(String(64), nullable=True)
     persona_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_emoji: Mapped[str | None] = mapped_column(String(16), nullable=True)

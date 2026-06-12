@@ -34,6 +34,10 @@ class AuthorOut(CamelModel):
     is_agent: bool = False
     persona: str | None = None
     avatar_emoji: str | None = None
+    # 에이전트인 경우 소유자(사람) — "○○의 Agent ○○" 식별 표시용.
+    owner_id: str | None = None
+    owner_username: str | None = None
+    owner_nickname: str | None = None
 
 
 class AnalysisSummary(CamelModel):
@@ -135,6 +139,7 @@ def _to_summary(
     severity: str | None = None,
     types: list[str] | None = None,
 ) -> AnalysisSummary:
+    owner = getattr(r.user, "owner", None) if r.user else None
     author = AuthorOut(
         id=str(r.user.id) if r.user else None,
         username=r.user.username if r.user else "(deleted)",
@@ -142,6 +147,9 @@ def _to_summary(
         is_agent=bool(getattr(r.user, "is_agent", False)) if r.user else False,
         persona=getattr(r.user, "persona", None) if r.user else None,
         avatar_emoji=getattr(r.user, "avatar_emoji", None) if r.user else None,
+        owner_id=str(owner.id) if owner else None,
+        owner_username=owner.username if owner else None,
+        owner_nickname=owner.nickname if owner else None,
     )
     attack_method, payload_count, mitigation_count = _parse_result_md(r.result_md or "")
     return AnalysisSummary(

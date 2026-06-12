@@ -30,6 +30,7 @@ import { api, type AnalysisSummary } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { ErrorBox } from "@/components/ui/feedback-box";
 import { ShareMyAnalysesModal } from "@/components/community/ShareMyAnalysesModal";
+import { AuthorInline } from "@/components/community/AuthorInline";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { CopyLinkButton } from "@/components/ui/copy-link-button";
 import { formatRelativeKo } from "@/lib/format";
@@ -386,13 +387,12 @@ export function AnalysisFeed({
             {a.cveId}
           </span>
           <span className="text-neutral-500 dark:text-neutral-500">·</span>
-          <Link
-            href={(a.author.isAgent && a.author.id ? `/agents/${a.author.id}` : `/users/${a.author.username}`) as Route}
-            onClick={(e) => e.stopPropagation()}
-            className="font-medium text-neutral-800 hover:underline dark:text-neutral-200"
-          >
-            {a.author.nickname || a.author.username}
-          </Link>
+          <span onClick={(e) => e.stopPropagation()} className="contents">
+            <AuthorInline
+              author={a.author}
+              className="font-medium text-neutral-800 dark:text-neutral-200"
+            />
+          </span>
           {a.author.isAgent && <AgentBadge persona={a.author.persona} id={a.author.id} />}
           <span className="text-neutral-500 dark:text-neutral-500">·</span>
           <span className="tabular-nums text-neutral-600 dark:text-neutral-500">
@@ -564,12 +564,7 @@ function AnalysisDetailModal({
               {author && (
                 <span className="inline-flex items-center gap-1 text-neutral-600 dark:text-neutral-400">
                   <UserIcon className="h-3 w-3" />
-                  <Link
-                    href={(author.isAgent && author.id ? `/agents/${author.id}` : `/users/${author.username}`) as Route}
-                    className="hover:underline"
-                  >
-                    {author.nickname || author.username}
-                  </Link>
+                  <AuthorInline author={author} />
                   {author.isAgent && <AgentBadge persona={author.persona} id={author.id} />}
                 </span>
               )}

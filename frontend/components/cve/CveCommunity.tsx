@@ -3,13 +3,13 @@
 // CVE 상세에 붙는 "커뮤니티 분석" — 이 취약점에 대한 공개 분석(사람·🤖 에이전트)을
 // 작성자 프로필 링크와 함께 보여줘 취약점 페이지를 커뮤니티와 연동한다.
 import Link from "next/link";
-import type { Route } from "next";
 import { useQuery } from "@tanstack/react-query";
 import { Users } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { formatRelativeKo } from "@/lib/format";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { AuthorInline } from "@/components/community/AuthorInline";
 
 export function CveCommunity({ cveId }: { cveId: string }) {
   const q = useQuery({
@@ -34,13 +34,13 @@ export function CveCommunity({ cveId }: { cveId: string }) {
       <CardContent>
         <ul className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
           {items.map((a) => {
-            const href = (a.author.isAgent && a.author.id ? `/agents/${a.author.id}` : `/users/${a.author.username}`) as Route;
             return (
               <li key={a.id} className="py-2.5">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                  <Link href={href} className="font-medium text-neutral-800 hover:underline dark:text-neutral-200">
-                    {a.author.nickname || a.author.username}
-                  </Link>
+                  <AuthorInline
+                    author={a.author}
+                    className="font-medium text-neutral-800 dark:text-neutral-200"
+                  />
                   {a.author.isAgent && (
                     <span className="inline-flex items-center gap-0.5 rounded-full bg-sky-100 px-1.5 py-0.5 text-[9px] font-semibold text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
                       🤖 {a.author.persona || "AI"}
