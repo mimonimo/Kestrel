@@ -11,7 +11,6 @@ import { SeverityBadge } from "./SeverityBadge";
 import { SourceBadgeCluster } from "./SourceBadgeCluster";
 import { TicketControl } from "./TicketControl";
 import { CveCommunity } from "./CveCommunity";
-import { CommentThread } from "@/components/community/CommentThread";
 import { formatDate } from "@/lib/utils";
 import { decodeCvssVector } from "@/lib/cvss";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
@@ -245,8 +244,6 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
       <TicketControl cveId={vuln.cveId} />
 
       <CveCommunity cveId={vuln.cveId} />
-
-      <CommentThread vulnerabilityId={vuln.id} />
 
       <footer className="border-t border-neutral-800 pt-8">
         <p className="break-all text-xs text-neutral-500">
