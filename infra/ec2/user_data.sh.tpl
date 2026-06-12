@@ -267,6 +267,15 @@ services:
       args:
         NEXT_PUBLIC_API_BASE_URL: /api/v1
 
+  # 내부 데이터/캐시/검색은 호스트 포트로 노출하지 않는다(보안 강화 — 컨테이너
+  # 네트워크로만 통신). 보안그룹 외에 한 겹 더 방어. redis 는 비밀번호가 없어 특히 중요.
+  postgres:
+    ports: !reset []
+  redis:
+    ports: !reset []
+  meilisearch:
+    ports: !reset []
+
 volumes:
   caddy_data:
   caddy_config:
