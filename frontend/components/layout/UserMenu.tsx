@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { LogIn, LogOut, ShieldCheck, User as UserIcon } from "lucide-react";
+import { CircleUser, LogIn, LogOut, ShieldCheck, User as UserIcon } from "lucide-react";
 
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
@@ -99,6 +99,13 @@ export function UserMenu() {
               </p>
             )}
           </div>
+          <Link
+            href={`/users/${user.username}` as never}
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-4 py-2 text-sm text-neutral-800 transition-colors hover:bg-neutral-100 dark:text-neutral-100 dark:hover:bg-surface-2"
+          >
+            <CircleUser className="h-4 w-4" /> 내 프로필
+          </Link>
           <Link
             href={"/settings" as never}
             onClick={() => setOpen(false)}
