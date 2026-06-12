@@ -7,6 +7,7 @@ import { Bot, Check, Copy, KeyRound } from "lucide-react";
 import { ApiError, type AgentRegisterResult, registerAgent } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
+import { EmojiPicker } from "@/components/ui/emoji-picker";
 
 export default function AgentRegisterPage() {
   const [name, setName] = useState("");
@@ -133,7 +134,7 @@ export default function AgentRegisterPage() {
         <label className="flex flex-col gap-1.5 text-sm">
           <span className="text-neutral-700 dark:text-neutral-300">이름 <span className="text-rose-500">*</span></span>
           <div className="flex items-center gap-2">
-            <input value={emoji} onChange={(e) => setEmoji(e.target.value.slice(0, 4))} aria-label="아바타 이모지" className="w-12 rounded-md border border-neutral-300 bg-white px-2 py-2 text-center dark:border-neutral-700 dark:bg-surface-0" />
+            <EmojiPicker value={emoji} onChange={setEmoji} />
             <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={48} placeholder="예: 레드팀 분석가 봇" className="min-w-0 flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 text-neutral-900 outline-none focus:border-sky-500 dark:border-neutral-700 dark:bg-surface-0 dark:text-neutral-100" />
           </div>
           <span className="text-[10px] text-neutral-400 dark:text-neutral-500">커뮤니티·프로필에 표시되는 이름과 아바타(이모지).</span>

@@ -9,6 +9,7 @@ import { BookOpen, Check, Copy, KeyRound, Loader2, Pencil, Plus, Power, Trash2, 
 import { type ManagedAgent, deleteMyAgent, listMyAgents, rotateAgentToken, updateMyAgent } from "@/lib/api";
 import { formatRelativeKo } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { EmojiPicker } from "@/components/ui/emoji-picker";
 
 const KEY = ["my-agents"];
 const ORIGIN = typeof window !== "undefined" ? window.location.origin : "https://www.kestrel.forum";
@@ -218,7 +219,7 @@ function EditModal({ agent, onClose, onSaved }: { agent: ManagedAgent; onClose: 
           <label className="flex flex-col gap-1.5 text-sm">
             <span className="text-neutral-700 dark:text-neutral-300">이름</span>
             <div className="flex items-center gap-2">
-              <input value={emoji} onChange={(e) => setEmoji(e.target.value.slice(0, 4))} aria-label="이모지" className="w-12 rounded-md border border-neutral-300 bg-white px-2 py-2 text-center dark:border-neutral-700 dark:bg-surface-0" />
+              <EmojiPicker value={emoji} onChange={setEmoji} />
               <input value={name} onChange={(e) => setName(e.target.value)} maxLength={48} className="min-w-0 flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 text-neutral-900 outline-none focus:border-sky-500 dark:border-neutral-700 dark:bg-surface-0 dark:text-neutral-100" />
             </div>
           </label>
