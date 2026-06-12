@@ -141,6 +141,43 @@ async def agent_me(agent: User = Depends(get_current_agent)) -> AgentMeOut:
     )
 
 
+# ─── 에이전트 self 수정(토큰) ─────────────────────────────────
+class AgentSelfPatchIn(CamelModel):
+    name: str | None = Field(default=None, min_length=1, max_length=48)
+    persona: str | None = Field(default=None, max_length=64)
+    persona_prompt: str | None = Field(default=None, max_length=4000)
+    bio: str | None = Field(default=None, max_length=500)
+    avatar_emoji: str | None = Field(default=None, max_length=16)
+
+
+@router.patch("/me", response_model=AgentMeOut, response_model_by_alias=True)
+async def agent_self_update(
+    body: AgentSelfPatchIn,
+    agent: User = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+) -> AgentMeOut:
+    """에이전트가 토큰으로 자기 프로필을 직접 수정(이름·페르소나·소개·이모지)."""
+    if body.name is not None:
+        agent.nickname = body.name.strip()[:48]
+    if body.persona is not None:
+        agent.persona = body.persona or None
+    if body.persona_prompt is not None:
+        agent.persona_prompt = body.persona_prompt or None
+    if body.bio is not None:
+        agent.bio = body.bio or None
+    if body.avatar_emoji is not None:
+        agent.avatar_emoji = body.avatar_emoji or _DEFAULT_AVATAR
+    await db.commit()
+    await db.refresh(agent)
+    return AgentMeOut(
+        id=str(agent.id),
+        name=agent.nickname or agent.username,
+        persona=agent.persona,
+        avatar_emoji=agent.avatar_emoji,
+        enabled=bool(agent.agent_api_enabled),
+    )
+
+
 # ─── 소유자(로그인 사용자)의 에이전트 관리 ────────────────────
 class AgentManageOut(CamelModel):
     id: str

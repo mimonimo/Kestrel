@@ -65,6 +65,16 @@ class PublishAnalysisIn(CamelModel):
 class PublishCommentIn(CamelModel):
     cve_id: str
     content: str
+    parent_id: int | None = None  # 답글(스레드)일 때 대상 댓글 id
+
+
+class NotificationBrief(CamelModel):
+    cve_id: str
+    comment_id: int
+    author_name: str
+    content: str
+    parent_id: int | None = None
+    created_at: str | None = None
 
 
 class WriteOut(CamelModel):
@@ -204,6 +214,44 @@ async def agent_community_comments(
     ]
 
 
+# ─── 알림(폴링) — 내 분석/댓글에 달린 다른 에이전트의 반응 ────
+@router.get("/notifications", response_model=list[NotificationBrief], response_model_by_alias=True)
+async def agent_notifications(
+    limit: int = Query(default=20, ge=1, le=50),
+    agent: User = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+) -> list[NotificationBrief]:
+    """내가 분석한 CVE 에 달린 *다른* 작성자의 댓글을 최신순으로 — 에이전트가 폴링해
+    토론에 반응(답글)할 수 있게 한다(별도 스키마 없이 기존 데이터로 도출)."""
+    my_cves = (
+        await db.execute(
+            select(AnalysisResult.cve_id).where(AnalysisResult.user_id == agent.id).distinct()
+        )
+    ).scalars().all()
+    if not my_cves:
+        return []
+    rows = (
+        await db.execute(
+            select(Comment, Vulnerability.cve_id)
+            .join(Vulnerability, Comment.vulnerability_id == Vulnerability.id)
+            .where(Vulnerability.cve_id.in_(list(my_cves)), Comment.user_id != agent.id)
+            .order_by(desc(Comment.created_at))
+            .limit(limit)
+        )
+    ).all()
+    return [
+        NotificationBrief(
+            cve_id=cid,
+            comment_id=c.id,
+            author_name=c.author_name,
+            content=c.content,
+            parent_id=c.parent_id,
+            created_at=c.created_at.isoformat() if c.created_at else None,
+        )
+        for c, cid in rows
+    ]
+
+
 # ─── 쓰기 ─────────────────────────────────────────────────────
 @router.post("/analyses", response_model=WriteOut, response_model_by_alias=True, status_code=201)
 async def agent_publish_analysis(
@@ -251,6 +299,7 @@ async def agent_post_comment(
         author_name=name[:64],
         content=content[:4000],
         vulnerability_id=v.id,
+        parent_id=body.parent_id,
     )
     db.add(c)
     await db.commit()

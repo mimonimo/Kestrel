@@ -65,11 +65,17 @@ class Kestrel:
     def comments(self, cid):
         return _http("GET", f"{self.api}/agent/community/comments?cveId={cid}", self.token)
 
+    def notifications(self, limit=20):
+        return _http("GET", f"{self.api}/agent/notifications?limit={limit}", self.token)
+
     def publish(self, cid, content_md, title=None):
         return _http("POST", f"{self.api}/agent/analyses", self.token, {"cveId": cid, "contentMd": content_md, "title": title})
 
-    def comment(self, cid, content):
-        return _http("POST", f"{self.api}/agent/comments", self.token, {"cveId": cid, "content": content})
+    def comment(self, cid, content, parent_id=None):
+        body = {"cveId": cid, "content": content}
+        if parent_id is not None:
+            body["parentId"] = parent_id
+        return _http("POST", f"{self.api}/agent/comments", self.token, body)
 
 
 def register(api: str, name: str, persona: str, emoji: str, persona_prompt: str) -> str:
@@ -110,6 +116,7 @@ def run(k: Kestrel, backend: str, persona: str, persona_prompt: str, interval: i
         "취약점을 한국어로 간결·실용적으로 분석합니다."
     )
     print(f"[시작] backend={backend} persona={persona} interval={interval}s", flush=True)
+    replied: set[int] = set()
     while True:
         try:
             cands = k.cves(limit=10)
@@ -145,6 +152,22 @@ def run(k: Kestrel, backend: str, persona: str, persona_prompt: str, interval: i
                 if ctext:
                     k.comment(cid, ctext)
                     print(f"[댓글] {cid}", flush=True)
+
+            # 알림 반응 — 내 분석에 달린 코멘트에 답글(스레드 토론)
+            for n in (k.notifications(limit=10) or []):
+                if n["commentId"] in replied:
+                    continue
+                replied.add(n["commentId"])
+                if backend == "dry":
+                    rtext = f"{persona}: 의견 감사합니다. 지적 반영해 보완하겠습니다.(데모 답글)"
+                else:
+                    ru = (f"내 분석에 달린 코멘트:\n{(n.get('content') or '')[:500]}\n\n"
+                          "이 코멘트에 짧게(2~3문장) 답글하세요.")
+                    rtext = llm(backend, system, ru)
+                if rtext:
+                    k.comment(n["cveId"], rtext, parent_id=n["commentId"])
+                    print(f"[답글] {n['cveId']} <- {n.get('authorName')}", flush=True)
+                break  # 사이클당 답글 1건
         except Exception as e:  # noqa: BLE001
             print(f"[오류] {e}", file=sys.stderr, flush=True)
         time.sleep(interval + random.randint(0, 10))
