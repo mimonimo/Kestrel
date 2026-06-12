@@ -202,16 +202,21 @@ async def refresh_epss(insert_batch: int = 5000, update_batch: int = 20000) -> d
     now = datetime.now(timezone.utc)
 
     async with SessionLocal() as session:
-        # 스테이징 — keyset 배치 UPDATE 가 커밋 사이에도 유지돼야 하므로
-        # ON COMMIT PRESERVE ROWS. 이전 실행 잔재(풀 재사용 커넥션)는 시작 시 제거.
+        # 스테이징 — 배치마다 커밋하므로 테이블이 커밋 후에도 살아 있어야 한다.
+        # TEMP 테이블은 세션(커넥션)에 묶여, uvicorn 의 풀링된 asyncpg 커넥션에선
+        # 커밋/재사용 시 사라져 "relation _epss_staging does not exist" 로 깨졌다
+        # (운영 EPSS 장애의 실제 원인 — 간헐적이었던 건 커넥션 상태 의존이라).
+        # UNLOGGED 일반 테이블은 커밋·커넥션과 무관하게 유지된다(스테이징이라
+        # crash-safe 불필요 → WAL 없이 빠름). EPSS job 은 max_instances=1 이라
+        # 이름 충돌 없음. 이전 실행 잔재는 시작 시 제거.
         await session.execute(text("DROP TABLE IF EXISTS _epss_staging"))
         await session.execute(
             text(
-                "CREATE TEMP TABLE _epss_staging ("
+                "CREATE UNLOGGED TABLE _epss_staging ("
                 " cve_id text PRIMARY KEY,"
                 " score double precision NOT NULL,"
                 " percentile double precision NOT NULL"
-                ") ON COMMIT PRESERVE ROWS"
+                ")"
             )
         )
         # 스트리밍 적재 — 제너레이터를 청크로 끊어 넣어 340k 행을 한꺼번에
