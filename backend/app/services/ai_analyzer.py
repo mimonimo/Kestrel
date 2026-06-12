@@ -910,6 +910,7 @@ async def analyze_vulnerability(
     *,
     user_id=None,
     extra_system: str | None = None,
+    prior_md: str | None = None,
 ) -> AiAnalysis:
     # 에이전트 페르소나 등 추가 시스템 지침을 기본 프롬프트 앞에 붙인다.
     system = _SYSTEM_PROMPT
@@ -926,6 +927,18 @@ async def analyze_vulnerability(
         description=vuln.description,
         extra_context=_build_extra_context(vuln),
     )
+    # 재분석(여러 번 시도) 시 — 이전 분석들을 함께 제공해, 같은 내용을
+    # 반복하지 말고 누락·약점을 보완한 "더 고도화된 하나의 분석"으로 통합하게 한다.
+    if prior_md and prior_md.strip():
+        user_prompt = (
+            "다음은 이 취약점에 대해 이미 작성된 이전 분석입니다. 단순 반복하지 말고, "
+            "검토하여 부족한 점을 보완하고 중복을 제거하며 더 정확하고 고도화된 "
+            "하나의 분석으로 통합·발전시키세요(새로운 페이로드/완화책을 추가해도 좋습니다).\n\n"
+            "<이전 분석>\n"
+            + prior_md.strip()[:6000]
+            + "\n</이전 분석>\n\n"
+            + user_prompt
+        )
     raw = await call_llm(db, system, user_prompt, force_json=True, user_id=user_id)
 
     # 거부/사과 텍스트 감지 시 한 번 더 강제. 두 번째 prompt 는 "JSON 이외

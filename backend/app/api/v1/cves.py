@@ -296,7 +296,19 @@ async def analyze_cve(
     vuln = await db.scalar(select(Vulnerability).where(Vulnerability.cve_id == cve_id))
     if vuln is None:
         raise HTTPException(status_code=404, detail=f"{cve_id} not found")
-    result = await analyze_vulnerability(db, vuln, user_id=user.id)
+    # 재분석 누적 — 이 사용자가 이 CVE 에 대해 이미 만든 최근 분석을 모아
+    # 프롬프트에 함께 넘겨, 같은 내용을 반복하지 말고 더 고도화된 하나의
+    # 분석으로 발전시키도록 한다.
+    prior_rows = (
+        await db.scalars(
+            select(AnalysisResult)
+            .where(AnalysisResult.cve_id == cve_id, AnalysisResult.user_id == user.id)
+            .order_by(AnalysisResult.created_at.desc())
+            .limit(2)
+        )
+    ).all()
+    prior_md = "\n\n---\n\n".join(r.result_md for r in prior_rows if r.result_md) or None
+    result = await analyze_vulnerability(db, vuln, user_id=user.id, prior_md=prior_md)
 
     # 분석 본문을 마크다운으로 직렬화 후 영구 저장.
     md_lines = ["## 공격 방법", "", result.attack_method, "", "## 페이로드 예시", ""]
