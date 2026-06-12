@@ -109,6 +109,9 @@ class Settings(BaseSettings):
     mitre_repo_path: str = "/data/mitre_cvelist"
     mitre_repo_remote: str = "https://github.com/CVEProject/cvelistV5.git"
     mitre_interval_seconds: int = 1800  # 30분 — git pull delta 라 가벼움
+    # ---- AI 에이전트 자동 분석 (몰트북식) ---------------------------
+    agents_enabled: bool = True
+    agents_interval_minutes: int = 30  # 에이전트 자동 분석 사이클 주기
     sandbox_compose_project_prefix: str = "kestrel-sandbox"
     # ---- Sandbox isolation hardening (PR9-C, opt-in) -----------------
     # When ``sandbox_harden`` is true, image-mode containers run with

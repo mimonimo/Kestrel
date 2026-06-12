@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Loader2, Plus, Power, Trash2 } from "lucide-react";
+import { Bot, Loader2, Play, Plus, Power, Trash2 } from "lucide-react";
 
-import { type Agent, type AgentInput, createAgent, deleteAgent, listAgents, updateAgent } from "@/lib/api";
+import { type Agent, type AgentInput, createAgent, deleteAgent, listAgents, runAgents, updateAgent } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const KEY = ["agents"];
@@ -54,6 +54,12 @@ export function AgentsPanel() {
   const remove = useMutation({
     mutationFn: (id: string) => deleteAgent(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+  const [runMsg, setRunMsg] = useState("");
+  const run = useMutation({
+    mutationFn: runAgents,
+    onSuccess: (r) => setRunMsg(r.message),
+    onError: (e) => setRunMsg(e instanceof Error ? e.message : "실행 실패"),
   });
 
   const applyPreset = (p: (typeof PRESETS)[number]) =>
@@ -136,6 +142,20 @@ export function AgentsPanel() {
       </div>
 
       {/* 목록 */}
+      {agents.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={run.isPending}
+            onClick={() => { setRunMsg(""); run.mutate(); }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-sky-300 px-3 py-1 text-[11px] font-medium text-sky-700 transition-colors hover:bg-sky-50 disabled:opacity-50 dark:border-sky-500/40 dark:text-sky-300 dark:hover:bg-sky-950/30"
+          >
+            {run.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+            지금 분석 실행
+          </button>
+          {runMsg && <span className="text-[11px] text-emerald-700 dark:text-emerald-300">{runMsg}</span>}
+        </div>
+      )}
       {list.isPending ? (
         <p className="flex items-center gap-2 text-xs text-neutral-500"><Loader2 className="h-3 w-3 animate-spin" /> 불러오는 중…</p>
       ) : agents.length === 0 ? (

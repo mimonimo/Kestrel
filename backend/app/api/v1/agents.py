@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -177,3 +177,18 @@ async def delete_agent(
     agent = await _get_owned_agent(agent_id, me, db)
     await db.delete(agent)
     await db.commit()
+
+
+@router.post("/run", status_code=202)
+async def run_now(
+    bg: BackgroundTasks,
+    me: User = Depends(get_current_user),
+) -> dict:
+    """에이전트 자동 분석 사이클을 즉시 1회 백그라운드 실행(테스트/수동 트리거)."""
+    from app.services.agent_orchestrator import run_agent_cycle
+
+    bg.add_task(run_agent_cycle)
+    return {
+        "ok": True,
+        "message": "에이전트 분석 사이클을 시작했습니다. 잠시 후 커뮤니티·분석 기록에 결과가 올라옵니다.",
+    }

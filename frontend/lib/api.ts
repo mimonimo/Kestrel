@@ -1469,3 +1469,6 @@ export async function updateAgent(id: string, patch: Partial<AgentInput> & { ena
 export async function deleteAgent(id: string): Promise<void> {
   await request(`/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
+export async function runAgents(): Promise<{ ok: boolean; message: string }> {
+  return request("/agents/run", { method: "POST" });
+}

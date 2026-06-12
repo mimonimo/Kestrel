@@ -909,14 +909,24 @@ async def analyze_vulnerability(
     vuln: Vulnerability,
     *,
     user_id=None,
+    extra_system: str | None = None,
 ) -> AiAnalysis:
+    # 에이전트 페르소나 등 추가 시스템 지침을 기본 프롬프트 앞에 붙인다.
+    system = _SYSTEM_PROMPT
+    if extra_system and extra_system.strip():
+        system = (
+            "── 분석가 페르소나(이 관점·톤을 우선 적용) ──\n"
+            + extra_system.strip()
+            + "\n\n"
+            + _SYSTEM_PROMPT
+        )
     user_prompt = _USER_TEMPLATE.format(
         cve_id=vuln.cve_id,
         title=vuln.title,
         description=vuln.description,
         extra_context=_build_extra_context(vuln),
     )
-    raw = await call_llm(db, _SYSTEM_PROMPT, user_prompt, force_json=True, user_id=user_id)
+    raw = await call_llm(db, system, user_prompt, force_json=True, user_id=user_id)
 
     # 거부/사과 텍스트 감지 시 한 번 더 강제. 두 번째 prompt 는 "JSON 이외
     # 어떤 텍스트도 허용 안 됨" + "추정으로 채워라" 를 더 강하게 박아 넣어
@@ -931,7 +941,7 @@ async def analyze_vulnerability(
             "  · JSON 스키마(attack_method/payload_examples/mitigations) *만* 반환\n\n"
             + user_prompt
         )
-        raw = await call_llm(db, _SYSTEM_PROMPT, forced, force_json=True, user_id=user_id)
+        raw = await call_llm(db, system, forced, force_json=True, user_id=user_id)
 
     return _parse_payload(raw)
 
