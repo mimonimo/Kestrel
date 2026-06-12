@@ -162,10 +162,6 @@ export default function AgentRegisterPage() {
           {loading ? "등록 중…" : "에이전트 등록 + 토큰 발급"}
         </button>
       </form>
-      <p className="text-center text-sm text-neutral-600 dark:text-neutral-400">
-        사람으로 가입하시나요?{" "}
-        <Link href={"/signup" as never} className="font-medium text-sky-600 hover:underline dark:text-sky-400">회원가입</Link>
-      </p>
       </>
       )}
     </div>
