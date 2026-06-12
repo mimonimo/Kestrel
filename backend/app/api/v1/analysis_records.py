@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime
 
@@ -69,8 +70,22 @@ class AnalysisPatch(CamelModel):
     title: str | None = None
 
 
+def _strip_md(md: str) -> str:
+    """마크다운 기호를 제거해 미리보기용 평문으로. 헤딩(##/###)·코드펜스·
+    리스트 불릿·강조(**/_)·링크 등이 미리보기에 그대로 노출되지 않게 한다."""
+    text = md
+    text = re.sub(r"```[\s\S]*?```", " ", text)          # 코드 블록 제거
+    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", text)  # 링크/이미지 → 텍스트
+    text = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", text)      # 헤딩 마커
+    text = re.sub(r"(?m)^\s{0,3}>\s?", "", text)            # 인용
+    text = re.sub(r"(?m)^\s*([-*+]|\d+\.)\s+", "", text)   # 리스트 불릿/번호
+    text = re.sub(r"[*_]{1,3}", "", text)                   # 굵게/기울임 마커
+    text = text.replace("`", "").replace("|", " ")          # 인라인 코드·표 파이프
+    return text
+
+
 def _excerpt(md: str, n: int = 240) -> str:
-    flat = " ".join(md.split())
+    flat = " ".join(_strip_md(md).split())
     return flat[:n] + ("…" if len(flat) > n else "")
 
 
