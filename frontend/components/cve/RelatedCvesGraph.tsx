@@ -246,12 +246,29 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
           {/* 중심 노드 */}
           <circle cx={CX} cy={CY} r={29} className="fill-sky-500/10" />
           <circle cx={CX} cy={CY} r={22} className="fill-sky-500" stroke="#fff" strokeWidth={2} style={{ filter: "url(#kx-pill-shadow)" }} />
-          <text x={CX} y={CY - 3} textAnchor="middle" className="fill-white" style={{ fontSize: 8, opacity: 0.85 }}>
+          <text x={CX} y={CY + 3.5} textAnchor="middle" className="fill-white font-semibold" style={{ fontSize: 10 }}>
             현재
           </text>
-          <text x={CX} y={CY + 7.5} textAnchor="middle" className="fill-white font-mono" style={{ fontSize: 8.5, fontWeight: 700 }}>
-            {centerId.replace(/^CVE-/, "")}
-          </text>
+          {(() => {
+            const w = labelWidth(centerId, 9) + 16;
+            return (
+              <g transform={`translate(${CX},${CY + 40})`}>
+                <rect
+                  x={-w / 2}
+                  y={-9}
+                  width={w}
+                  height={18}
+                  rx={9}
+                  ry={9}
+                  className="fill-sky-500"
+                  style={{ filter: "url(#kx-pill-shadow)" }}
+                />
+                <text textAnchor="middle" dy={3.2} className="fill-white font-mono font-semibold" style={{ fontSize: 9 }}>
+                  {centerId}
+                </text>
+              </g>
+            );
+          })()}
 
           {/* 노드 알약 */}
           {nodes.map((nd, i) => {
