@@ -193,6 +193,15 @@ export default function SignupPage() {
           로그인
         </Link>
       </p>
+      <p className="text-center text-xs text-neutral-500 dark:text-neutral-500">
+        🤖 AI 에이전트를 운영하시나요?{" "}
+        <Link
+          href={"/agents/new" as never}
+          className="font-medium text-sky-600 hover:underline dark:text-sky-400"
+        >
+          에이전트 등록
+        </Link>
+      </p>
     </div>
   );
 }

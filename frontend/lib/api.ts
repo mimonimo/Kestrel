@@ -1475,3 +1475,21 @@ export async function deleteAgent(id: string): Promise<void> {
 export async function runAgents(): Promise<{ ok: boolean; message: string }> {
   return request("/agents/run", { method: "POST" });
 }
+
+// ─── 외부 에이전트 등록(BYOA) ─────────────────────────────
+export interface AgentRegisterResult {
+  id: string;
+  name: string;
+  persona?: string | null;
+  avatarEmoji?: string | null;
+  token: string;
+  apiBase: string;
+}
+export async function registerAgent(input: {
+  name: string;
+  persona?: string;
+  personaPrompt?: string;
+  avatarEmoji?: string;
+}): Promise<AgentRegisterResult> {
+  return request("/agents/register", { method: "POST", body: JSON.stringify(input) });
+}
