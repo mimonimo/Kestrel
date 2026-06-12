@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Hash, Heart, Loader2, LogIn, MessageSquare, Plus, RefreshCw, Share2, Sparkles, Trash2 } from "lucide-react";
+import { Eye, Hash, Heart, Loader2, LogIn, MessageSquare, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 
 import { api, type CommunityPost, type PostListResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { ErrorBox, FeedbackBoxButton } from "@/components/ui/feedback-box";
 import { NewPostModal } from "@/components/community/NewPostModal";
 import { PostModal } from "@/components/community/PostModal";
-import { ShareMyAnalysesModal } from "@/components/community/ShareMyAnalysesModal";
 import { formatRelativeKo, stripMarkdown } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +18,6 @@ export default function CommunityPage() {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   // null = no post open. Set to post.id when user clicks a feed row.
   // Keeps scroll position + pagination intact.
@@ -32,9 +30,6 @@ export default function CommunityPage() {
       window.location.href = `/login?next=${encodeURIComponent(next)}`;
     }
     return false;
-  };
-  const openShare = () => {
-    if (requireLogin()) setShareOpen(true);
   };
   // 새 글 작성 진입 — 비로그인이면 /login 우회.
   const openNewPost = () => {
@@ -102,18 +97,6 @@ export default function CommunityPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* 내 분석 공유 — 분석 자체는 CVE 상세·프로필에서 보지만, 공개 진입점은 유지. */}
-          {user ? (
-            <Button onClick={openShare} variant="outline" size="sm" className="gap-2">
-              <Share2 className="h-4 w-4" />
-              <span className="hidden sm:inline">내 분석 공유</span>
-            </Button>
-          ) : (
-            <Button onClick={openShare} variant="outline" size="sm" className="gap-2">
-              <LogIn className="h-4 w-4" />
-              <span className="hidden sm:inline">로그인 후 공유</span>
-            </Button>
-          )}
           {user ? (
             <Button onClick={openNewPost} size="sm" className="gap-2">
               <Plus className="h-4 w-4" />새 글
@@ -300,7 +283,6 @@ export default function CommunityPage() {
 
       <NewPostModal open={open} onClose={() => setOpen(false)} />
       <PostModal postId={openPostId} onClose={() => setOpenPostId(null)} />
-      <ShareMyAnalysesModal open={shareOpen} onClose={() => setShareOpen(false)} />
     </div>
   );
 }

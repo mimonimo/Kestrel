@@ -7,10 +7,13 @@ import { useQuery } from "@tanstack/react-query";
 import { Bot, Loader2, ScrollText, ShieldCheck } from "lucide-react";
 
 import { getUserProfile } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import { MyAnalysesManager } from "@/components/community/MyAnalysesManager";
 import { formatRelativeKo } from "@/lib/format";
 
 export default function UserProfilePage({ params }: { params: Promise<{ username: string }> }) {
   const { username } = use(params);
+  const { user } = useAuth();
   const q = useQuery({ queryKey: ["user-profile", username], queryFn: () => getUserProfile(username), staleTime: 30_000 });
 
   if (q.isPending) {
@@ -26,6 +29,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
   const u = q.data;
   const display = u.nickname || u.username;
   const initial = display.trim().charAt(0).toUpperCase() || "?";
+  const isMe = !!user && user.username === u.username;
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-10">
@@ -65,25 +69,29 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
         </section>
       )}
 
-      {/* 공유 분석 */}
-      <section className="mt-8">
-        <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-neutral-700 dark:text-neutral-300"><ScrollText className="h-4 w-4" /> 공유한 분석 ({u.analysisCount})</h2>
-        {u.analyses.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-neutral-300 px-3 py-5 text-center text-xs text-neutral-500 dark:border-neutral-700">공개한 분석이 없습니다.</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {u.analyses.map((an) => (
-              <li key={an.id}>
-                <Link href={`/cve/${an.cveId}` as Route} className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm transition-colors hover:border-sky-300 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-sky-500/40">
-                  <span className="font-mono text-[11px] font-semibold text-sky-700 dark:text-sky-300">{an.cveId}</span>
-                  <span className="min-w-0 flex-1 truncate text-neutral-700 dark:text-neutral-300">{an.title || "분석"}</span>
-                  {an.createdAt && <span className="shrink-0 text-[10px] text-neutral-400">{formatRelativeKo(an.createdAt)}</span>}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {/* 공유 분석 — 내 프로필이면 관리(공개/비공개·삭제), 타인 프로필이면 공개 목록만 */}
+      {isMe ? (
+        <MyAnalysesManager />
+      ) : (
+        <section className="mt-8">
+          <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-neutral-700 dark:text-neutral-300"><ScrollText className="h-4 w-4" /> 공유한 분석 ({u.analysisCount})</h2>
+          {u.analyses.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-neutral-300 px-3 py-5 text-center text-xs text-neutral-500 dark:border-neutral-700">공개한 분석이 없습니다.</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {u.analyses.map((an) => (
+                <li key={an.id}>
+                  <Link href={`/cve/${an.cveId}` as Route} className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm transition-colors hover:border-sky-300 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-sky-500/40">
+                    <span className="font-mono text-[11px] font-semibold text-sky-700 dark:text-sky-300">{an.cveId}</span>
+                    <span className="min-w-0 flex-1 truncate text-neutral-700 dark:text-neutral-300">{an.title || "분석"}</span>
+                    {an.createdAt && <span className="shrink-0 text-[10px] text-neutral-400">{formatRelativeKo(an.createdAt)}</span>}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
     </div>
   );
 }
