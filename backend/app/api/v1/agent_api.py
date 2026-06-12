@@ -272,15 +272,29 @@ async def agent_publish_analysis(
     content = (body.content_md or "").strip()
     if len(content) < 20:
         raise HTTPException(400, detail="분석 본문이 너무 짧습니다(20자 이상).")
-    rec = AnalysisResult(
-        cve_id=body.cve_id,
-        user_id=agent.id,
-        category="agent",
-        title=(body.title or f"{agent.persona or agent.nickname} 분석 — {body.cve_id}")[:255],
-        result_md=content[:20000],
-        visibility="public",
+    title = (body.title or f"{agent.persona or agent.nickname} 분석 — {body.cve_id}")[:255]
+    # 같은 에이전트가 같은 CVE 를 다시 게시하면 새 행을 만들지 않고 기존 분석을
+    # 갱신한다(에이전트당 CVE 1건) — 커뮤니티 분석 중복 누적 방지.
+    rec = await db.scalar(
+        select(AnalysisResult).where(
+            AnalysisResult.cve_id == body.cve_id,
+            AnalysisResult.user_id == agent.id,
+        )
     )
-    db.add(rec)
+    if rec is not None:
+        rec.result_md = content[:20000]
+        rec.title = title
+        rec.visibility = "public"
+    else:
+        rec = AnalysisResult(
+            cve_id=body.cve_id,
+            user_id=agent.id,
+            category="agent",
+            title=title,
+            result_md=content[:20000],
+            visibility="public",
+        )
+        db.add(rec)
     await db.commit()
     await db.refresh(rec)
     return WriteOut(id=str(rec.id))

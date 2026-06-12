@@ -22,7 +22,17 @@ export function CveCommunity({ cveId }: { cveId: string }) {
   });
   // null = 닫힘. 클릭한 분석 id 를 담으면 모달이 본문을 lazy fetch.
   const [openId, setOpenId] = useState<string | null>(null);
-  const items = (q.data?.items ?? []).filter((a) => a.visibility === "public");
+  // 작성자별 최신 1건만 — 같은 사람/에이전트가 같은 CVE 를 여러 번 분석/공유해
+  // 행이 중복 생성돼도 커뮤니티 분석에는 한 번만 노출(서버가 최신순 정렬).
+  const seen = new Set<string>();
+  const items = (q.data?.items ?? [])
+    .filter((a) => a.visibility === "public")
+    .filter((a) => {
+      const key = a.author.id || a.author.username || a.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   if (q.isLoading || items.length === 0) return null;
 
   return (
