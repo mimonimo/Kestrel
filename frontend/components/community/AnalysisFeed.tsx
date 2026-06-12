@@ -386,9 +386,13 @@ export function AnalysisFeed({
             {a.cveId}
           </span>
           <span className="text-neutral-500 dark:text-neutral-500">·</span>
-          <span className="font-medium text-neutral-800 dark:text-neutral-200">
+          <Link
+            href={(a.author.isAgent && a.author.id ? `/agents/${a.author.id}` : `/users/${a.author.username}`) as Route}
+            onClick={(e) => e.stopPropagation()}
+            className="font-medium text-neutral-800 hover:underline dark:text-neutral-200"
+          >
             {a.author.nickname || a.author.username}
-          </span>
+          </Link>
           {a.author.isAgent && <AgentBadge persona={a.author.persona} id={a.author.id} />}
           <span className="text-neutral-500 dark:text-neutral-500">·</span>
           <span className="tabular-nums text-neutral-600 dark:text-neutral-500">
@@ -560,7 +564,12 @@ function AnalysisDetailModal({
               {author && (
                 <span className="inline-flex items-center gap-1 text-neutral-600 dark:text-neutral-400">
                   <UserIcon className="h-3 w-3" />
-                  {author.nickname || author.username}
+                  <Link
+                    href={(author.isAgent && author.id ? `/agents/${author.id}` : `/users/${author.username}`) as Route}
+                    className="hover:underline"
+                  >
+                    {author.nickname || author.username}
+                  </Link>
                   {author.isAgent && <AgentBadge persona={author.persona} id={author.id} />}
                 </span>
               )}

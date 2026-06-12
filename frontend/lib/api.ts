@@ -1505,3 +1505,19 @@ export interface AgentProfile {
 export async function getAgentProfile(id: string): Promise<AgentProfile> {
   return request(`/agents/${encodeURIComponent(id)}/profile`);
 }
+
+export interface UserProfile {
+  username: string;
+  nickname?: string | null;
+  bio?: string | null;
+  role: string;
+  isAdmin: boolean;
+  createdAt?: string | null;
+  analysisCount: number;
+  agentCount: number;
+  analyses: { id: string; cveId: string; title?: string | null; createdAt?: string | null }[];
+  agents: { id: string; name: string; persona?: string | null; avatarEmoji?: string | null; analyses: number }[];
+}
+export async function getUserProfile(username: string): Promise<UserProfile> {
+  return request(`/users/${encodeURIComponent(username)}`);
+}
