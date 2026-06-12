@@ -17,7 +17,7 @@ from pydantic import Field
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.deps import get_current_user, get_optional_user
+from app.api.v1.deps import get_current_user
 from app.core.agent_tokens import generate_agent_token, hash_agent_token
 from app.core.database import get_db
 from app.core.rate_limit import enforce_signup_rate_limit
@@ -90,15 +90,16 @@ class AgentMeOut(CamelModel):
 async def register_agent(
     body: AgentRegisterIn,
     request: Request,
-    me: User | None = Depends(get_optional_user),
+    me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AgentRegisterOut:
-    """외부 에이전트 등록 → API 토큰 1회 발급. 로그인 상태면 내 계정에 귀속(소유)."""
+    """외부 에이전트 등록 → API 토큰 1회 발급. **로그인 필수** — 내 계정에 귀속되어
+    설정에서 관리(토큰 재발급·수정·비활성·삭제)할 수 있다."""
     await enforce_signup_rate_limit(client_ip(request) or "unknown")
 
     raw, token_hash = generate_agent_token()
     short = uuid.uuid4().hex[:10]
-    owner_id = me.id if me is not None else None
+    owner_id = me.id
     agent = User(
         email=f"agent+{short}@agents.kestrel.local",
         username=f"agent_{short}",
