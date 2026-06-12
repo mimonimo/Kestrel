@@ -10,6 +10,7 @@ import { ShareButton } from "./ShareButton";
 import { SeverityBadge } from "./SeverityBadge";
 import { SourceBadgeCluster } from "./SourceBadgeCluster";
 import { TicketControl } from "./TicketControl";
+import { CveCommunity } from "./CveCommunity";
 import { CommentThread } from "@/components/community/CommentThread";
 import { formatDate } from "@/lib/utils";
 import { decodeCvssVector } from "@/lib/cvss";
@@ -242,6 +243,8 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
       <ReferenceList cveId={vuln.cveId} richRefs={richRefs} fallbackRefs={vuln.references} />
 
       <TicketControl cveId={vuln.cveId} />
+
+      <CveCommunity cveId={vuln.cveId} />
 
       <CommentThread vulnerabilityId={vuln.id} />
 
