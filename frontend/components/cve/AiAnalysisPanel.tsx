@@ -140,6 +140,45 @@ function CodeBlock({ source }: { source: string }) {
   );
 }
 
+// AI 분석 실패를 상황별로 사람이 읽기 좋은 제목·설명·힌트로 변환.
+// 원시 error.message 를 그대로 노출하던 것을 대체 — 운영자가 다음에 뭘
+// 해야 하는지(설정/재시도/대기) 가 바로 보이도록.
+function describeAnalysisError(
+  err: Error | null | undefined,
+): { title: string; message: string; hint?: string; settings?: boolean } {
+  if (!err) return { title: "분석 요청 실패", message: "" };
+  const status = err instanceof ApiError ? err.status : 0;
+  const raw = (err.message || "").trim();
+  if (status === 400) {
+    return {
+      title: "AI 자격증명이 아직 설정되지 않았어요",
+      message: "분석을 실행하려면 설정에서 AI 모델과 API 키를 먼저 등록해 주세요.",
+      hint: raw || undefined,
+      settings: true,
+    };
+  }
+  if (status === 401) {
+    return { title: "로그인이 필요해요", message: "AI 심층 분석은 로그인 후 이용할 수 있어요." };
+  }
+  if (status === 429) {
+    return {
+      title: "잠시 후 다시 시도해 주세요",
+      message: "짧은 시간에 분석 요청이 많이 들어왔어요. 잠깐 기다렸다가 다시 분석해 주세요.",
+    };
+  }
+  if (status === 0 || status >= 500) {
+    return {
+      title: "분석을 완료하지 못했어요",
+      message: "AI 분석 서버가 일시적으로 응답하지 않았어요. 잠시 후 다시 시도하면 대부분 정상 동작합니다.",
+      hint: raw || undefined,
+    };
+  }
+  return {
+    title: "분석 요청 실패",
+    message: raw || "알 수 없는 오류로 분석을 마치지 못했어요. 다시 시도해 주세요.",
+  };
+}
+
 export function AiAnalysisPanel({ cveId }: { cveId: string }) {
   const qc = useQueryClient();
   const { user, loading: authLoading } = useAuth();
@@ -295,8 +334,8 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
   const hasContent = showingFresh || viewingSaved;
   const selectedMeta = history.find((h) => h.id === selectedId) ?? null;
   const error = analyze.error;
-  const isKeyMissing = error instanceof ApiError && error.status === 400;
   const isRunning = analyze.isFetching;
+  const errInfo = describeAnalysisError(error);
   void qc;
   void cached;
 
@@ -435,11 +474,12 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
 
         {error && (
           <ErrorBox
-            title="분석 요청 실패"
-            message={error.message}
+            title={errInfo.title}
+            message={errInfo.message}
+            hint={errInfo.hint}
             actions={
               <>
-                {isKeyMissing && (
+                {errInfo.settings && (
                   <FeedbackBoxButton href="/settings">설정으로 이동</FeedbackBoxButton>
                 )}
                 <FeedbackBoxButton onClick={() => runAnalysis()}>
