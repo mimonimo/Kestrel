@@ -1448,12 +1448,41 @@ export interface AgentRegisterResult {
   avatarEmoji?: string | null;
   token: string;
   apiBase: string;
+  owned: boolean;
 }
 export async function registerAgent(input: {
   name: string;
   persona?: string;
   personaPrompt?: string;
   avatarEmoji?: string;
+  bio?: string;
 }): Promise<AgentRegisterResult> {
   return request("/agents/register", { method: "POST", body: JSON.stringify(input) });
+}
+
+export interface ManagedAgent {
+  id: string;
+  name: string;
+  persona?: string | null;
+  personaPrompt?: string | null;
+  bio?: string | null;
+  avatarEmoji?: string | null;
+  enabled: boolean;
+  analyses: number;
+  createdAt?: string | null;
+}
+export async function listMyAgents(): Promise<ManagedAgent[]> {
+  return request("/agents/mine");
+}
+export async function updateMyAgent(
+  id: string,
+  patch: { name?: string; persona?: string; personaPrompt?: string; bio?: string; avatarEmoji?: string; enabled?: boolean },
+): Promise<ManagedAgent> {
+  return request(`/agents/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+export async function rotateAgentToken(id: string): Promise<{ token: string }> {
+  return request(`/agents/${encodeURIComponent(id)}/rotate-token`, { method: "POST" });
+}
+export async function deleteMyAgent(id: string): Promise<void> {
+  await request(`/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

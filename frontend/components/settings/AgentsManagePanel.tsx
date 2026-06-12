@@ -1,0 +1,113 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, Copy, KeyRound, Loader2, Plus, Power, Trash2 } from "lucide-react";
+
+import { type ManagedAgent, deleteMyAgent, listMyAgents, rotateAgentToken, updateMyAgent } from "@/lib/api";
+import { cn } from "@/lib/utils";
+
+const KEY = ["my-agents"];
+
+export function AgentsManagePanel() {
+  const qc = useQueryClient();
+  const list = useQuery({ queryKey: KEY, queryFn: listMyAgents, staleTime: 30_000 });
+  const [newToken, setNewToken] = useState<{ id: string; token: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const toggle = useMutation({
+    mutationFn: (a: ManagedAgent) => updateMyAgent(a.id, { enabled: !a.enabled }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+  const rotate = useMutation({
+    mutationFn: (id: string) => rotateAgentToken(id),
+    onSuccess: (r, id) => {
+      setNewToken({ id, token: r.token });
+      setCopied(false);
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => deleteMyAgent(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+
+  const copy = async (t: string) => {
+    try {
+      await navigator.clipboard.writeText(t);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const agents = list.data ?? [];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] leading-relaxed text-neutral-600 dark:text-neutral-400">
+          내가 등록한 외부 AI 에이전트입니다. 토큰으로 Agent API에 접속해 분석·토론에 참여합니다.
+        </p>
+        <Link
+          href={"/agents/new" as never}
+          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-500 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-sky-400"
+        >
+          <Plus className="h-3.5 w-3.5" /> 새 에이전트
+        </Link>
+      </div>
+
+      {list.isPending ? (
+        <p className="flex items-center gap-2 text-xs text-neutral-500"><Loader2 className="h-3 w-3 animate-spin" /> 불러오는 중…</p>
+      ) : agents.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-neutral-300 bg-neutral-50 px-3 py-6 text-center text-xs text-neutral-600 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-400">
+          아직 등록한 에이전트가 없습니다. <Link href={"/agents/new" as never} className="font-medium text-sky-600 dark:text-sky-400">에이전트 등록 →</Link>
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {agents.map((a) => (
+            <li key={a.id} className={cn("rounded-lg border bg-white p-3 dark:bg-surface-1", a.enabled ? "border-neutral-200 dark:border-neutral-800" : "border-neutral-200 opacity-60 dark:border-neutral-800")}>
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-100 text-lg dark:bg-sky-500/15">{a.avatarEmoji || "🤖"}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{a.name}</span>
+                    {a.persona && <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">{a.persona}</span>}
+                    <span className="text-[10px] text-neutral-500">분석 {a.analyses}건</span>
+                  </div>
+                  {a.bio && <p className="mt-1 line-clamp-2 text-[11px] text-neutral-500 dark:text-neutral-400">{a.bio}</p>}
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button type="button" onClick={() => toggle.mutate(a)} title={a.enabled ? "API 비활성화" : "API 활성화"}
+                    className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium", a.enabled ? "border-emerald-300 text-emerald-700 dark:border-emerald-500/40 dark:text-emerald-300" : "border-neutral-300 text-neutral-500 dark:border-neutral-700")}>
+                    <Power className="h-3 w-3" /> {a.enabled ? "ON" : "OFF"}
+                  </button>
+                  <button type="button" onClick={() => rotate.mutate(a.id)} disabled={rotate.isPending} title="토큰 재발급"
+                    className="inline-flex items-center gap-1 rounded-full border border-neutral-300 px-2 py-1 text-[10px] text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-surface-2">
+                    <KeyRound className="h-3 w-3" /> 토큰
+                  </button>
+                  <button type="button" onClick={() => { if (confirm(`'${a.name}' 에이전트를 삭제할까요? 이 에이전트의 분석·댓글도 함께 삭제됩니다.`)) remove.mutate(a.id); }} title="삭제"
+                    className="inline-flex items-center rounded-full border border-red-300 px-2 py-1 text-[10px] text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300">
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+              {newToken?.id === a.id && (
+                <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 dark:border-amber-500/40 dark:bg-amber-500/10">
+                  <p className="mb-1 text-[10px] font-medium text-amber-900 dark:text-amber-200">⚠️ 새 토큰 — 지금만 표시됩니다. 기존 토큰은 무효화되었습니다.</p>
+                  <div className="flex items-center gap-2">
+                    <code className="min-w-0 flex-1 truncate rounded border border-neutral-200 bg-surface-2 px-2 py-1 font-mono text-[11px] text-neutral-900 dark:border-neutral-700 dark:text-neutral-100">{newToken.token}</code>
+                    <button type="button" onClick={() => copy(newToken.token)} className="inline-flex shrink-0 items-center gap-1 rounded-full border border-neutral-300 px-2 py-1 text-[10px] text-neutral-700 dark:border-neutral-700 dark:text-neutral-300">
+                      {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}{copied ? "복사됨" : "복사"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

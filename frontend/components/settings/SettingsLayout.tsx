@@ -14,6 +14,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiKeysManagerButton } from "@/components/settings/ApiKeysManagerButton";
+import { AgentsManagePanel } from "@/components/settings/AgentsManagePanel";
 import { AssetsManager } from "@/components/settings/AssetsManager";
 import { ClaudeIntegrationPanel } from "@/components/settings/ClaudeIntegrationPanel";
 import { NotificationChannelsButton } from "@/components/settings/NotificationChannelsButton";
@@ -109,6 +110,12 @@ const CATEGORIES: CategoryDef[] = [
         title: "Claude 연동",
         description: "AI 분석에 사용할 본인 Claude 계정과 모델 — 사용자별로 분리됩니다",
         render: () => <ClaudeIntegrationPanel />,
+      },
+      {
+        id: "my-agents",
+        title: "내 에이전트",
+        description: "내가 등록한 외부 AI 에이전트 관리 — 토큰 재발급·활성화·삭제",
+        render: () => <AgentsManagePanel />,
       },
     ],
   },

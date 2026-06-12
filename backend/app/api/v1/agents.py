@@ -14,15 +14,16 @@ import uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import get_current_user, get_optional_user
 from app.core.agent_tokens import generate_agent_token, hash_agent_token
 from app.core.database import get_db
 from app.core.rate_limit import enforce_signup_rate_limit
 from app.core.request_ip import client_ip
 from app.core.security import hash_password
-from app.models import User, UserRole
+from app.models import AnalysisResult, User, UserRole
 from app.schemas.vulnerability import CamelModel
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -63,6 +64,7 @@ class AgentRegisterIn(CamelModel):
     persona: str | None = Field(default=None, max_length=64)
     persona_prompt: str | None = Field(default=None, max_length=4000)
     avatar_emoji: str | None = Field(default=None, max_length=16)
+    bio: str | None = Field(default=None, max_length=500)
 
 
 class AgentRegisterOut(CamelModel):
@@ -72,6 +74,7 @@ class AgentRegisterOut(CamelModel):
     avatar_emoji: str | None = None
     token: str          # ⚠️ 1회만 노출 — 외부 에이전트에 저장.
     api_base: str = "/api/v1/agent"
+    owned: bool = False  # 로그인 상태로 등록 시 내 계정에 귀속됨
 
 
 class AgentMeOut(CamelModel):
@@ -87,22 +90,25 @@ class AgentMeOut(CamelModel):
 async def register_agent(
     body: AgentRegisterIn,
     request: Request,
+    me: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> AgentRegisterOut:
-    """외부 에이전트 등록 → API 토큰 1회 발급. IP 레이트리밋(가입 한도 재사용)."""
+    """외부 에이전트 등록 → API 토큰 1회 발급. 로그인 상태면 내 계정에 귀속(소유)."""
     await enforce_signup_rate_limit(client_ip(request) or "unknown")
 
     raw, token_hash = generate_agent_token()
     short = uuid.uuid4().hex[:10]
+    owner_id = me.id if me is not None else None
     agent = User(
         email=f"agent+{short}@agents.kestrel.local",
         username=f"agent_{short}",
         password_hash=hash_password(uuid.uuid4().hex),  # 로그인 불가용 무작위
         role=UserRole.USER,
         nickname=body.name.strip()[:48],
+        bio=(body.bio or None),
         email_verified=True,
         is_agent=True,
-        owner_user_id=None,
+        owner_user_id=owner_id,
         persona=(body.persona or None),
         persona_prompt=(body.persona_prompt or None),
         avatar_emoji=(body.avatar_emoji or _DEFAULT_AVATAR),
@@ -119,6 +125,7 @@ async def register_agent(
         persona=agent.persona,
         avatar_emoji=agent.avatar_emoji,
         token=raw,
+        owned=owner_id is not None,
     )
 
 
@@ -132,3 +139,131 @@ async def agent_me(agent: User = Depends(get_current_agent)) -> AgentMeOut:
         avatar_emoji=agent.avatar_emoji,
         enabled=bool(agent.agent_api_enabled),
     )
+
+
+# ─── 소유자(로그인 사용자)의 에이전트 관리 ────────────────────
+class AgentManageOut(CamelModel):
+    id: str
+    name: str
+    persona: str | None = None
+    persona_prompt: str | None = None
+    bio: str | None = None
+    avatar_emoji: str | None = None
+    enabled: bool = True
+    analyses: int = 0
+    created_at: str | None = None
+
+
+class AgentPatchIn(CamelModel):
+    name: str | None = Field(default=None, min_length=1, max_length=48)
+    persona: str | None = Field(default=None, max_length=64)
+    persona_prompt: str | None = Field(default=None, max_length=4000)
+    bio: str | None = Field(default=None, max_length=500)
+    avatar_emoji: str | None = Field(default=None, max_length=16)
+    enabled: bool | None = None
+
+
+class TokenOut(CamelModel):
+    token: str
+
+
+def _manage_out(u: User, analyses: int = 0) -> AgentManageOut:
+    return AgentManageOut(
+        id=str(u.id),
+        name=u.nickname or u.username,
+        persona=u.persona,
+        persona_prompt=u.persona_prompt,
+        bio=u.bio,
+        avatar_emoji=u.avatar_emoji or _DEFAULT_AVATAR,
+        enabled=bool(u.agent_api_enabled),
+        analyses=analyses,
+        created_at=u.created_at.isoformat() if getattr(u, "created_at", None) else None,
+    )
+
+
+async def _get_owned(agent_id: str, me: User, db: AsyncSession) -> User:
+    try:
+        aid = uuid.UUID(agent_id)
+    except (ValueError, TypeError):
+        raise HTTPException(404, detail="에이전트를 찾을 수 없습니다.") from None
+    agent = await db.scalar(select(User).where(User.id == aid, User.is_agent.is_(True)))
+    if agent is None or agent.owner_user_id != me.id:
+        raise HTTPException(404, detail="에이전트를 찾을 수 없습니다.")
+    return agent
+
+
+@router.get("/mine", response_model=list[AgentManageOut], response_model_by_alias=True)
+async def list_my_agents(
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[AgentManageOut]:
+    agents = (
+        await db.execute(
+            select(User)
+            .where(User.is_agent.is_(True), User.owner_user_id == me.id)
+            .order_by(User.created_at.asc())
+        )
+    ).scalars().all()
+    if not agents:
+        return []
+    ids = [a.id for a in agents]
+    counts = dict(
+        (
+            await db.execute(
+                select(AnalysisResult.user_id, func.count(AnalysisResult.id))
+                .where(AnalysisResult.user_id.in_(ids))
+                .group_by(AnalysisResult.user_id)
+            )
+        ).all()
+    )
+    return [_manage_out(a, int(counts.get(a.id, 0))) for a in agents]
+
+
+@router.patch("/{agent_id}", response_model=AgentManageOut, response_model_by_alias=True)
+async def update_my_agent(
+    agent_id: str,
+    body: AgentPatchIn,
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AgentManageOut:
+    agent = await _get_owned(agent_id, me, db)
+    if body.name is not None:
+        agent.nickname = body.name.strip()[:48]
+    if body.persona is not None:
+        agent.persona = body.persona or None
+    if body.persona_prompt is not None:
+        agent.persona_prompt = body.persona_prompt or None
+    if body.bio is not None:
+        agent.bio = body.bio or None
+    if body.avatar_emoji is not None:
+        agent.avatar_emoji = body.avatar_emoji or _DEFAULT_AVATAR
+    if body.enabled is not None:
+        agent.agent_api_enabled = body.enabled
+    await db.commit()
+    await db.refresh(agent)
+    return _manage_out(agent)
+
+
+@router.post("/{agent_id}/rotate-token", response_model=TokenOut, response_model_by_alias=True)
+async def rotate_agent_token(
+    agent_id: str,
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TokenOut:
+    """토큰 재발급 — 기존 토큰은 즉시 무효화되고 새 토큰을 1회 반환."""
+    agent = await _get_owned(agent_id, me, db)
+    raw, token_hash = generate_agent_token()
+    agent.agent_token_hash = token_hash
+    await db.commit()
+    return TokenOut(token=raw)
+
+
+@router.delete("/{agent_id}", status_code=204)
+async def delete_my_agent(
+    agent_id: str,
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    agent = await _get_owned(agent_id, me, db)
+    await db.delete(agent)
+    await db.commit()
