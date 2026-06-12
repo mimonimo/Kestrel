@@ -1,26 +1,32 @@
 "use client";
 
-// 내 프로필에서 "공유한 분석"을 관리 — 공개/비공개 토글, 삭제, 본문 보기.
+// 내 프로필에서 "공유한 분석"을 관리 — 단건 공개/비공개 토글·삭제·본문 보기에
+// 더해, 체크박스로 여러 건을 골라 일괄 공개/비공개/삭제까지 한다.
 // 데이터는 owner 스코프(/me/analyses)라 비공개 분석까지 포함한다.
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Globe, Loader2, Lock, ScrollText, Trash2 } from "lucide-react";
+import { CheckSquare, Globe, Loader2, Lock, ScrollText, Square, Trash2 } from "lucide-react";
 
 import { api, type AnalysisList } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import { ErrorBox } from "@/components/ui/feedback-box";
 import { AnalysisDetailModal } from "@/components/community/AnalysisDetailModal";
 import { formatRelativeKo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+type BulkAction = "public" | "private" | "delete";
+
 export function MyAnalysesManager() {
   const qc = useQueryClient();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const list = useQuery({
     queryKey: ["my-analyses"],
     queryFn: () => api.listMyAnalyses({ limit: 100 }),
     staleTime: 10_000,
   });
+  const items = useMemo(() => list.data?.items ?? [], [list.data]);
 
   // 토글/삭제 후 공개 프로필·CVE 상세·커뮤니티 피드 표시를 모두 갱신.
   const invalidateSharedViews = () => {
@@ -29,6 +35,7 @@ export function MyAnalysesManager() {
     qc.invalidateQueries({ queryKey: ["user-profile"] });
   };
 
+  // 단건 토글.
   const toggle = useMutation({
     mutationFn: ({ id, visibility }: { id: string; visibility: "public" | "private" }) =>
       api.updateAnalysisRecord(id, { visibility }),
@@ -47,6 +54,7 @@ export function MyAnalysesManager() {
     },
   });
 
+  // 단건 삭제.
   const remove = useMutation({
     mutationFn: (id: string) => api.deleteAnalysisRecord(id),
     onSuccess: (_v, id) => {
@@ -55,20 +63,137 @@ export function MyAnalysesManager() {
           ? { ...prev, items: prev.items.filter((a) => a.id !== id), total: Math.max(0, prev.total - 1) }
           : prev,
       );
+      setSelected((s) => {
+        const n = new Set(s);
+        n.delete(id);
+        return n;
+      });
       invalidateSharedViews();
     },
   });
 
-  const items = list.data?.items ?? [];
+  // 일괄 — 단건 엔드포인트를 묶어서 처리(전용 bulk API 없음).
+  const bulk = useMutation({
+    mutationFn: async ({ ids, action }: { ids: string[]; action: BulkAction }) => {
+      if (action === "delete") {
+        await Promise.all(ids.map((id) => api.deleteAnalysisRecord(id)));
+      } else {
+        await Promise.all(ids.map((id) => api.updateAnalysisRecord(id, { visibility: action })));
+      }
+      return { ids, action };
+    },
+    onSuccess: ({ ids, action }) => {
+      qc.setQueryData<AnalysisList | undefined>(["my-analyses"], (prev) => {
+        if (!prev) return prev;
+        if (action === "delete") {
+          return {
+            ...prev,
+            items: prev.items.filter((a) => !ids.includes(a.id)),
+            total: Math.max(0, prev.total - ids.length),
+          };
+        }
+        return {
+          ...prev,
+          items: prev.items.map((a) => (ids.includes(a.id) ? { ...a, visibility: action } : a)),
+        };
+      });
+      setSelected(new Set());
+      invalidateSharedViews();
+    },
+  });
+
+  const selectedIds = useMemo(() => Array.from(selected), [selected]);
+  const allSelected = items.length > 0 && selected.size === items.length;
+  const busy = bulk.isPending;
+
+  const toggleOne = (id: string) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const toggleAll = () =>
+    setSelected((s) => (s.size === items.length ? new Set() : new Set(items.map((a) => a.id))));
+
+  const runBulk = (action: BulkAction) => {
+    if (selectedIds.length === 0) return;
+    if (action === "delete" && !confirm(`선택한 ${selectedIds.length}개 분석을 삭제할까요? 되돌릴 수 없습니다.`))
+      return;
+    bulk.mutate({ ids: selectedIds, action });
+  };
 
   return (
     <section className="mt-8">
-      <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
-        <ScrollText className="h-4 w-4" /> 내 분석 관리 ({items.length})
-      </h2>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+          <ScrollText className="h-4 w-4" /> 내 분석 관리 ({items.length})
+        </h2>
+        {items.length > 0 && (
+          <button
+            type="button"
+            onClick={toggleAll}
+            className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-surface-2"
+          >
+            {allSelected ? <CheckSquare className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" /> : <Square className="h-3.5 w-3.5" />}
+            전체 선택
+          </button>
+        )}
+      </div>
       <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-500">
-        공개로 전환한 분석은 해당 CVE 상세의 “커뮤니티 분석”과 내 프로필에 노출됩니다. 언제든 비공개로 되돌리거나 삭제할 수 있어요.
+        공개로 전환한 분석은 해당 CVE 상세의 “커뮤니티 분석”과 내 프로필에 노출됩니다. 체크해서 여러 건을 한 번에 공개·비공개·삭제할 수 있어요.
       </p>
+
+      {/* 일괄 액션 바 — 선택이 있을 때만 */}
+      {selected.size > 0 && (
+        <div className="sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-sky-200 bg-sky-50/90 px-3 py-2 backdrop-blur dark:border-sky-500/30 dark:bg-sky-500/10">
+          <span className="text-xs font-medium text-sky-800 dark:text-sky-200">
+            {selected.size}개 선택됨
+          </span>
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => runBulk("public")}
+              disabled={busy}
+              className="gap-1 rounded-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+            >
+              {busy && bulk.variables?.action === "public" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Globe className="h-3 w-3" />}
+              일괄 공개
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => runBulk("private")}
+              disabled={busy}
+              className="gap-1 rounded-full"
+            >
+              {busy && bulk.variables?.action === "private" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Lock className="h-3 w-3" />}
+              일괄 비공개
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => runBulk("delete")}
+              disabled={busy}
+              className="gap-1 rounded-full border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/40"
+            >
+              {busy && bulk.variables?.action === "delete" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+              일괄 삭제
+            </Button>
+            <button
+              type="button"
+              onClick={() => setSelected(new Set())}
+              disabled={busy}
+              className="rounded-full px-2 py-1 text-xs text-neutral-600 hover:bg-white/60 disabled:opacity-60 dark:text-neutral-300 dark:hover:bg-white/10"
+            >
+              선택 해제
+            </button>
+          </div>
+        </div>
+      )}
 
       {list.isPending ? (
         <div className="flex items-center gap-2 py-6 text-sm text-neutral-500">
@@ -87,11 +212,32 @@ export function MyAnalysesManager() {
             const next = isPublic ? "private" : "public";
             const toggling = toggle.isPending && toggle.variables?.id === a.id;
             const deleting = remove.isPending && remove.variables === a.id;
+            const checked = selected.has(a.id);
             return (
               <li
                 key={a.id}
-                className="flex items-start gap-3 rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-surface-1"
+                className={cn(
+                  "flex items-start gap-2 rounded-lg border bg-white p-3 dark:bg-surface-1",
+                  checked
+                    ? "border-sky-300 ring-1 ring-sky-200 dark:border-sky-500/50 dark:ring-sky-500/20"
+                    : "border-neutral-200 dark:border-neutral-800",
+                )}
               >
+                {/* 선택 체크박스 */}
+                <button
+                  type="button"
+                  onClick={() => toggleOne(a.id)}
+                  aria-label={checked ? "선택 해제" : "선택"}
+                  aria-pressed={checked}
+                  className="mt-0.5 shrink-0 text-neutral-400 transition-colors hover:text-sky-600 dark:hover:text-sky-400"
+                >
+                  {checked ? (
+                    <CheckSquare className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+                  ) : (
+                    <Square className="h-4 w-4" />
+                  )}
+                </button>
+
                 {/* 본문 — 클릭 시 상세 모달 */}
                 <button
                   type="button"
@@ -125,7 +271,7 @@ export function MyAnalysesManager() {
                   </p>
                 </button>
 
-                {/* 관리 액션 */}
+                {/* 단건 관리 액션 */}
                 <div className="flex shrink-0 flex-col items-stretch gap-1.5">
                   <button
                     type="button"
