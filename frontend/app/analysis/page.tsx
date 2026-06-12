@@ -433,7 +433,7 @@ function AnalysisTab() {
                     </button>
                   )}
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-baseline gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                         {e.cveId}
                       </span>
@@ -505,7 +505,7 @@ function RunningCard({ cveId, startedAt }: { cveId: string; startedAt: number })
       <div className="flex items-start gap-3">
         <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-violet-600 dark:text-violet-400" />
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">
               {cveId}
             </span>
@@ -1061,7 +1061,7 @@ function BookmarksTab() {
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                     {v.cveId}
                   </span>
@@ -1144,7 +1144,7 @@ function TicketsTab() {
           >
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                     {t.cveId}
                   </span>
@@ -1202,7 +1202,7 @@ function CommentsTab() {
               href={target as never}
               className="group block rounded-xl border border-neutral-200 bg-white p-4 transition-all duration-150 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md hover:shadow-emerald-500/10 active:translate-y-0 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-emerald-700"
             >
-              <div className="flex flex-wrap items-baseline gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">
                   {targetLabel}
                 </span>
