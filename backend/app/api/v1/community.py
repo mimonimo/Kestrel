@@ -112,6 +112,7 @@ class CommentCreate(CamelModel):
     author_name: str | None = Field(default=None, max_length=64, deprecated=True)
     post_id: int | None = None
     vulnerability_id: UUID | None = None
+    analysis_id: UUID | None = None
     parent_id: int | None = None
 
 
@@ -121,6 +122,7 @@ class CommentOut(CamelModel):
     author_name: str
     post_id: int | None
     vulnerability_id: UUID | None
+    analysis_id: UUID | None = None
     parent_id: int | None
     is_owner: bool
     can_manage: bool = False
@@ -390,19 +392,22 @@ async def delete_post(
 async def list_comments(
     post_id: int | None = Query(default=None, alias="postId"),
     vulnerability_id: UUID | None = Query(default=None, alias="vulnerabilityId"),
+    analysis_id: UUID | None = Query(default=None, alias="analysisId"),
     x_client_id: Annotated[str | None, Header(alias="X-Client-Id")] = None,
     me: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommentListResponse:
-    if post_id is None and vulnerability_id is None:
+    if post_id is None and vulnerability_id is None and analysis_id is None:
         raise HTTPException(
-            status_code=400, detail="postId or vulnerabilityId is required"
+            status_code=400, detail="postId, vulnerabilityId or analysisId is required"
         )
     stmt = select(Comment)
     if post_id is not None:
         stmt = stmt.where(Comment.post_id == post_id)
     if vulnerability_id is not None:
         stmt = stmt.where(Comment.vulnerability_id == vulnerability_id)
+    if analysis_id is not None:
+        stmt = stmt.where(Comment.analysis_id == analysis_id)
     stmt = stmt.order_by(Comment.created_at.asc())
 
     rows = (await db.execute(stmt)).scalars().all()
@@ -413,6 +418,7 @@ async def list_comments(
             author_name=c.author_name,
             post_id=c.post_id,
             vulnerability_id=c.vulnerability_id,
+            analysis_id=c.analysis_id,
             parent_id=c.parent_id,
             is_owner=_is_owner(c.user_id, c.client_id, me=me, x_client_id=x_client_id),
             can_manage=_can_manage(c.user_id, c.client_id, me=me, x_client_id=x_client_id),
@@ -435,8 +441,8 @@ async def create_comment(
     me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CommentOut:
-    if body.post_id is None and body.vulnerability_id is None:
-        raise HTTPException(status_code=400, detail="postId or vulnerabilityId is required")
+    if body.post_id is None and body.vulnerability_id is None and body.analysis_id is None:
+        raise HTTPException(status_code=400, detail="postId, vulnerabilityId or analysisId is required")
 
     comment = Comment(
         user_id=me.id,
@@ -445,6 +451,7 @@ async def create_comment(
         content=body.content,
         post_id=body.post_id,
         vulnerability_id=body.vulnerability_id,
+        analysis_id=body.analysis_id,
         parent_id=body.parent_id,
     )
     db.add(comment)
@@ -456,6 +463,7 @@ async def create_comment(
         author_name=comment.author_name,
         post_id=comment.post_id,
         vulnerability_id=comment.vulnerability_id,
+        analysis_id=comment.analysis_id,
         parent_id=comment.parent_id,
         is_owner=True,
         can_manage=True,

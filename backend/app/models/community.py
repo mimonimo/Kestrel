@@ -156,6 +156,13 @@ class Comment(Base, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     client_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # 분석 기록별 댓글 — 특정 AI 분석(analysis_results.id)에 달리는 댓글.
+    analysis_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("analysis_results.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     author_name: Mapped[str] = mapped_column(String(64), nullable=False, default="익명")
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("comments.id", ondelete="CASCADE"))
     content: Mapped[str] = mapped_column(Text, nullable=False)

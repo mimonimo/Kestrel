@@ -15,17 +15,18 @@ import { formatRelativeKo } from "@/lib/format";
 interface Props {
   postId?: number;
   vulnerabilityId?: string;
+  analysisId?: string;
 }
 
-export function CommentThread({ postId, vulnerabilityId }: Props) {
+export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const queryKey = ["community-comments", { postId, vulnerabilityId }];
+  const queryKey = ["community-comments", { postId, vulnerabilityId, analysisId }];
 
   const list = useQuery({
     queryKey,
-    queryFn: () => api.listComments({ postId, vulnerabilityId }),
-    enabled: postId !== undefined || !!vulnerabilityId,
+    queryFn: () => api.listComments({ postId, vulnerabilityId, analysisId }),
+    enabled: postId !== undefined || !!vulnerabilityId || !!analysisId,
     staleTime: 5_000,
   });
 
@@ -42,6 +43,7 @@ export function CommentThread({ postId, vulnerabilityId }: Props) {
         content: content.trim(),
         postId,
         vulnerabilityId,
+        analysisId,
       }),
     onSuccess: (created) => {
       recordCommentHistory({

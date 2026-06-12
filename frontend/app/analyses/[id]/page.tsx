@@ -3,6 +3,7 @@ import { ChevronLeft, ExternalLink, Sparkles, User as UserIcon } from "lucide-re
 
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { CopyLinkButton } from "@/components/ui/copy-link-button";
+import { CommentThread } from "@/components/community/CommentThread";
 import { fetchAnalysisServer, ServerApiError } from "@/lib/server-api";
 
 interface Props {
@@ -119,6 +120,11 @@ export default async function SharedAnalysisPage({ params }: Props) {
             ※ 본 분석은 Kestrel AI 심층 분석 결과입니다. 참고용이며, 실제 대응 전에는 전문가 검토가 필요합니다.
           </footer>
         </article>
+      )}
+      {analysis && (
+        <div className="mt-8">
+          <CommentThread analysisId={analysis.id} />
+        </div>
       )}
     </div>
   );

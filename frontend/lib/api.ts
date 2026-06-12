@@ -503,10 +503,11 @@ export const api = {
       headers: clientHeaders(),
     }),
 
-  listComments: (params: { postId?: number; vulnerabilityId?: string }) => {
+  listComments: (params: { postId?: number; vulnerabilityId?: string; analysisId?: string }) => {
     const sp = new URLSearchParams();
     if (params.postId !== undefined) sp.set("postId", String(params.postId));
     if (params.vulnerabilityId) sp.set("vulnerabilityId", params.vulnerabilityId);
+    if (params.analysisId) sp.set("analysisId", params.analysisId);
     return request<CommentListResponse>(`/community/comments?${sp.toString()}`, {
       headers: clientHeaders(),
     });
@@ -516,6 +517,7 @@ export const api = {
     authorName?: string;
     postId?: number;
     vulnerabilityId?: string;
+    analysisId?: string;
     parentId?: number;
   }) =>
     request<CommunityComment>(`/community/comments`, {
