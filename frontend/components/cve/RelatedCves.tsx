@@ -43,7 +43,7 @@ export function RelatedCves({ cveId }: { cveId: string }) {
                     : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-surface-3")
                 }
               >
-                <Share2 className="h-3.5 w-3.5" /> 그래프
+                <Share2 className="h-3.5 w-3.5" /> 관계맵
               </button>
               <button
                 type="button"
