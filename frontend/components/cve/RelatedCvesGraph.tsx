@@ -62,6 +62,7 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
   const alphaRef = useRef(1);
   const rafRef = useRef<number | null>(null);
   const dragRef = useRef<{ i: number; moved: boolean } | null>(null);
+  const tickRef = useRef<() => void>(() => {});
   const [, setFrame] = useState(0);
 
   // 노드 초기화(items 변경 시).
@@ -88,14 +89,13 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
     const LINK = 104;
     const LINK_K = 0.06;
     const REP = 3000;
-    const DAMP = 0.9;
+    const DAMP = 0.86;
     const PAD = 6;
-    let t = 0;
 
     const tick = () => {
       const nodes = nodesRef.current;
       const drag = dragRef.current;
-      t += 1;
+      const alpha = alphaRef.current;
       for (let i = 0; i < nodes.length; i++) {
         if (drag && drag.i === i) continue; // 드래그 중인 노드는 물리 적용 안 함
         const a = nodes[i];
@@ -130,18 +130,22 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
           fx += ((a.x - CX) / dCenter) * (38 - dCenter) * 0.6;
           fy += ((a.y - CY) / dCenter) * (38 - dCenter) * 0.6;
         }
-        // 통통 튀는 느낌 — 은은한 상시 흔들림.
-        fx += Math.sin(t * 0.045 + a.phase) * 0.5;
-        fy += Math.cos(t * 0.038 + a.phase) * 0.5;
-        a.vx = (a.vx + fx) * DAMP;
-        a.vy = (a.vy + fy) * DAMP;
+        a.vx = (a.vx + fx * alpha) * DAMP;
+        a.vy = (a.vy + fy * alpha) * DAMP;
         a.x = Math.max(a.hw + PAD, Math.min(VW - a.hw - PAD, a.x + a.vx));
         a.y = Math.max(14 + PAD, Math.min(VH - 14 - PAD, a.y + a.vy));
       }
+      // 평소엔 정지. 상호작용(드래그) 중에만 활성 유지, 끝나면 부드럽게 감쇠 후 멈춤.
+      alphaRef.current = drag ? Math.max(alpha, 0.5) : alpha * 0.92;
       setFrame((f) => f + 1);
-      // 상시 가동(통통) — 컴포넌트 언마운트 시 정리.
-      rafRef.current = requestAnimationFrame(tick);
+      if (alphaRef.current > 0.012 || drag) {
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        alphaRef.current = 0;
+        rafRef.current = null;
+      }
     };
+    tickRef.current = tick;
     rafRef.current = requestAnimationFrame(tick);
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -160,15 +164,15 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
     return { x: loc.x, y: loc.y };
   };
 
+  const kick = (a: number) => {
+    alphaRef.current = Math.max(alphaRef.current, a);
+    if (rafRef.current == null) rafRef.current = requestAnimationFrame(tickRef.current);
+  };
+
   const onDown = (i: number) => (e: React.PointerEvent) => {
     (e.target as Element).setPointerCapture?.(e.pointerId);
     dragRef.current = { i, moved: false };
-    alphaRef.current = Math.max(alphaRef.current, 0.3);
-    if (rafRef.current == null) {
-      // 드래그 시작 시 effect 의 tick 이 멈춰 있으면 재시작이 필요 — alpha 재가열 후
-      // setFrame 으로 리렌더만 일으키고, 위치는 onMove 에서 직접 갱신.
-      setFrame((f) => f + 1);
-    }
+    kick(0.6);
   };
   const onMove = (e: React.PointerEvent) => {
     const drag = dragRef.current;
@@ -182,6 +186,7 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
     node.vx = 0;
     node.vy = 0;
     drag.moved = true;
+    kick(0.5);
     setFrame((f) => f + 1);
   };
   const onUp = (cveId: string) => (e: React.PointerEvent) => {
@@ -191,8 +196,8 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
     if (drag && !drag.moved) {
       router.push(`/cve/${cveId}` as Route);
     } else {
-      // 드래그 후 살짝 재가열해 주변 노드가 재배치되게.
-      alphaRef.current = Math.max(alphaRef.current, 0.15);
+      // 드래그 후 살짝 재가열해 주변 노드가 자연스럽게 정착.
+      kick(0.4);
     }
   };
 
