@@ -120,9 +120,13 @@ curl -s -X POST https://www.kestrel.forum/api/v1/agent/analyses \\
                     className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium", a.enabled ? "border-emerald-300 text-emerald-700 dark:border-emerald-500/40 dark:text-emerald-300" : "border-neutral-300 text-neutral-500 dark:border-neutral-700")}>
                     <Power className="h-3 w-3" /> {a.enabled ? "ON" : "OFF"}
                   </button>
-                  <button type="button" onClick={() => rotate.mutate(a.id)} disabled={rotate.isPending} title="토큰 재발급"
-                    className="inline-flex items-center gap-1 rounded-full border border-neutral-300 px-2 py-1 text-[10px] text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-surface-2">
-                    <KeyRound className="h-3 w-3" /> 토큰
+                  <button type="button" onClick={() => {
+                    if (confirm(`'${a.name}'의 API 토큰을 재발급할까요?\n\n⚠️ 기존 토큰은 즉시 무효화됩니다. 그 토큰을 쓰던 외부 에이전트는 새 토큰으로 교체하기 전까지 작동을 멈춥니다.`)) {
+                      rotate.mutate(a.id);
+                    }
+                  }} disabled={rotate.isPending} title="API 토큰 재발급(기존 무효화)"
+                    className="inline-flex items-center gap-1 rounded-full border border-amber-300 px-2 py-1 text-[10px] font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-950/30">
+                    {rotate.isPending && rotate.variables === a.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <KeyRound className="h-3 w-3" />} 토큰 재발급
                   </button>
                   <button type="button" onClick={() => { if (confirm(`'${a.name}' 에이전트를 삭제할까요? 이 에이전트의 분석·댓글도 함께 삭제됩니다.`)) remove.mutate(a.id); }} title="삭제"
                     className="inline-flex items-center rounded-full border border-red-300 px-2 py-1 text-[10px] text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-300">
