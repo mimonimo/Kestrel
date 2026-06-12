@@ -95,13 +95,25 @@ function renderInline(text: string): ReactNode[] {
     let m: RegExpExecArray | null;
     while ((m = re.exec(t)) !== null) {
       if (m.index > last) out.push(...bold(t.slice(last, m.index)));
+      const raw = stripCode(m[0]);
       out.push(
-        <code
-          key={nextKey()}
-          className="rounded bg-neutral-200/70 px-1 py-0.5 font-mono text-[0.85em] text-violet-700 dark:bg-surface-3 dark:text-violet-300"
-        >
-          {stripCode(m[0])}
-        </code>,
+        raw.includes("\n") ? (
+          // 줄바꿈이 든 인라인 코드(모델이 백틱 안에 멀티라인 패치를 넣는 경우)
+          // 는 한 줄로 뭉개지지 않게 블록(pre-wrap)으로 렌더한다.
+          <code
+            key={nextKey()}
+            className="my-1 block overflow-x-auto whitespace-pre-wrap rounded-md bg-neutral-100 p-2 font-mono text-[0.8em] leading-relaxed text-neutral-800 dark:bg-surface-3 dark:text-neutral-100"
+          >
+            {raw}
+          </code>
+        ) : (
+          <code
+            key={nextKey()}
+            className="rounded bg-neutral-200/70 px-1 py-0.5 font-mono text-[0.85em] text-violet-700 dark:bg-surface-3 dark:text-violet-300"
+          >
+            {raw}
+          </code>
+        ),
       );
       last = m.index + m[0].length;
     }
@@ -365,9 +377,24 @@ export function MarkdownLite({ source, className }: { source: string; className?
     if (/^\s*\d+\.\s+/.test(line)) {
       flushPara();
       const items: string[] = [];
-      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*\d+\.\s+/, ""));
-        i++;
+      while (i < lines.length) {
+        const l = lines[i];
+        if (/^\s*\d+\.\s+/.test(l)) {
+          items.push(l.replace(/^\s*\d+\.\s+/, ""));
+          i++;
+        } else if (
+          items.length > 0 &&
+          l.trim() !== "" &&
+          !/^\s*[-*]\s+/.test(l) &&
+          !/^#{1,6}\s+/.test(l) &&
+          !/^---+\s*$/.test(l) &&
+          !/^\s*```+/.test(l)
+        ) {
+          items[items.length - 1] += "\n" + l;
+          i++;
+        } else {
+          break;
+        }
       }
       i--;
       cur().blocks.push(
@@ -388,9 +415,26 @@ export function MarkdownLite({ source, className }: { source: string; className?
     if (/^\s*[-*]\s+/.test(line)) {
       flushPara();
       const items: string[] = [];
-      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*[-*]\s+/, ""));
-        i++;
+      while (i < lines.length) {
+        const l = lines[i];
+        if (/^\s*[-*]\s+/.test(l)) {
+          items.push(l.replace(/^\s*[-*]\s+/, ""));
+          i++;
+        } else if (
+          items.length > 0 &&
+          l.trim() !== "" &&
+          !/^\s*\d+\.\s+/.test(l) &&
+          !/^#{1,6}\s+/.test(l) &&
+          !/^---+\s*$/.test(l) &&
+          !/^\s*```+/.test(l)
+        ) {
+          // 이전 항목이 이어지는 줄(백틱 안 멀티라인 코드 등으로 줄바꿈된 경우)
+          // — 줄 단위로 끊지 말고 합친다.
+          items[items.length - 1] += "\n" + l;
+          i++;
+        } else {
+          break;
+        }
       }
       i--;
       cur().blocks.push(
