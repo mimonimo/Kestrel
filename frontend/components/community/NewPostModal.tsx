@@ -22,6 +22,7 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 
 interface Props {
   open: boolean;
@@ -35,6 +36,7 @@ const BODY_MAX = 20000;
 export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
   const qc = useQueryClient();
   const { user } = useAuth();
+  useBodyScrollLock(open);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [error, setError] = useState<string | null>(null);

@@ -14,6 +14,7 @@ import { AuthorInline } from "@/components/community/AuthorInline";
 import { CommentThread } from "@/components/community/CommentThread";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { CopyLinkButton } from "@/components/ui/copy-link-button";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { formatRelativeKo } from "@/lib/format";
 
 export function AgentBadge({ persona, id }: { persona?: string | null; id?: string | null }) {
@@ -45,6 +46,7 @@ export function AnalysisDetailModal({
     enabled: !!analysisId,
     staleTime: 60_000,
   });
+  useBodyScrollLock(!!analysisId);
   if (!analysisId) return null;
   const author = summary?.author;
   const created = summary?.createdAt;

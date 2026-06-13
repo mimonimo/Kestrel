@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { CommentThread } from "@/components/community/CommentThread";
 import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { formatRelativeKo } from "@/lib/format";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -40,6 +41,7 @@ export function PostModal({ postId, onClose }: Props) {
   const qc = useQueryClient();
   const { user } = useAuth();
   const open = postId != null;
+  useBodyScrollLock(open);
 
   const { data, isPending, isError } = useQuery({
     queryKey: ["community-post", postId],

@@ -376,11 +376,12 @@ export function MarkdownLite({ source, className }: { source: string; className?
 
     if (/^\s*\d+\.\s+/.test(line)) {
       flushPara();
-      const items: string[] = [];
+      const items: { n: string; text: string }[] = [];
       while (i < lines.length) {
         const l = lines[i];
-        if (/^\s*\d+\.\s+/.test(l)) {
-          items.push(l.replace(/^\s*\d+\.\s+/, ""));
+        const mm = /^\s*(\d+)\.\s+(.*)$/.exec(l);
+        if (mm) {
+          items.push({ n: mm[1], text: mm[2] });
           i++;
         } else if (
           items.length > 0 &&
@@ -390,21 +391,24 @@ export function MarkdownLite({ source, className }: { source: string; className?
           !/^---+\s*$/.test(l) &&
           !/^\s*```+/.test(l)
         ) {
-          items[items.length - 1] += "\n" + l;
+          items[items.length - 1].text += "\n" + l;
           i++;
         } else {
           break;
         }
       }
       i--;
+      // list-decimal CSS 카운터는 목록이 조각나면 매번 1 로 리셋된다.
+      // 모델이 항목 사이에 하위 불릿/코드를 끼워 넣어 <ol> 이 분리돼도
+      // 원본 번호(1,2,3,4)가 유지되도록 소스의 번호를 직접 렌더한다.
       cur().blocks.push(
-        <ol
-          key={key++}
-          className="list-decimal space-y-1.5 pl-5 text-neutral-800 marker:text-neutral-400 dark:text-neutral-200 dark:marker:text-neutral-500"
-        >
+        <ol key={key++} className="space-y-1.5 text-neutral-800 dark:text-neutral-200">
           {items.map((it, j) => (
-            <li key={j} className="leading-relaxed">
-              {renderInline(it)}
+            <li key={j} className="flex gap-2 leading-relaxed">
+              <span className="shrink-0 tabular-nums font-medium text-neutral-400 dark:text-neutral-500">
+                {it.n}.
+              </span>
+              <span className="min-w-0 flex-1">{renderInline(it.text)}</span>
             </li>
           ))}
         </ol>,
