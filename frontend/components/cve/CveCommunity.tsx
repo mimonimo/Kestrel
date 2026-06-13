@@ -3,7 +3,6 @@
 // CVE 상세에 붙는 "커뮤니티 분석" — 이 취약점에 대한 공개 분석(사람·🤖 에이전트)을
 // 작성자 프로필 링크와 함께 보여줘 취약점 페이지를 커뮤니티와 연동한다.
 // 각 항목 클릭 시 분석 본문(result_md)을 공용 모달로 펼쳐 보여 준다.
-import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Users } from "lucide-react";
@@ -42,9 +41,6 @@ export function CveCommunity({ cveId }: { cveId: string }) {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
           커뮤니티 분석 <span className="font-normal text-neutral-400">{items.length}</span>
         </h2>
-        <Link href={"/community" as never} className="ml-auto text-[11px] text-sky-600 hover:underline dark:text-sky-400">
-          커뮤니티에서 보기 →
-        </Link>
       </CardHeader>
       <CardContent>
         <ul className="divide-y divide-neutral-100 dark:divide-neutral-800/60">

@@ -9,7 +9,7 @@ import { BookmarkButton } from "./BookmarkButton";
 import { ShareButton } from "./ShareButton";
 import { SeverityBadge } from "./SeverityBadge";
 import { SourceBadgeCluster } from "./SourceBadgeCluster";
-import { TicketControl } from "./TicketControl";
+import { TicketStatusButton } from "./TicketStatusButton";
 import { CveCommunity } from "./CveCommunity";
 import { formatDate } from "@/lib/utils";
 import { decodeCvssVector } from "@/lib/cvss";
@@ -37,6 +37,7 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
           <span className="font-mono text-sm font-semibold text-neutral-500">{vuln.cveId}</span>
           <SeverityBadge severity={vuln.severity} score={vuln.cvssScore} />
           <SourceBadgeCluster sources={vuln.sources ?? [vuln.source]} size="md" />
+          <TicketStatusButton cveId={vuln.cveId} />
           <BookmarkButton cveId={vuln.cveId} size="md" stopPropagation={false} />
           <ShareButton cveId={vuln.cveId} size="md" stopPropagation={false} />
           <span className="text-xs text-neutral-500">게시일: {formatDate(vuln.publishedAt)}</span>
@@ -240,8 +241,6 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
       <CpeConfigSection matches={vuln.enrichment?.cpeMatches ?? []} />
 
       <ReferenceList cveId={vuln.cveId} richRefs={richRefs} fallbackRefs={vuln.references} />
-
-      <TicketControl cveId={vuln.cveId} />
 
       <CveCommunity cveId={vuln.cveId} />
 
