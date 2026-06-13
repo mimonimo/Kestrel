@@ -61,11 +61,10 @@ interface TabDef {
 }
 
 const TABS: TabDef[] = [
-  { key: "analysis", label: "AI 분석", icon: Sparkles },
+  { key: "feed", label: "분석 피드", icon: Rss },
   { key: "compare", label: "패턴 비교", icon: GitCompare },
   { key: "bookmarks", label: "즐겨찾기", icon: Star },
   { key: "tickets", label: "검토", icon: ClipboardList },
-  { key: "feed", label: "분석 피드", icon: Rss },
 ];
 
 function formatAge(epochMs: number): string {
@@ -86,7 +85,7 @@ function formatFull(epochMs: number): string {
 }
 
 export default function AnalysisPage() {
-  const [tab, setTab] = useState<TabKey>("analysis");
+  const [tab, setTab] = useState<TabKey>("feed");
 
   // 진행 중인 비교 분석이 있으면 비교 탭으로 자동 전환 — 비교 탭이
   // 마운트돼야 안에서 자동 재요청이 발화되기 때문. useState initializer

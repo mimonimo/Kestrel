@@ -8,12 +8,15 @@
  * 검색 + 작성자 유형 필터를 제공하고, 카드 클릭 시 공용 모달로 본문·댓글을 본다.
  */
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDown,
   ChevronRight,
   Clock,
   Folder,
+  Globe,
+  Loader2,
+  Lock,
   Search,
   ShieldAlert,
   Sparkles,
@@ -22,6 +25,7 @@ import {
 } from "lucide-react";
 
 import { api, type AnalysisSummary } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { ErrorBox } from "@/components/ui/feedback-box";
 import { AuthorInline } from "@/components/community/AuthorInline";
 import {
@@ -54,6 +58,8 @@ const SEVERITY_TONE: Record<string, string> = {
 };
 
 export function AnalysisFeed() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
   const [openId, setOpenId] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>("latest");
   const [filterKey, setFilterKey] = useState<string | null>(null);
@@ -61,17 +67,47 @@ export function AnalysisFeed() {
   const [expandedAuthors, setExpandedAuthors] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [agentFilter, setAgentFilter] = useState<"all" | "agent" | "human">("all");
+  // 범위: 전체(남 공개 + 내 분석) / 내 분석만.
+  const [scope, setScope] = useState<"all" | "mine">("all");
 
-  const list = useQuery({
+  const community = useQuery({
     queryKey: ["community-analyses"],
     queryFn: () => api.listCommunityAnalyses({ limit: 50 }),
     staleTime: 30_000,
   });
+  const mine = useQuery({
+    queryKey: ["my-analyses"],
+    queryFn: () => api.listMyAnalyses({ limit: 100 }),
+    staleTime: 30_000,
+    enabled: !!user,
+  });
+
+  // 내 분석(공개/비공개) + 남의 공개 분석을 합쳐 중복 제거.
+  const allItems = useMemo<AnalysisSummary[]>(() => {
+    const mineItems = mine.data?.items ?? [];
+    if (scope === "mine") return mineItems;
+    const seen = new Set(mineItems.map((a) => a.id));
+    const others = (community.data?.items ?? []).filter((a) => !seen.has(a.id));
+    return [...mineItems, ...others].sort(
+      (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
+    );
+  }, [community.data, mine.data, scope]);
+
+  const myUsername = user?.username;
+  const share = useMutation({
+    mutationFn: ({ id, visibility }: { id: string; visibility: "public" | "private" }) =>
+      api.updateAnalysisRecord(id, { visibility }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["community-analyses"] });
+      qc.invalidateQueries({ queryKey: ["my-analyses"] });
+    },
+  });
+
+  const list = scope === "mine" ? mine : community;
 
   const visibleItems = useMemo(() => {
-    if (!list.data) return [] as AnalysisSummary[];
     const q = search.trim().toLowerCase();
-    return list.data.items.filter((a) => {
+    return allItems.filter((a) => {
       if (agentFilter === "agent" && !a.author.isAgent) return false;
       if (agentFilter === "human" && a.author.isAgent) return false;
       if (q) {
@@ -81,7 +117,7 @@ export function AnalysisFeed() {
       }
       return true;
     });
-  }, [list.data, search, agentFilter]);
+  }, [allItems, search, agentFilter]);
 
   const grouped = useMemo(() => {
     const buckets = new Map<string, { label: string; items: AnalysisSummary[] }>();
@@ -171,6 +207,28 @@ export function AnalysisFeed() {
         )}
       </div>
       <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+        {([["all", "전체"], ["mine", "내 분석"]] as const).map(([v, l]) => (
+          <button
+            key={v}
+            type="button"
+            disabled={v === "mine" && !user}
+            onClick={() => {
+              setScope(v);
+              setFilterKey(null);
+            }}
+            className={cn(
+              "rounded-full border px-2.5 py-1 font-medium transition-colors disabled:opacity-40",
+              scope === v
+                ? "border-violet-400 bg-violet-100 text-violet-800 dark:border-violet-500/50 dark:bg-violet-500/20 dark:text-violet-200"
+                : "border-neutral-300 text-neutral-600 hover:border-violet-300 dark:border-neutral-700 dark:text-neutral-400",
+            )}
+            aria-pressed={scope === v}
+            title={v === "mine" && !user ? "로그인 후 이용" : undefined}
+          >
+            {l}
+          </button>
+        ))}
+        <span className="mx-1 h-3 w-px bg-neutral-300 dark:bg-neutral-700" />
         {([["all", "전체"], ["agent", "🤖 에이전트"], ["human", "사람"]] as const).map(([v, l]) => (
           <button
             key={v}
@@ -259,7 +317,7 @@ export function AnalysisFeed() {
                 : "border-neutral-300 text-neutral-700 hover:border-violet-300 hover:text-violet-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-violet-500/40 dark:hover:text-violet-200",
             )}
           >
-            전체 <span className="tabular-nums opacity-70">({list.data?.items.length ?? 0})</span>
+            전체 <span className="tabular-nums opacity-70">({allItems.length})</span>
           </button>
           {grouped.map((g) => (
             <button
@@ -309,7 +367,7 @@ export function AnalysisFeed() {
       </>
     );
   }
-  if (!list.data || list.data.items.length === 0) {
+  if (!list.data || allItems.length === 0) {
     return (
       <>
         {header}
@@ -319,73 +377,117 @@ export function AnalysisFeed() {
             <Sparkles className="h-6 w-6 text-violet-700 dark:text-violet-300" />
           </div>
           <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-            아직 공유된 분석이 없어요
+            {scope === "mine" ? "아직 내 분석이 없어요" : "아직 공유된 분석이 없어요"}
           </h3>
           <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
-            CVE 상세에서 AI 심층 분석을 실행한 뒤, 내 프로필에서 공개로 전환하면 여기에 모입니다.
+            CVE 상세에서 AI 심층 분석을 실행하면 여기에 모이고, 공유 토글로 커뮤니티에 공개할 수 있어요.
           </p>
         </div>
       </>
     );
   }
 
-  const renderCard = (a: AnalysisSummary) => (
-    <li key={a.id}>
-      <button
-        type="button"
-        onClick={() => setOpenId(a.id)}
-        className="block w-full rounded-lg border border-neutral-200 bg-white p-4 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md hover:shadow-violet-900/5 active:translate-y-0 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-violet-500/40"
+  const renderCard = (a: AnalysisSummary) => {
+    const isMine = !!myUsername && a.author.username === myUsername;
+    const isPublic = a.visibility === "public";
+    return (
+      <li
+        key={a.id}
+        className="overflow-hidden rounded-lg border border-neutral-200 bg-white transition-all duration-150 hover:border-violet-300 hover:shadow-md hover:shadow-violet-900/5 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-violet-500/40"
       >
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-          <span className="rounded-full bg-violet-100 px-2 py-0.5 font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">
-            {a.cveId}
-          </span>
-          <span className="text-neutral-500 dark:text-neutral-500">·</span>
-          <span onClick={(e) => e.stopPropagation()} className="contents">
-            <AuthorInline
-              author={a.author}
-              className="font-medium text-neutral-800 dark:text-neutral-200"
-            />
-          </span>
-          {a.author.isAgent && <AgentBadge persona={a.author.persona} id={a.author.id} />}
-          <span className="text-neutral-500 dark:text-neutral-500">·</span>
-          <span className="tabular-nums text-neutral-600 dark:text-neutral-500">
-            {formatRelativeKo(a.createdAt)}
-          </span>
-          {a.cveSeverity && (
-            <>
-              <span className="text-neutral-500 dark:text-neutral-500">·</span>
-              <span
-                className={cn(
-                  "rounded-full px-2 py-0.5 font-medium",
-                  SEVERITY_TONE[a.cveSeverity] ||
-                    "bg-surface-2 text-neutral-700 dark:text-neutral-300",
-                )}
-              >
-                {SEVERITY_LABEL[a.cveSeverity] || a.cveSeverity}
-              </span>
-            </>
-          )}
-          {a.cveTypes.slice(0, 2).map((t) => (
-            <span
-              key={t}
-              className="rounded-full bg-violet-50 px-2 py-0.5 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300"
-            >
-              {t}
+        <button
+          type="button"
+          onClick={() => setOpenId(a.id)}
+          className="block w-full p-4 text-left"
+        >
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+            <span className="rounded-full bg-violet-100 px-2 py-0.5 font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">
+              {a.cveId}
             </span>
-          ))}
-        </div>
-        {a.title && (
-          <h3 className="mt-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-            {a.title}
-          </h3>
+            <span className="text-neutral-500 dark:text-neutral-500">·</span>
+            <span onClick={(e) => e.stopPropagation()} className="contents">
+              <AuthorInline
+                author={a.author}
+                className="font-medium text-neutral-800 dark:text-neutral-200"
+              />
+            </span>
+            {a.author.isAgent && <AgentBadge persona={a.author.persona} id={a.author.id} />}
+            <span className="text-neutral-500 dark:text-neutral-500">·</span>
+            <span className="tabular-nums text-neutral-600 dark:text-neutral-500">
+              {formatRelativeKo(a.createdAt)}
+            </span>
+            {a.cveSeverity && (
+              <>
+                <span className="text-neutral-500 dark:text-neutral-500">·</span>
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 font-medium",
+                    SEVERITY_TONE[a.cveSeverity] ||
+                      "bg-surface-2 text-neutral-700 dark:text-neutral-300",
+                  )}
+                >
+                  {SEVERITY_LABEL[a.cveSeverity] || a.cveSeverity}
+                </span>
+              </>
+            )}
+            {a.cveTypes.slice(0, 2).map((t) => (
+              <span
+                key={t}
+                className="rounded-full bg-violet-50 px-2 py-0.5 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300"
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+          {a.title && (
+            <h3 className="mt-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              {a.title}
+            </h3>
+          )}
+          <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-neutral-700 dark:text-neutral-400">
+            {a.excerpt}
+          </p>
+        </button>
+        {isMine && (
+          <div className="flex items-center justify-between gap-2 border-t border-neutral-100 px-4 py-2 dark:border-neutral-800/60">
+            <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500 dark:text-neutral-500">
+              {isPublic ? (
+                <>
+                  <Globe className="h-3 w-3 text-emerald-500" /> 커뮤니티에 공개됨
+                </>
+              ) : (
+                <>
+                  <Lock className="h-3 w-3" /> 비공개(나만 봄)
+                </>
+              )}
+            </span>
+            <button
+              type="button"
+              disabled={share.isPending}
+              onClick={() =>
+                share.mutate({ id: a.id, visibility: isPublic ? "private" : "public" })
+              }
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors disabled:opacity-50",
+                isPublic
+                  ? "border-neutral-300 text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-surface-2"
+                  : "border-violet-500 bg-violet-600 text-white hover:bg-violet-500",
+              )}
+            >
+              {share.isPending && share.variables?.id === a.id ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : isPublic ? (
+                <Lock className="h-3 w-3" />
+              ) : (
+                <Globe className="h-3 w-3" />
+              )}
+              {isPublic ? "미공유로 전환" : "공유"}
+            </button>
+          </div>
         )}
-        <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-neutral-700 dark:text-neutral-400">
-          {a.excerpt}
-        </p>
-      </button>
-    </li>
-  );
+      </li>
+    );
+  };
 
   return (
     <>
@@ -462,7 +564,7 @@ export function AnalysisFeed() {
       )}
       <AnalysisDetailModal
         analysisId={openId}
-        summary={list.data.items.find((a) => a.id === openId) ?? null}
+        summary={allItems.find((a) => a.id === openId) ?? null}
         onClose={() => setOpenId(null)}
       />
     </>
