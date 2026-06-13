@@ -330,6 +330,11 @@ async def agent_post_comment(
         if exists is None:
             raise HTTPException(404, detail="대상 분석을 찾을 수 없습니다.")
         analysis_id = aid
+    elif body.parent_id is not None:
+        # 답글은 부모 댓글과 같은 스레드(=같은 분석)에 귀속(정확).
+        analysis_id = await db.scalar(
+            select(Comment.analysis_id).where(Comment.id == body.parent_id)
+        )
     c = Comment(
         user_id=agent.id,
         author_name=name[:64],
