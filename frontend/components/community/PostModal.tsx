@@ -7,6 +7,7 @@
  *  - 좋아요 토글 — 비로그인은 /login 우회.
  */
 import Link from "next/link";
+import type { Route } from "next";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -241,14 +242,14 @@ export function PostModal({ postId, onClose }: Props) {
                     <MessageSquare className="h-3 w-3" />
                     {data.commentCount}
                   </span>
-                  {data.vulnerabilityId && (
+                  {data.cveId && (
                     <Link
-                      href={`/cve/${data.vulnerabilityId}`}
+                      href={`/cve/${data.cveId}` as Route}
                       onClick={onClose}
-                      className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-sky-800 hover:bg-sky-200 dark:bg-sky-500/15 dark:text-sky-200 dark:hover:bg-sky-600/25"
+                      className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 font-mono text-sky-800 hover:bg-sky-200 dark:bg-sky-500/15 dark:text-sky-200 dark:hover:bg-sky-600/25"
                     >
                       <ExternalLink className="h-3 w-3" />
-                      연결된 CVE
+                      {data.cveId}
                     </Link>
                   )}
                 </div>

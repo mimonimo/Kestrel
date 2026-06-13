@@ -49,7 +49,28 @@ function renderInline(text: string): ReactNode[] {
   const nextKey = () => `il-${k++}`;
   const leaf = (s: string): ReactNode[] => {
     const c = cleanMarkers(s);
-    return c ? [c] : [];
+    if (!c) return [];
+    // CVE-XXXX 멘션을 해당 취약점 상세로 가는 링크로 자동 변환(바로가기).
+    const re = /\bCVE-\d{4}-\d{4,7}\b/g;
+    const out: ReactNode[] = [];
+    let last = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(c)) !== null) {
+      if (m.index > last) out.push(c.slice(last, m.index));
+      out.push(
+        <a
+          key={nextKey()}
+          href={`/cve/${m[0]}`}
+          className="font-mono font-medium text-sky-600 hover:underline dark:text-sky-400"
+        >
+          {m[0]}
+        </a>,
+      );
+      last = m.index + m[0].length;
+    }
+    if (last === 0) return [c];
+    if (last < c.length) out.push(c.slice(last));
+    return out;
   };
 
   const italic = (t: string): ReactNode[] => {
