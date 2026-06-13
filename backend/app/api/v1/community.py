@@ -117,6 +117,10 @@ class CommentCreate(CamelModel):
     parent_id: int | None = None
 
 
+class CommentUpdate(CamelModel):
+    content: str = Field(min_length=1, max_length=4000)
+
+
 class CommentAuthor(CamelModel):
     id: str | None = None
     username: str | None = None
@@ -543,3 +547,37 @@ async def delete_comment(
         raise HTTPException(status_code=403, detail="not allowed")
     await db.delete(comment)
     await db.commit()
+
+
+@router.patch("/comments/{comment_id}", response_model=CommentOut, response_model_by_alias=True)
+async def update_comment(
+    comment_id: int,
+    body: CommentUpdate,
+    x_client_id: Annotated[str | None, Header(alias="X-Client-Id")] = None,
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CommentOut:
+    comment = (
+        await db.execute(select(Comment).where(Comment.id == comment_id))
+    ).scalar_one_or_none()
+    if not comment:
+        raise HTTPException(status_code=404, detail="comment not found")
+    # 수정은 본인만(관리자라도 타인 댓글 내용은 수정하지 않음 — 삭제만 가능).
+    if not _is_owner(comment.user_id, comment.client_id, me=me, x_client_id=x_client_id):
+        raise HTTPException(status_code=403, detail="본인 댓글만 수정할 수 있습니다.")
+    comment.content = body.content.strip()
+    await db.commit()
+    await db.refresh(comment)
+    return CommentOut(
+        id=comment.id,
+        content=comment.content,
+        author_name=comment.author_name,
+        author=_author_of(getattr(comment, "user", None)),
+        post_id=comment.post_id,
+        vulnerability_id=comment.vulnerability_id,
+        analysis_id=comment.analysis_id,
+        parent_id=comment.parent_id,
+        is_owner=True,
+        can_manage=_can_manage(comment.user_id, comment.client_id, me=me, x_client_id=x_client_id),
+        created_at=comment.created_at,
+    )

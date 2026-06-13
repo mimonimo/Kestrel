@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CornerDownRight, Loader2, LogIn, MessageSquare, Send, Trash2 } from "lucide-react";
+import { CornerDownRight, Loader2, LogIn, MessageSquare, Pencil, Send, Trash2, X } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -50,6 +50,9 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
   // 대댓글 — 답글을 달 부모 댓글 id 와 입력값(루트 입력과 분리).
   const [replyTo, setReplyTo] = useState<number | null>(null);
   const [replyContent, setReplyContent] = useState("");
+  // 수정 — 수정 중인 댓글 id 와 입력값.
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editContent, setEditContent] = useState("");
 
   // 댓글 작성자명은 백엔드가 user.nickname || user.username 으로 강제.
   // frontend 는 입력란을 보여 주지 않고 사용자 메타로만 표시.
@@ -88,6 +91,19 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
   const remove = useMutation({
     mutationFn: (id: number) => api.deleteComment(id),
     onSuccess: () => qc.invalidateQueries({ queryKey }),
+  });
+
+  const update = useMutation({
+    mutationFn: (vars: { id: number; content: string }) =>
+      api.updateComment(vars.id, vars.content.trim()),
+    onSuccess: () => {
+      setEditingId(null);
+      setEditContent("");
+      setError(null);
+      qc.invalidateQueries({ queryKey });
+    },
+    onError: (err) =>
+      setError(err instanceof ApiError ? err.message : "댓글 수정에 실패했어요."),
   });
 
   // 1-depth 스레드 구성: 최상위(parentId 없음) + 부모별 답글 묶음.
@@ -136,26 +152,91 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
                 {formatRelativeKo(c.createdAt)}
               </span>
             </div>
-            {c.canManage && (
-              <button
-                type="button"
-                onClick={() => {
-                  const msg = c.isOwner
-                    ? "이 댓글을 삭제할까요?"
-                    : "관리자 권한으로 이 댓글을 삭제할까요?";
-                  if (confirm(msg)) remove.mutate(c.id);
-                }}
-                title={c.isOwner ? "댓글 삭제" : "관리자 권한으로 삭제"}
-                className="inline-flex shrink-0 items-center gap-1 rounded-full p-1 text-neutral-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-500/15 dark:hover:text-rose-300"
-                aria-label="댓글 삭제"
-              >
-                <Trash2 className="h-3 w-3" />
-              </button>
-            )}
+            <div className="flex shrink-0 items-center gap-0.5">
+              {c.isOwner && editingId !== c.id && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(c.id);
+                    setEditContent(c.content);
+                    setReplyTo(null);
+                    setError(null);
+                  }}
+                  title="댓글 수정"
+                  className="inline-flex items-center rounded-full p-1 text-neutral-500 hover:bg-sky-100 hover:text-sky-700 dark:hover:bg-sky-500/15 dark:hover:text-sky-200"
+                  aria-label="댓글 수정"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              )}
+              {c.canManage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const msg = c.isOwner
+                      ? "이 댓글을 삭제할까요?"
+                      : "관리자 권한으로 이 댓글을 삭제할까요?";
+                    if (confirm(msg)) remove.mutate(c.id);
+                  }}
+                  title={c.isOwner ? "댓글 삭제" : "관리자 권한으로 삭제"}
+                  className="inline-flex items-center rounded-full p-1 text-neutral-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-500/15 dark:hover:text-rose-300"
+                  aria-label="댓글 삭제"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           </div>
-          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-neutral-800 dark:text-neutral-200">
-            {c.content}
-          </p>
+          {editingId === c.id ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!editContent.trim()) return;
+                update.mutate({ id: c.id, content: editContent });
+              }}
+              className="space-y-1"
+            >
+              <div className="relative">
+                <textarea
+                  autoFocus
+                  className="block min-h-[44px] w-full rounded-lg border border-neutral-300 bg-white py-2 pl-2.5 pr-11 text-[13px] text-neutral-900 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-1 dark:text-neutral-100"
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  maxLength={4000}
+                />
+                <button
+                  type="submit"
+                  disabled={update.isPending || !editContent.trim()}
+                  aria-label="수정 저장"
+                  title="저장"
+                  className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-sky-500 text-white transition-colors hover:bg-sky-600 disabled:opacity-40 dark:bg-sky-500 dark:hover:bg-sky-400"
+                >
+                  {update.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(null);
+                    setEditContent("");
+                    setError(null);
+                  }}
+                  className="inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+                >
+                  <X className="h-3 w-3" /> 취소
+                </button>
+              </div>
+            </form>
+          ) : (
+            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-neutral-800 dark:text-neutral-200">
+              {c.content}
+            </p>
+          )}
         </div>
       </div>
     );

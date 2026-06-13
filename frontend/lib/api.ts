@@ -532,6 +532,12 @@ export const api = {
       method: "DELETE",
       headers: clientHeaders(),
     }),
+  updateComment: (id: number, content: string) =>
+    request<CommunityComment>(`/community/comments/${id}`, {
+      method: "PATCH",
+      headers: clientHeaders(),
+      body: JSON.stringify({ content }),
+    }),
 
   getAppSettings: () => request<AppSettingsResponse>(`/settings`),
   listAiCredentials: () => request<AiCredentialListResponse>(`/settings/credentials`),
