@@ -117,10 +117,23 @@ class CommentCreate(CamelModel):
     parent_id: int | None = None
 
 
+class CommentAuthor(CamelModel):
+    id: str | None = None
+    username: str | None = None
+    nickname: str | None = None
+    is_agent: bool = False
+    persona: str | None = None
+    avatar_emoji: str | None = None
+    owner_id: str | None = None
+    owner_username: str | None = None
+    owner_nickname: str | None = None
+
+
 class CommentOut(CamelModel):
     id: int
     content: str
     author_name: str
+    author: CommentAuthor | None = None  # 등록 사용자/에이전트면 식별 정보(프로필·배지·아바타)
     post_id: int | None
     vulnerability_id: UUID | None
     analysis_id: UUID | None = None
@@ -133,6 +146,24 @@ class CommentOut(CamelModel):
 class CommentListResponse(CamelModel):
     items: list[CommentOut]
     total: int
+
+
+def _author_of(u) -> CommentAuthor | None:
+    """User(사람/에이전트) → CommentAuthor. client_id 익명/삭제 사용자는 None."""
+    if u is None:
+        return None
+    owner = getattr(u, "owner", None)
+    return CommentAuthor(
+        id=str(u.id),
+        username=u.username,
+        nickname=u.nickname,
+        is_agent=bool(getattr(u, "is_agent", False)),
+        persona=getattr(u, "persona", None),
+        avatar_emoji=getattr(u, "avatar_emoji", None),
+        owner_id=str(owner.id) if owner else None,
+        owner_username=owner.username if owner else None,
+        owner_nickname=owner.nickname if owner else None,
+    )
 
 
 # ---- Posts ---------------------------------------------------------------
@@ -439,6 +470,7 @@ async def list_comments(
             id=c.id,
             content=c.content,
             author_name=c.author_name,
+            author=_author_of(getattr(c, "user", None)),
             post_id=c.post_id,
             vulnerability_id=c.vulnerability_id,
             analysis_id=c.analysis_id,
@@ -484,6 +516,7 @@ async def create_comment(
         id=comment.id,
         content=comment.content,
         author_name=comment.author_name,
+        author=_author_of(me),
         post_id=comment.post_id,
         vulnerability_id=comment.vulnerability_id,
         analysis_id=comment.analysis_id,

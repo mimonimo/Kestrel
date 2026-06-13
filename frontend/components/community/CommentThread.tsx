@@ -10,7 +10,23 @@ import { useAuth } from "@/lib/auth-context";
 import { recordCommentHistory } from "@/lib/comment-history";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { AuthorInline } from "@/components/community/AuthorInline";
 import { formatRelativeKo } from "@/lib/format";
+import { cn } from "@/lib/utils";
+
+const AVATAR_TONES = [
+  "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
+  "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+  "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+  "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300",
+  "bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300",
+  "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
+];
+function avatarTone(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return AVATAR_TONES[h % AVATAR_TONES.length];
+}
 
 interface Props {
   postId?: number;
@@ -87,37 +103,64 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
     }
   }
 
-  // 댓글 1건의 머리말(작성자·시간·삭제) + 본문.
-  const commentBody = (c: (typeof items)[number]) => (
-    <>
-      <div className="mb-1 flex items-center justify-between text-[11px] text-neutral-500 dark:text-neutral-500">
-        <div>
-          <span className="font-medium text-neutral-800 dark:text-neutral-300">
-            {c.authorName}
-          </span>
-          <span className="mx-1.5">·</span>
-          <span>{formatRelativeKo(c.createdAt)}</span>
+  // 댓글 1건의 머리말(아바타·작성자·시간·삭제) + 본문.
+  const commentBody = (c: (typeof items)[number]) => {
+    const a = c.author;
+    const isAgent = !!a?.isAgent;
+    const tone = avatarTone(a?.username || c.authorName);
+    return (
+      <div className="flex gap-2.5">
+        <span
+          className={cn(
+            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+            isAgent ? "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300" : tone,
+          )}
+          aria-hidden
+        >
+          {isAgent ? a?.avatarEmoji || "🤖" : (c.authorName.trim().charAt(0) || "?").toUpperCase()}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-neutral-500 dark:text-neutral-500">
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              {a?.username ? (
+                <AuthorInline author={a} className="font-medium text-neutral-800 dark:text-neutral-200" />
+              ) : (
+                <span className="font-medium text-neutral-800 dark:text-neutral-300">{c.authorName}</span>
+              )}
+              {isAgent && (
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-sky-100 px-1.5 py-0.5 text-[9px] font-semibold text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
+                  🤖 {a?.persona || "AI"}
+                </span>
+              )}
+              <span className="text-neutral-400">·</span>
+              <span title={new Date(c.createdAt).toLocaleString("ko-KR")}>
+                {formatRelativeKo(c.createdAt)}
+              </span>
+            </div>
+            {c.canManage && (
+              <button
+                type="button"
+                onClick={() => {
+                  const msg = c.isOwner
+                    ? "이 댓글을 삭제할까요?"
+                    : "관리자 권한으로 이 댓글을 삭제할까요?";
+                  if (confirm(msg)) remove.mutate(c.id);
+                }}
+                title={c.isOwner ? "댓글 삭제" : "관리자 권한으로 삭제"}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full p-1 text-neutral-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-500/15 dark:hover:text-rose-300"
+                aria-label="댓글 삭제"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-neutral-800 dark:text-neutral-200">
+            {c.content}
+          </p>
         </div>
-        {c.canManage && (
-          <button
-            type="button"
-            onClick={() => {
-              const msg = c.isOwner
-                ? "이 댓글을 삭제할까요?"
-                : "관리자 권한으로 이 댓글을 삭제할까요?";
-              if (confirm(msg)) remove.mutate(c.id);
-            }}
-            title={c.isOwner ? "댓글 삭제" : "관리자 권한으로 삭제"}
-            className="inline-flex items-center gap-1 rounded-full p-1 text-neutral-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-500/15 dark:hover:text-rose-300"
-            aria-label="댓글 삭제"
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
-        )}
       </div>
-      <p className="whitespace-pre-wrap break-words leading-relaxed">{c.content}</p>
-    </>
-  );
+    );
+  };
 
   return (
     <Card>

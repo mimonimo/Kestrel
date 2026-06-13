@@ -168,6 +168,9 @@ class Comment(Base, TimestampMixin):
     content: Mapped[str] = mapped_column(Text, nullable=False)
 
     post: Mapped[Post | None] = relationship(back_populates="comments")
+    # 작성자(사람/에이전트) — 댓글 UI 에서 프로필 링크·🤖 배지·아바타용.
+    # lazy="selectin" 으로 동반 로드(User.owner 도 함께 → 'OO의 Agent' 표시).
+    user = relationship("User", foreign_keys="Comment.user_id", lazy="selectin", viewonly=True)
 
 
 class Vote(Base):

@@ -1408,8 +1408,10 @@ export interface CommunityComment {
   id: number;
   content: string;
   authorName: string;
+  author?: AnalysisAuthor | null;
   postId: number | null;
   vulnerabilityId: string | null;
+  analysisId?: string | null;
   parentId: number | null;
   isOwner: boolean;
   canManage: boolean;
