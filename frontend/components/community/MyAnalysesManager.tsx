@@ -5,7 +5,7 @@
 // 데이터는 owner 스코프(/me/analyses)라 비공개 분석까지 포함한다.
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckSquare, Globe, Loader2, Lock, ScrollText, Square, Trash2 } from "lucide-react";
+import { CheckSquare, Globe, Loader2, Lock, ScrollText, Search, Square, Trash2, X } from "lucide-react";
 
 import { api, type AnalysisList } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -15,11 +15,16 @@ import { formatRelativeKo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type BulkAction = "public" | "private" | "delete";
+type VisFilter = "all" | "public" | "private";
+type SortKey = "new" | "old";
 
 export function MyAnalysesManager() {
   const qc = useQueryClient();
   const [openId, setOpenId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
+  const [vis, setVis] = useState<VisFilter>("all");
+  const [sort, setSort] = useState<SortKey>("new");
 
   const list = useQuery({
     queryKey: ["my-analyses"],
@@ -27,6 +32,26 @@ export function MyAnalysesManager() {
     staleTime: 10_000,
   });
   const items = useMemo(() => list.data?.items ?? [], [list.data]);
+
+  // 검색·공개여부·정렬 적용한 표시 목록.
+  const visibleItems = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    let arr = items.filter((a) => {
+      if (vis === "public" && a.visibility !== "public") return false;
+      if (vis === "private" && a.visibility === "public") return false;
+      if (term) {
+        const hay = `${a.cveId} ${a.title ?? ""} ${a.excerpt}`.toLowerCase();
+        if (!hay.includes(term)) return false;
+      }
+      return true;
+    });
+    arr = [...arr].sort((a, b) => {
+      const d = +new Date(b.createdAt) - +new Date(a.createdAt);
+      return sort === "new" ? d : -d;
+    });
+    return arr;
+  }, [items, search, vis, sort]);
+  const publicCount = useMemo(() => items.filter((a) => a.visibility === "public").length, [items]);
 
   // 토글/삭제 후 공개 프로필·CVE 상세·커뮤니티 피드 표시를 모두 갱신.
   const invalidateSharedViews = () => {
@@ -103,7 +128,7 @@ export function MyAnalysesManager() {
   });
 
   const selectedIds = useMemo(() => Array.from(selected), [selected]);
-  const allSelected = items.length > 0 && selected.size === items.length;
+  const allSelected = visibleItems.length > 0 && visibleItems.every((a) => selected.has(a.id));
   const busy = bulk.isPending;
 
   const toggleOne = (id: string) =>
@@ -114,7 +139,15 @@ export function MyAnalysesManager() {
       return n;
     });
   const toggleAll = () =>
-    setSelected((s) => (s.size === items.length ? new Set() : new Set(items.map((a) => a.id))));
+    setSelected((s) => {
+      const n = new Set(s);
+      if (visibleItems.every((a) => n.has(a.id))) {
+        visibleItems.forEach((a) => n.delete(a.id));
+      } else {
+        visibleItems.forEach((a) => n.add(a.id));
+      }
+      return n;
+    });
 
   const runBulk = (action: BulkAction) => {
     if (selectedIds.length === 0) return;
@@ -143,6 +176,64 @@ export function MyAnalysesManager() {
       <p className="mb-3 text-xs text-neutral-500 dark:text-neutral-500">
         공개로 전환한 분석은 해당 CVE 상세의 “커뮤니티 분석”과 내 프로필에 노출됩니다. 체크해서 여러 건을 한 번에 공개·비공개·삭제할 수 있어요.
       </p>
+
+      {/* 필터 툴바 — 검색 / 공개여부 / 정렬 */}
+      {items.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[160px] flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-400" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="CVE · 제목 · 본문 검색"
+              className="block w-full rounded-full border border-neutral-300 bg-white py-1.5 pl-8 pr-8 text-xs text-neutral-900 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-1 dark:text-neutral-100"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                aria-label="검색어 지우기"
+                className="absolute right-2 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-100 dark:hover:bg-surface-2"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          <div className="inline-flex items-center gap-0.5 rounded-full border border-neutral-200 bg-neutral-50 p-0.5 text-[11px] dark:border-neutral-800 dark:bg-surface-1">
+            {(
+              [
+                ["all", `전체 ${items.length}`],
+                ["public", `공개 ${publicCount}`],
+                ["private", `비공개 ${items.length - publicCount}`],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setVis(v)}
+                className={cn(
+                  "rounded-full px-2.5 py-1 font-medium transition-colors",
+                  vis === v
+                    ? "bg-white text-neutral-900 shadow-sm dark:bg-surface-2 dark:text-neutral-100"
+                    : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
+                )}
+                aria-pressed={vis === v}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setSort((s) => (s === "new" ? "old" : "new"))}
+            className="rounded-full border border-neutral-300 px-2.5 py-1 text-[11px] font-medium text-neutral-600 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-surface-2"
+            title="정렬 전환"
+          >
+            {sort === "new" ? "최신순" : "오래된순"}
+          </button>
+        </div>
+      )}
 
       {/* 일괄 액션 바 — 선택이 있을 때만 */}
       {selected.size > 0 && (
@@ -205,9 +296,13 @@ export function MyAnalysesManager() {
         <p className="rounded-lg border border-dashed border-neutral-300 px-3 py-6 text-center text-xs text-neutral-500 dark:border-neutral-700">
           아직 분석한 기록이 없어요. CVE 상세에서 AI 심층 분석을 먼저 실행해 주세요.
         </p>
+      ) : visibleItems.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-neutral-300 px-3 py-6 text-center text-xs text-neutral-500 dark:border-neutral-700">
+          조건에 맞는 분석이 없어요. 검색어나 필터를 바꿔 보세요.
+        </p>
       ) : (
         <ul className="space-y-2">
-          {items.map((a) => {
+          {visibleItems.map((a) => {
             const isPublic = a.visibility === "public";
             const next = isPublic ? "private" : "public";
             const toggling = toggle.isPending && toggle.variables?.id === a.id;

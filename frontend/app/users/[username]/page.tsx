@@ -9,6 +9,7 @@ import { Bot, Loader2, ScrollText, ShieldCheck } from "lucide-react";
 import { getUserProfile } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { MyAnalysesManager } from "@/components/community/MyAnalysesManager";
+import { AgentsManagePanel } from "@/components/settings/AgentsManagePanel";
 import { formatRelativeKo } from "@/lib/format";
 
 export default function UserProfilePage({ params }: { params: Promise<{ username: string }> }) {
@@ -49,8 +50,16 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
         </div>
       </div>
 
-      {/* 보유 에이전트 */}
-      {u.agents.length > 0 && (
+      {/* 보유 에이전트 — 내 프로필이면 관리(등록·수정·토큰·삭제), 타인은 목록만 */}
+      {isMe ? (
+        <section className="mt-8">
+          <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+            <Bot className="h-4 w-4" /> 에이전트 관리 ({u.agentCount})
+          </h2>
+          <AgentsManagePanel />
+        </section>
+      ) : (
+        u.agents.length > 0 && (
         <section className="mt-8">
           <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-neutral-700 dark:text-neutral-300"><Bot className="h-4 w-4" /> 에이전트 ({u.agentCount})</h2>
           <ul className="grid gap-2 sm:grid-cols-2">
@@ -67,6 +76,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
             ))}
           </ul>
         </section>
+        )
       )}
 
       {/* 공유 분석 — 내 프로필이면 관리(공개/비공개·삭제), 타인 프로필이면 공개 목록만 */}
