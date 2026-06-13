@@ -9,7 +9,7 @@ import {
   Clock,
   GitCompare,
   Loader2,
-  MessageSquare,
+  Rss,
   Search,
   Sparkles,
   Square,
@@ -49,10 +49,10 @@ import {
 } from "@/lib/analysis-running";
 import { useAuth } from "@/lib/auth-context";
 import { useBookmarks } from "@/lib/bookmarks";
-import { useCommentHistory } from "@/lib/comment-history";
+import { AnalysisFeed } from "@/components/community/AnalysisFeed";
 import { cn } from "@/lib/utils";
 
-type TabKey = "analysis" | "compare" | "bookmarks" | "tickets" | "comments";
+type TabKey = "analysis" | "compare" | "bookmarks" | "tickets" | "feed";
 
 interface TabDef {
   key: TabKey;
@@ -65,7 +65,7 @@ const TABS: TabDef[] = [
   { key: "compare", label: "패턴 비교", icon: GitCompare },
   { key: "bookmarks", label: "즐겨찾기", icon: Star },
   { key: "tickets", label: "검토", icon: ClipboardList },
-  { key: "comments", label: "댓글", icon: MessageSquare },
+  { key: "feed", label: "분석 피드", icon: Rss },
 ];
 
 function formatAge(epochMs: number): string {
@@ -117,7 +117,7 @@ export default function AnalysisPage() {
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">AI 분석</h1>
           <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-500">
-            분석 기록, 패턴 비교, 즐겨찾기, 대응 검토, 작성한 댓글을 한 곳에서 관리합니다.
+            분석 기록, 패턴 비교, 즐겨찾기, 대응 검토와 다른 사용자의 분석 피드를 한 곳에서 봅니다.
           </p>
         </div>
       </header>
@@ -152,7 +152,7 @@ export default function AnalysisPage() {
       {tab === "compare" && <CompareTab />}
       {tab === "bookmarks" && <BookmarksTab />}
       {tab === "tickets" && <TicketsTab />}
-      {tab === "comments" && <CommentsTab />}
+      {tab === "feed" && <AnalysisFeed />}
     </div>
   );
 }
@@ -1168,56 +1168,6 @@ function TicketsTab() {
           </Link>
         </li>
       ))}
-    </ul>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// Tab 4 — 댓글
-// ──────────────────────────────────────────────────────────────────────
-
-function CommentsTab() {
-  const comments = useCommentHistory();
-  if (comments.length === 0) {
-    return (
-      <EmptyState
-        icon={MessageSquare}
-        title="작성한 댓글이 아직 없어요"
-        hint="커뮤니티 글이나 CVE 상세 페이지에 댓글을 남기면 여기에 함께 모입니다."
-      />
-    );
-  }
-  return (
-    <ul className="space-y-3">
-      {comments.map((c) => {
-        const target = c.cveId
-          ? `/cve/${encodeURIComponent(c.cveId)}`
-          : c.postId
-            ? `/community/${c.postId}`
-            : "#";
-        const targetLabel = c.cveId ? c.cveId : c.postId ? `커뮤니티 #${c.postId}` : "(연결 끊김)";
-        return (
-          <li key={c.id}>
-            <Link
-              href={target as never}
-              className="group block rounded-xl border border-neutral-200 bg-white p-4 transition-all duration-150 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md hover:shadow-emerald-500/10 active:translate-y-0 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-emerald-700"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                  {targetLabel}
-                </span>
-                <Chip title={formatFull(c.timestamp)}>
-                  <Clock className="h-3 w-3" />
-                  {formatAge(c.timestamp)}
-                </Chip>
-              </div>
-              <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300">
-                {c.excerpt}
-              </p>
-            </Link>
-          </li>
-        );
-      })}
     </ul>
   );
 }
