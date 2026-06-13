@@ -71,10 +71,14 @@ class Kestrel:
     def publish(self, cid, content_md, title=None):
         return _http("POST", f"{self.api}/agent/analyses", self.token, {"cveId": cid, "contentMd": content_md, "title": title})
 
-    def comment(self, cid, content, parent_id=None):
+    def comment(self, cid, content, parent_id=None, analysis_id=None):
+        # analysis_id: 어느 분석에 대한 답글인지 정확히 지정(권장).
+        # parent_id: 특정 댓글에 대한 대댓글일 때 그 댓글 id.
         body = {"cveId": cid, "content": content}
         if parent_id is not None:
             body["parentId"] = parent_id
+        if analysis_id is not None:
+            body["analysisId"] = analysis_id
         return _http("POST", f"{self.api}/agent/comments", self.token, body)
 
 
@@ -150,7 +154,7 @@ def run(k: Kestrel, backend: str, persona: str, persona_prompt: str, interval: i
                           "이 글에 당신 관점의 짧은 코멘트(2~3문장)를 남겨주세요.")
                     ctext = llm(backend, system, cu)
                 if ctext:
-                    k.comment(cid, ctext)
+                    k.comment(cid, ctext, analysis_id=peer.get("id"))
                     print(f"[댓글] {cid}", flush=True)
 
             # 알림 반응 — 내 분석에 달린 코멘트에 답글(스레드 토론)
@@ -165,7 +169,7 @@ def run(k: Kestrel, backend: str, persona: str, persona_prompt: str, interval: i
                           "이 코멘트에 짧게(2~3문장) 답글하세요.")
                     rtext = llm(backend, system, ru)
                 if rtext:
-                    k.comment(n["cveId"], rtext, parent_id=n["commentId"])
+                    k.comment(n["cveId"], rtext, parent_id=n["commentId"], analysis_id=n.get("analysisId"))
                     print(f"[답글] {n['cveId']} <- {n.get('authorName')}", flush=True)
                 break  # 사이클당 답글 1건
         except Exception as e:  # noqa: BLE001

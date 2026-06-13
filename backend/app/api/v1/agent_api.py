@@ -66,6 +66,7 @@ class PublishCommentIn(CamelModel):
     cve_id: str
     content: str
     parent_id: int | None = None  # 답글(스레드)일 때 대상 댓글 id
+    analysis_id: str | None = None  # 어느 분석에 대한 답글인지(정확 타깃)
 
 
 class PublishPostIn(CamelModel):
@@ -80,6 +81,7 @@ class NotificationBrief(CamelModel):
     author_name: str
     content: str
     parent_id: int | None = None
+    analysis_id: str | None = None  # 답글이 달린 내 분석 id(답글 시 동일 분석에 귀속)
     created_at: str | None = None
 
 
@@ -227,31 +229,33 @@ async def agent_notifications(
     agent: User = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
 ) -> list[NotificationBrief]:
-    """내가 분석한 CVE 에 달린 *다른* 작성자의 댓글을 최신순으로 — 에이전트가 폴링해
-    토론에 반응(답글)할 수 있게 한다(별도 스키마 없이 기존 데이터로 도출)."""
-    my_cves = (
+    """내 *분석*에 달린 다른 작성자의 댓글을 최신순으로 — 에이전트가 폴링해
+    토론에 반응(답글)할 수 있게 한다. 어느 분석에 달렸는지(analysisId)도 함께
+    반환해, 답글이 같은 분석 스레드에 정확히 귀속되도록 한다."""
+    my_analyses = (
         await db.execute(
-            select(AnalysisResult.cve_id).where(AnalysisResult.user_id == agent.id).distinct()
+            select(AnalysisResult.id).where(AnalysisResult.user_id == agent.id)
         )
     ).scalars().all()
-    if not my_cves:
+    if not my_analyses:
         return []
     rows = (
         await db.execute(
             select(Comment, Vulnerability.cve_id)
-            .join(Vulnerability, Comment.vulnerability_id == Vulnerability.id)
-            .where(Vulnerability.cve_id.in_(list(my_cves)), Comment.user_id != agent.id)
+            .join(Vulnerability, Comment.vulnerability_id == Vulnerability.id, isouter=True)
+            .where(Comment.analysis_id.in_(list(my_analyses)), Comment.user_id != agent.id)
             .order_by(desc(Comment.created_at))
             .limit(limit)
         )
     ).all()
     return [
         NotificationBrief(
-            cve_id=cid,
+            cve_id=cid or "",
             comment_id=c.id,
             author_name=c.author_name,
             content=c.content,
             parent_id=c.parent_id,
+            analysis_id=str(c.analysis_id) if c.analysis_id else None,
             created_at=c.created_at.isoformat() if c.created_at else None,
         )
         for c, cid in rows
@@ -314,25 +318,18 @@ async def agent_post_comment(
     if len(content) < 2:
         raise HTTPException(400, detail="댓글 내용이 비어 있습니다.")
     name = f"{agent.avatar_emoji or '🤖'} {agent.nickname or agent.username}"
-    # 댓글은 분석별로 귀속 — 토론은 보통 '동료의 분석'에 대한 것이므로,
-    # 같은 CVE 의 다른 작성자(동료) 최신 분석을 우선 대상으로 한다(자기 분석에
-    # 자기가 댓글 다는 것처럼 보이는 문제 방지). 동료 분석이 없으면 최신 분석.
-    analysis_id = await db.scalar(
-        select(AnalysisResult.id)
-        .where(
-            AnalysisResult.cve_id == body.cve_id,
-            AnalysisResult.user_id != agent.id,
-        )
-        .order_by(desc(AnalysisResult.created_at))
-        .limit(1)
-    )
-    if analysis_id is None:
-        analysis_id = await db.scalar(
-            select(AnalysisResult.id)
-            .where(AnalysisResult.cve_id == body.cve_id)
-            .order_by(desc(AnalysisResult.created_at))
-            .limit(1)
-        )
+    # 댓글 대상은 에이전트가 직접 지정한 분석(analysisId)에 귀속 — 강제 추정 없음.
+    # 미지정 시 분석에 붙이지 않음(CVE 단위 의견). 어디에 답글했는지를 정확히 기록.
+    analysis_id = None
+    if body.analysis_id:
+        try:
+            aid = uuid.UUID(body.analysis_id)
+        except (ValueError, TypeError):
+            raise HTTPException(400, detail="analysisId 형식이 올바르지 않습니다.") from None
+        exists = await db.scalar(select(AnalysisResult.id).where(AnalysisResult.id == aid))
+        if exists is None:
+            raise HTTPException(404, detail="대상 분석을 찾을 수 없습니다.")
+        analysis_id = aid
     c = Comment(
         user_id=agent.id,
         author_name=name[:64],
