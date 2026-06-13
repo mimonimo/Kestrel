@@ -3,12 +3,11 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CornerDownRight, LogIn, MessageSquare, Trash2 } from "lucide-react";
+import { CornerDownRight, Loader2, LogIn, MessageSquare, Send, Trash2 } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { recordCommentHistory } from "@/lib/comment-history";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AuthorInline } from "@/components/community/AuthorInline";
 import { formatRelativeKo } from "@/lib/format";
@@ -183,26 +182,31 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
             }}
             className="space-y-1.5"
           >
-            <textarea
-              className="block min-h-[44px] w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-[13px] text-neutral-900 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100"
-              placeholder={displayName ? `${displayName} (으)로 댓글 남기기…` : "의견을 남겨 주세요"}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              maxLength={4000}
-            />
+            <div className="relative">
+              <textarea
+                className="block min-h-[44px] w-full rounded-lg border border-neutral-300 bg-white py-2 pl-3 pr-12 text-[13px] text-neutral-900 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100"
+                placeholder={displayName ? `${displayName} (으)로 댓글 남기기…` : "의견을 남겨 주세요"}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                maxLength={4000}
+              />
+              <button
+                type="submit"
+                disabled={create.isPending || !content.trim()}
+                aria-label="댓글 등록"
+                title="댓글 등록"
+                className="absolute bottom-2 right-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-sky-500 text-white transition-colors hover:bg-sky-600 disabled:opacity-40 dark:bg-sky-500 dark:hover:bg-sky-400"
+              >
+                {create.isPending && replyTo == null ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </button>
+            </div>
             {error && replyTo == null && (
               <p className="text-xs text-rose-700 dark:text-rose-300">{error}</p>
             )}
-            <div className="flex justify-end">
-              <Button
-                type="submit"
-                size="sm"
-                disabled={create.isPending || !content.trim()}
-                className="rounded-full bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-50 dark:bg-sky-500 dark:hover:bg-sky-400"
-              >
-                {create.isPending && replyTo == null ? "등록 중…" : "댓글 등록"}
-              </Button>
-            </div>
           </form>
         ) : (
           <LoginGate
@@ -257,40 +261,45 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
                       }}
                       className="mt-2 space-y-2"
                     >
-                      <textarea
-                        autoFocus
-                        className="block min-h-[44px] w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-2 text-[13px] text-neutral-900 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-1 dark:text-neutral-100"
-                        placeholder={`${c.authorName} 님에게 답글…`}
-                        value={replyContent}
-                        onChange={(e) => setReplyContent(e.target.value)}
-                        maxLength={4000}
-                      />
+                      <div className="relative">
+                        <textarea
+                          autoFocus
+                          className="block min-h-[44px] w-full rounded-lg border border-neutral-300 bg-white py-2 pl-2.5 pr-11 text-[13px] text-neutral-900 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-1 dark:text-neutral-100"
+                          placeholder={`${c.authorName} 님에게 답글…`}
+                          value={replyContent}
+                          onChange={(e) => setReplyContent(e.target.value)}
+                          maxLength={4000}
+                        />
+                        <button
+                          type="submit"
+                          disabled={create.isPending || !replyContent.trim()}
+                          aria-label="답글 등록"
+                          title="답글 등록"
+                          className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-sky-500 text-white transition-colors hover:bg-sky-600 disabled:opacity-40 dark:bg-sky-500 dark:hover:bg-sky-400"
+                        >
+                          {create.isPending && replyTo === c.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Send className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      </div>
                       {error && replyTo === c.id && (
                         <p className="text-xs text-rose-700 dark:text-rose-300">{error}</p>
                       )}
-                      <div className="flex justify-end gap-2">
-                        <Button
+                      <div className="flex justify-end">
+                        <button
                           type="button"
-                          size="sm"
-                          variant="outline"
                           onClick={() => {
                             setReplyTo(null);
                             setReplyContent("");
                             setError(null);
                           }}
                           disabled={create.isPending}
-                          className="rounded-full"
+                          className="rounded-full px-2 py-0.5 text-[11px] text-neutral-500 hover:text-neutral-800 disabled:opacity-50 dark:text-neutral-400 dark:hover:text-neutral-200"
                         >
                           취소
-                        </Button>
-                        <Button
-                          type="submit"
-                          size="sm"
-                          disabled={create.isPending || !replyContent.trim()}
-                          className="rounded-full bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-50 dark:bg-sky-500 dark:hover:bg-sky-400"
-                        >
-                          {create.isPending && replyTo === c.id ? "등록 중…" : "답글 등록"}
-                        </Button>
+                        </button>
                       </div>
                     </form>
                   )}
