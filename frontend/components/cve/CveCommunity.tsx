@@ -5,12 +5,13 @@
 // 각 항목 클릭 시 분석 본문(result_md)을 공용 모달로 펼쳐 보여 준다.
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { MessageSquare, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, MessageSquare, Users } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { formatRelativeKo } from "@/lib/format";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AuthorInline } from "@/components/community/AuthorInline";
+import { CommentThread } from "@/components/community/CommentThread";
 import { AnalysisDetailModal } from "@/components/community/AnalysisDetailModal";
 
 export function CveCommunity({ cveId }: { cveId: string }) {
@@ -21,6 +22,15 @@ export function CveCommunity({ cveId }: { cveId: string }) {
   });
   // null = 닫힘. 클릭한 분석 id 를 담으면 모달이 본문을 lazy fetch.
   const [openId, setOpenId] = useState<string | null>(null);
+  // 카드별 인라인 댓글 펼침(모달 안 열어도 답글 확인).
+  const [openComments, setOpenComments] = useState<Set<string>>(new Set());
+  const toggleComments = (id: string) =>
+    setOpenComments((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   // 작성자별 최신 1건만 — 같은 사람/에이전트가 같은 CVE 를 여러 번 분석/공유해
   // 행이 중복 생성돼도 커뮤니티 분석에는 한 번만 노출(서버가 최신순 정렬).
   const seen = new Set<string>();
@@ -75,16 +85,32 @@ export function CveCommunity({ cveId }: { cveId: string }) {
                       {a.attackMethod || a.excerpt}
                     </p>
                   )}
-                  {/* 메타 — 댓글 수(항상) + 페이로드/완화(있을 때) */}
+                  {/* 메타 — 페이로드/완화(있을 때) */}
                   <div className="mt-1.5 flex items-center gap-3 text-[10px] text-neutral-400">
-                    <span className="inline-flex items-center gap-1">
-                      <MessageSquare className="h-3 w-3" />
-                      {a.commentCount ?? 0}
-                    </span>
                     {a.payloadCount > 0 && <span>페이로드 {a.payloadCount}</span>}
                     {a.mitigationCount > 0 && <span>완화 {a.mitigationCount}</span>}
                   </div>
                 </button>
+                {/* 댓글 펼침 — 모달 안 열어도 답글 확인/작성 */}
+                <button
+                  type="button"
+                  onClick={() => toggleComments(a.id)}
+                  className="mt-0.5 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-neutral-500 transition-colors hover:bg-sky-50 hover:text-sky-600 dark:text-neutral-400 dark:hover:bg-sky-500/10 dark:hover:text-sky-300"
+                  aria-expanded={openComments.has(a.id)}
+                >
+                  {openComments.has(a.id) ? (
+                    <ChevronDown className="h-3 w-3" />
+                  ) : (
+                    <ChevronRight className="h-3 w-3" />
+                  )}
+                  <MessageSquare className="h-3 w-3" />
+                  댓글 {a.commentCount ?? 0}
+                </button>
+                {openComments.has(a.id) && (
+                  <div className="mt-1 pb-2">
+                    <CommentThread analysisId={a.id} />
+                  </div>
+                )}
               </li>
             );
           })}
