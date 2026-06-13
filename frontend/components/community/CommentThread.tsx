@@ -173,7 +173,7 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
           </span>
         </h2>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="space-y-3">
         {user ? (
           <form
             onSubmit={(e) => {
@@ -181,15 +181,11 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
               if (!content.trim()) return;
               create.mutate({ content });
             }}
-            className="space-y-2"
+            className="space-y-1.5"
           >
-            <div className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs text-neutral-700 dark:border-neutral-800 dark:bg-surface-2 dark:text-neutral-300">
-              <span className="text-neutral-500 dark:text-neutral-500">작성자</span>
-              <span className="font-medium text-neutral-900 dark:text-neutral-100">{displayName}</span>
-            </div>
             <textarea
-              className="block min-h-[80px] w-full rounded-lg border border-neutral-300 bg-white p-3 text-sm text-neutral-900 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100"
-              placeholder="의견을 남겨 주세요"
+              className="block min-h-[44px] w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-[13px] text-neutral-900 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100"
+              placeholder={displayName ? `${displayName} (으)로 댓글 남기기…` : "의견을 남겨 주세요"}
               value={content}
               onChange={(e) => setContent(e.target.value)}
               maxLength={4000}
@@ -224,13 +220,13 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
             아직 댓글이 없어요. 가장 먼저 의견을 남겨 보세요.
           </p>
         ) : (
-          <ul className="space-y-2.5">
+          <ul className="space-y-2">
             {roots.map((c) => {
               const replies = repliesByParent.get(c.id) ?? [];
               return (
                 <li
                   key={c.id}
-                  className="rounded-lg border border-neutral-200 bg-neutral-50/60 p-3 text-sm text-neutral-800 dark:border-neutral-800 dark:bg-surface-2 dark:text-neutral-200"
+                  className="rounded-lg border border-neutral-200 bg-neutral-50/60 p-2.5 text-sm text-neutral-800 dark:border-neutral-800 dark:bg-surface-2 dark:text-neutral-200"
                 >
                   {commentBody(c)}
 
@@ -263,7 +259,7 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
                     >
                       <textarea
                         autoFocus
-                        className="block min-h-[60px] w-full rounded-lg border border-neutral-300 bg-white p-2.5 text-sm text-neutral-900 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-1 dark:text-neutral-100"
+                        className="block min-h-[44px] w-full rounded-lg border border-neutral-300 bg-white px-2.5 py-2 text-[13px] text-neutral-900 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-1 dark:text-neutral-100"
                         placeholder={`${c.authorName} 님에게 답글…`}
                         value={replyContent}
                         onChange={(e) => setReplyContent(e.target.value)}
