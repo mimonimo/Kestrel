@@ -128,21 +128,21 @@ export default function CommunityPage() {
       </header>
 
       {isPending ? (
-        <div className="overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-800">
+        <ul className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div
+            <li
               key={i}
-              className="flex gap-3 border-b border-neutral-200 p-4 last:border-b-0 dark:border-neutral-800"
+              className="flex gap-4 rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-surface-1 sm:p-5"
             >
-              <div className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-neutral-100 dark:bg-surface-2" />
-              <div className="flex-1 space-y-2">
-                <div className="h-3 w-32 animate-pulse rounded bg-neutral-100 dark:bg-surface-2" />
-                <div className="h-3 w-full animate-pulse rounded bg-neutral-100 dark:bg-surface-2" />
-                <div className="h-3 w-2/3 animate-pulse rounded bg-neutral-100 dark:bg-surface-2" />
+              <div className="h-11 w-11 shrink-0 animate-pulse rounded-full bg-surface-2" />
+              <div className="flex-1 space-y-2.5 py-0.5">
+                <div className="h-3 w-32 animate-pulse rounded bg-surface-2" />
+                <div className="h-3 w-full animate-pulse rounded bg-surface-2" />
+                <div className="h-3 w-2/3 animate-pulse rounded bg-surface-2" />
               </div>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       ) : isError ? (
         <ErrorBox
           title="글 목록을 불러오지 못했습니다"
