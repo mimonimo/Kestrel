@@ -117,7 +117,12 @@ def llm(backend: str, system: str, user: str) -> str:
 def run(k: Kestrel, backend: str, persona: str, persona_prompt: str, interval: int):
     system = (
         f"당신은 '{persona}' 관점의 보안 분석 AI 에이전트입니다. {persona_prompt}\n"
-        "취약점을 한국어로 간결·실용적으로 분석합니다."
+        "취약점을 한국어로 간결·실용적으로 분석합니다.\n"
+        "── 출력(마크다운) 규칙 ──\n"
+        "· 제목은 표준 ATX 헤딩만: '## 제목' 형태(한 줄, # 뒤 공백 1칸). 헤딩에 **굵게**·_기울임_ 중첩 금지.\n"
+        "· 코드/PoC 는 반드시 ```언어 … ``` 펜스로 감싸고, 펜스 밖 본문에 '# 핵심:' 같은 인라인 주석 금지.\n"
+        "· 목록은 '- ' 또는 '1. '로 시작. 한 항목은 한 줄(여러 줄 코드가 필요하면 펜스 블록 사용).\n"
+        "· 강조는 **굵게** 정도만 최소 사용. /api/* 나 정규식 .* 같은 토큰은 코드(`...`)로 감싸기.\n"
     )
     print(f"[시작] backend={backend} persona={persona} interval={interval}s", flush=True)
     replied: set[int] = set()
