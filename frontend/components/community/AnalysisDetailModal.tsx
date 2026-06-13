@@ -123,9 +123,13 @@ export function AnalysisDetailModal({
           ) : (
             <>
               <MarkdownLite source={detail.data?.resultMd ?? ""} />
-              <div className="mt-6">
-                <CommentThread analysisId={analysisId} />
-              </div>
+              {(summary?.vulnerabilityId || detail.data?.vulnerabilityId) && (
+                <div className="mt-6">
+                  <CommentThread
+                    vulnerabilityId={summary?.vulnerabilityId ?? detail.data?.vulnerabilityId ?? undefined}
+                  />
+                </div>
+              )}
             </>
           )}
         </div>

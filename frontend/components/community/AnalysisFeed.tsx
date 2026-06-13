@@ -17,6 +17,7 @@ import {
   Globe,
   Loader2,
   Lock,
+  MessageSquare,
   Search,
   ShieldAlert,
   Sparkles,
@@ -28,6 +29,7 @@ import { api, type AnalysisSummary } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { ErrorBox } from "@/components/ui/feedback-box";
 import { AuthorInline } from "@/components/community/AuthorInline";
+import { CommentThread } from "@/components/community/CommentThread";
 import {
   AnalysisDetailModal,
   AgentBadge,
@@ -69,6 +71,15 @@ export function AnalysisFeed() {
   const [agentFilter, setAgentFilter] = useState<"all" | "agent" | "human">("all");
   // 범위: 전체(남 공개 + 내 분석) / 내 분석만.
   const [scope, setScope] = useState<"all" | "mine">("all");
+  // 카드별 인라인 댓글 펼침.
+  const [openComments, setOpenComments] = useState<Set<string>>(new Set());
+  const toggleComments = (id: string) =>
+    setOpenComments((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const community = useQuery({
     queryKey: ["community-analyses"],
@@ -448,19 +459,18 @@ export function AnalysisFeed() {
             {a.excerpt}
           </p>
         </button>
-        {isMine && (
-          <div className="flex items-center justify-between gap-2 border-t border-neutral-100 px-4 py-2 dark:border-neutral-800/60">
-            <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500 dark:text-neutral-500">
-              {isPublic ? (
-                <>
-                  <Globe className="h-3 w-3 text-emerald-500" /> 커뮤니티에 공개됨
-                </>
-              ) : (
-                <>
-                  <Lock className="h-3 w-3" /> 비공개(나만 봄)
-                </>
-              )}
-            </span>
+        <div className="flex items-center justify-between gap-2 border-t border-neutral-100 px-4 py-2 dark:border-neutral-800/60">
+          <button
+            type="button"
+            onClick={() => toggleComments(a.id)}
+            className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] text-neutral-500 transition-colors hover:bg-sky-50 hover:text-sky-600 dark:text-neutral-400 dark:hover:bg-sky-500/10 dark:hover:text-sky-300"
+            title="댓글"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            <span className="tabular-nums">{a.commentCount ?? 0}</span>
+            <span>댓글</span>
+          </button>
+          {isMine && (
             <button
               type="button"
               disabled={share.isPending}
@@ -470,19 +480,25 @@ export function AnalysisFeed() {
               className={cn(
                 "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors disabled:opacity-50",
                 isPublic
-                  ? "border-neutral-300 text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-surface-2"
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300"
                   : "border-violet-500 bg-violet-600 text-white hover:bg-violet-500",
               )}
+              title={isPublic ? "커뮤니티에 공개 중 — 누르면 비공개" : "커뮤니티에 공유"}
             >
               {share.isPending && share.variables?.id === a.id ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
               ) : isPublic ? (
-                <Lock className="h-3 w-3" />
-              ) : (
                 <Globe className="h-3 w-3" />
+              ) : (
+                <Lock className="h-3 w-3" />
               )}
-              {isPublic ? "미공유로 전환" : "공유"}
+              {isPublic ? "공유 중" : "공유"}
             </button>
+          )}
+        </div>
+        {openComments.has(a.id) && a.vulnerabilityId && (
+          <div className="border-t border-neutral-100 px-3 py-3 dark:border-neutral-800/60">
+            <CommentThread vulnerabilityId={a.vulnerabilityId} />
           </div>
         )}
       </li>

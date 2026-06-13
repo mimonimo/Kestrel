@@ -243,6 +243,7 @@ export interface AnalysisSummary {
   author: AnalysisAuthor;
   excerpt: string;
   commentCount?: number;
+  vulnerabilityId?: string | null;
   // PR 10-DA: AI 분석 탭 history 형식 통합용.
   payloadCount: number;
   mitigationCount: number;
