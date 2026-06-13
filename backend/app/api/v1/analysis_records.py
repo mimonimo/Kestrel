@@ -17,13 +17,13 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.v1.deps import get_current_user, get_optional_user
 from app.core.database import get_db
-from app.models import AnalysisResult, User, Vulnerability, VulnerabilityType, vulnerability_type_map
+from app.models import AnalysisResult, Comment, User, Vulnerability, VulnerabilityType, vulnerability_type_map
 from app.schemas.vulnerability import CamelModel
 
 
@@ -49,6 +49,7 @@ class AnalysisSummary(CamelModel):
     created_at: datetime
     author: AuthorOut
     excerpt: str  # 첫 240자 미리보기
+    comment_count: int = 0  # 이 분석에 달린 댓글 수(분석별 댓글)
     # AI 분석 탭의 history 형식과 통합 (PR 10-DA).
     payload_count: int = 0
     mitigation_count: int = 0
@@ -138,6 +139,7 @@ def _to_summary(
     *,
     severity: str | None = None,
     types: list[str] | None = None,
+    comment_count: int = 0,
 ) -> AnalysisSummary:
     owner = getattr(r.user, "owner", None) if r.user else None
     author = AuthorOut(
@@ -161,6 +163,7 @@ def _to_summary(
         created_at=r.created_at,
         author=author,
         excerpt=_excerpt(r.result_md or ""),
+        comment_count=comment_count,
         payload_count=payload_count,
         mitigation_count=mitigation_count,
         attack_method=attack_method,
@@ -320,9 +323,22 @@ async def list_cve_analyses(
     )
     rows = (await db.execute(q)).scalars().all()
     sev_map, types_map = await _build_cve_meta(db, [r.cve_id for r in rows])
+    cc_map: dict = {}
+    if rows:
+        cc_rows = await db.execute(
+            select(Comment.analysis_id, func.count(Comment.id))
+            .where(Comment.analysis_id.in_([r.id for r in rows]))
+            .group_by(Comment.analysis_id)
+        )
+        cc_map = {aid: n for aid, n in cc_rows.all()}
     return AnalysisList(
         items=[
-            _to_summary(r, severity=sev_map.get(r.cve_id), types=types_map.get(r.cve_id, []))
+            _to_summary(
+                r,
+                severity=sev_map.get(r.cve_id),
+                types=types_map.get(r.cve_id, []),
+                comment_count=int(cc_map.get(r.id, 0)),
+            )
             for r in rows
         ],
         total=len(rows),

@@ -5,7 +5,7 @@
 // 각 항목 클릭 시 분석 본문(result_md)을 공용 모달로 펼쳐 보여 준다.
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Users } from "lucide-react";
+import { MessageSquare, Users } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { formatRelativeKo } from "@/lib/format";
@@ -75,13 +75,15 @@ export function CveCommunity({ cveId }: { cveId: string }) {
                       {a.attackMethod || a.excerpt}
                     </p>
                   )}
-                  {/* 카운트는 실제 값이 있을 때만 — 0/0 은 파싱 한계라 표시하지 않음 */}
-                  {(a.payloadCount > 0 || a.mitigationCount > 0) && (
-                    <div className="mt-1 flex gap-2 text-[10px] text-neutral-400">
-                      {a.payloadCount > 0 && <span>페이로드 {a.payloadCount}</span>}
-                      {a.mitigationCount > 0 && <span>완화 {a.mitigationCount}</span>}
-                    </div>
-                  )}
+                  {/* 메타 — 댓글 수(항상) + 페이로드/완화(있을 때) */}
+                  <div className="mt-1.5 flex items-center gap-3 text-[10px] text-neutral-400">
+                    <span className="inline-flex items-center gap-1">
+                      <MessageSquare className="h-3 w-3" />
+                      {a.commentCount ?? 0}
+                    </span>
+                    {a.payloadCount > 0 && <span>페이로드 {a.payloadCount}</span>}
+                    {a.mitigationCount > 0 && <span>완화 {a.mitigationCount}</span>}
+                  </div>
                 </button>
               </li>
             );

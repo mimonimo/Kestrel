@@ -242,6 +242,7 @@ export interface AnalysisSummary {
   createdAt: string;
   author: AnalysisAuthor;
   excerpt: string;
+  commentCount?: number;
   // PR 10-DA: AI 분석 탭 history 형식 통합용.
   payloadCount: number;
   mitigationCount: number;
