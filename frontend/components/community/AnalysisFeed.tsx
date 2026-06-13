@@ -15,6 +15,7 @@ import {
   Clock,
   Folder,
   Globe,
+  Heart,
   Loader2,
   Lock,
   MessageSquare,
@@ -25,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 
-import { api, type AnalysisSummary } from "@/lib/api";
+import { api, type AnalysisList, type AnalysisSummary } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { ErrorBox } from "@/components/ui/feedback-box";
 import { AuthorInline } from "@/components/community/AuthorInline";
@@ -113,6 +114,45 @@ export function AnalysisFeed() {
       qc.invalidateQueries({ queryKey: ["my-analyses"] });
     },
   });
+
+  const likeMut = useMutation({
+    mutationFn: ({ id, next }: { id: string; next: boolean }) =>
+      next ? api.likeAnalysis(id) : api.unlikeAnalysis(id),
+    onMutate: ({ id, next }) => {
+      const patch = (key: string[]) =>
+        qc.setQueryData<AnalysisList>(key, (prev) =>
+          prev
+            ? {
+                ...prev,
+                items: prev.items.map((a) =>
+                  a.id === id
+                    ? {
+                        ...a,
+                        isLiked: next,
+                        likeCount: Math.max(0, (a.likeCount ?? 0) + (next ? 1 : -1)),
+                      }
+                    : a,
+                ),
+              }
+            : prev,
+        );
+      patch(["community-analyses"]);
+      patch(["my-analyses"]);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["community-analyses"] });
+      qc.invalidateQueries({ queryKey: ["my-analyses"] });
+    },
+  });
+  const toggleLike = (a: AnalysisSummary) => {
+    if (!user) {
+      if (typeof window !== "undefined") {
+        window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+      }
+      return;
+    }
+    likeMut.mutate({ id: a.id, next: !a.isLiked });
+  };
 
   const list = scope === "mine" ? mine : community;
 
@@ -460,6 +500,7 @@ export function AnalysisFeed() {
           </p>
         </button>
         <div className="flex items-center justify-between gap-2 border-t border-neutral-100 px-4 py-2 dark:border-neutral-800/60">
+          <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => toggleComments(a.id)}
@@ -470,6 +511,20 @@ export function AnalysisFeed() {
             <span className="tabular-nums">{a.commentCount ?? 0}</span>
             <span>댓글</span>
           </button>
+          <button
+            type="button"
+            onClick={() => toggleLike(a)}
+            aria-pressed={a.isLiked}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-300",
+              a.isLiked ? "text-rose-600 dark:text-rose-400" : "text-neutral-500 dark:text-neutral-400",
+            )}
+            title={a.isLiked ? "좋아요 취소" : "좋아요"}
+          >
+            <Heart className={cn("h-3.5 w-3.5", a.isLiked && "fill-current")} />
+            <span className="tabular-nums">{a.likeCount ?? 0}</span>
+          </button>
+          </div>
           {isMine && (
             <button
               type="button"

@@ -3,7 +3,7 @@ from app.models.analysis_result import AnalysisResult
 from app.models.audit_log import AuditLog
 from app.models.base import Base
 from app.models.bookmark import Bookmark
-from app.models.community import Comment, Post, PostLike, Tag, User, UserRole, Vote, VoteTarget
+from app.models.community import AnalysisLike, Comment, Post, PostLike, Tag, User, UserRole, Vote, VoteTarget
 from app.models.login_log import LoginLog
 from app.models.notification import Notification, NotificationChannel
 from app.models.settings import AppSettings
@@ -38,6 +38,7 @@ __all__ = [
     "NotificationChannel",
     "Post",
     "PostLike",
+    "AnalysisLike",
     "RefType",
     "Severity",
     "Source",

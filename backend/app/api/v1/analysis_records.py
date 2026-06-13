@@ -23,7 +23,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.v1.deps import get_current_user, get_optional_user
 from app.core.database import get_db
-from app.models import AnalysisResult, Comment, User, Vulnerability, VulnerabilityType, vulnerability_type_map
+from app.models import AnalysisLike, AnalysisResult, Comment, User, Vulnerability, VulnerabilityType, vulnerability_type_map
 from app.schemas.vulnerability import CamelModel
 
 
@@ -50,6 +50,8 @@ class AnalysisSummary(CamelModel):
     author: AuthorOut
     excerpt: str  # 첫 240자 미리보기
     comment_count: int = 0  # 이 CVE 토론(댓글) 수 — 분석 피드 소셜 표시용
+    like_count: int = 0
+    is_liked: bool = False
     vulnerability_id: str | None = None  # 연결 CVE 의 UUID — CVE 단위 댓글 스레드용
     # AI 분석 탭의 history 형식과 통합 (PR 10-DA).
     payload_count: int = 0
@@ -142,6 +144,8 @@ def _to_summary(
     types: list[str] | None = None,
     comment_count: int = 0,
     vulnerability_id: str | None = None,
+    like_count: int = 0,
+    is_liked: bool = False,
 ) -> AnalysisSummary:
     owner = getattr(r.user, "owner", None) if r.user else None
     author = AuthorOut(
@@ -167,6 +171,8 @@ def _to_summary(
         excerpt=_excerpt(r.result_md or ""),
         comment_count=comment_count,
         vulnerability_id=vulnerability_id,
+        like_count=like_count,
+        is_liked=is_liked,
         payload_count=payload_count,
         mitigation_count=mitigation_count,
         attack_method=attack_method,
@@ -248,6 +254,34 @@ async def _cve_extra(db: AsyncSession, rows: list) -> tuple[dict, dict]:
     return vid_map, cc_map
 
 
+async def _likes(db: AsyncSession, rows: list, me: User | None) -> tuple[dict, set]:
+    """(analysis_id(str) → 좋아요 수, 내가 좋아요한 analysis_id(str) 집합)."""
+    aids = [r.id for r in rows]
+    lc_map: dict[str, int] = {}
+    liked: set[str] = set()
+    if not aids:
+        return lc_map, liked
+    crows = (
+        await db.execute(
+            select(AnalysisLike.analysis_id, func.count(AnalysisLike.id))
+            .where(AnalysisLike.analysis_id.in_(aids))
+            .group_by(AnalysisLike.analysis_id)
+        )
+    ).all()
+    for aid, n in crows:
+        lc_map[str(aid)] = int(n)
+    if me is not None:
+        mine = (
+            await db.execute(
+                select(AnalysisLike.analysis_id).where(
+                    AnalysisLike.analysis_id.in_(aids), AnalysisLike.user_id == me.id
+                )
+            )
+        ).scalars().all()
+        liked = {str(a) for a in mine}
+    return lc_map, liked
+
+
 # ─── 내 분석 ────────────────────────────────────────────
 me_router = APIRouter(prefix="/me", tags=["analysis-records"])
 
@@ -270,6 +304,7 @@ async def list_my_analyses(
     rows = (await db.execute(q)).scalars().all()
     sev_map, types_map = await _build_cve_meta(db, [r.cve_id for r in rows])
     vid_map, cc_map = await _cve_extra(db, rows)
+    lc_map, liked = await _likes(db, rows, user)
     return AnalysisList(
         items=[
             _to_summary(
@@ -278,6 +313,8 @@ async def list_my_analyses(
                 types=types_map.get(r.cve_id, []),
                 vulnerability_id=vid_map.get(r.cve_id),
                 comment_count=cc_map.get(str(r.id), 0),
+                like_count=lc_map.get(str(r.id), 0),
+                is_liked=str(r.id) in liked,
             )
             for r in rows
         ],
@@ -318,6 +355,7 @@ async def list_community_analyses(
     rows = (await db.execute(q)).scalars().all()
     sev_map, types_map = await _build_cve_meta(db, [r.cve_id for r in rows])
     vid_map, cc_map = await _cve_extra(db, rows)
+    lc_map, liked = await _likes(db, rows, me)
     return AnalysisList(
         items=[
             _to_summary(
@@ -326,6 +364,8 @@ async def list_community_analyses(
                 types=types_map.get(r.cve_id, []),
                 vulnerability_id=vid_map.get(r.cve_id),
                 comment_count=cc_map.get(str(r.id), 0),
+                like_count=lc_map.get(str(r.id), 0),
+                is_liked=str(r.id) in liked,
             )
             for r in rows
         ],
@@ -374,6 +414,7 @@ async def list_cve_analyses(
     rows = (await db.execute(q)).scalars().all()
     sev_map, types_map = await _build_cve_meta(db, [r.cve_id for r in rows])
     vid_map, cc_map = await _cve_extra(db, rows)
+    lc_map, liked = await _likes(db, rows, me)
     return AnalysisList(
         items=[
             _to_summary(
@@ -382,6 +423,8 @@ async def list_cve_analyses(
                 types=types_map.get(r.cve_id, []),
                 vulnerability_id=vid_map.get(r.cve_id),
                 comment_count=cc_map.get(str(r.id), 0),
+                like_count=lc_map.get(str(r.id), 0),
+                is_liked=str(r.id) in liked,
             )
             for r in rows
         ],
@@ -468,3 +511,54 @@ async def delete_analysis(
         raise HTTPException(403, detail="본인의 분석만 삭제할 수 있습니다.")
     await db.delete(row)
     await db.commit()
+
+
+class LikeOut(CamelModel):
+    like_count: int
+    is_liked: bool
+
+
+async def _like_count(db: AsyncSession, aid) -> int:
+    return int(
+        (await db.scalar(select(func.count(AnalysisLike.id)).where(AnalysisLike.analysis_id == aid))) or 0
+    )
+
+
+@analyses_router.post("/{analysis_id}/like", response_model=LikeOut, response_model_by_alias=True)
+async def like_analysis(
+    analysis_id: str,
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> LikeOut:
+    try:
+        aid = uuid.UUID(analysis_id)
+    except (ValueError, TypeError):
+        raise HTTPException(404, detail="분석 기록을 찾을 수 없습니다.") from None
+    if await db.scalar(select(AnalysisResult.id).where(AnalysisResult.id == aid)) is None:
+        raise HTTPException(404, detail="분석 기록을 찾을 수 없습니다.")
+    dup = await db.scalar(
+        select(AnalysisLike.id).where(AnalysisLike.analysis_id == aid, AnalysisLike.user_id == me.id)
+    )
+    if dup is None:
+        db.add(AnalysisLike(analysis_id=aid, user_id=me.id))
+        await db.commit()
+    return LikeOut(like_count=await _like_count(db, aid), is_liked=True)
+
+
+@analyses_router.delete("/{analysis_id}/like", response_model=LikeOut, response_model_by_alias=True)
+async def unlike_analysis(
+    analysis_id: str,
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> LikeOut:
+    try:
+        aid = uuid.UUID(analysis_id)
+    except (ValueError, TypeError):
+        raise HTTPException(404, detail="분석 기록을 찾을 수 없습니다.") from None
+    row = await db.scalar(
+        select(AnalysisLike).where(AnalysisLike.analysis_id == aid, AnalysisLike.user_id == me.id)
+    )
+    if row is not None:
+        await db.delete(row)
+        await db.commit()
+    return LikeOut(like_count=await _like_count(db, aid), is_liked=False)

@@ -4,22 +4,53 @@
 // 작성자 프로필 링크와 함께 보여줘 취약점 페이지를 커뮤니티와 연동한다.
 // 각 항목 클릭 시 분석 본문(result_md)을 공용 모달로 펼쳐 보여 준다.
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, MessageSquare, Users } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, ChevronRight, Heart, MessageSquare, Users } from "lucide-react";
 
-import { api } from "@/lib/api";
+import { api, type AnalysisList, type AnalysisSummary } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { formatRelativeKo } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AuthorInline } from "@/components/community/AuthorInline";
 import { CommentThread } from "@/components/community/CommentThread";
 import { AnalysisDetailModal } from "@/components/community/AnalysisDetailModal";
 
 export function CveCommunity({ cveId }: { cveId: string }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["cve-community-analyses", cveId],
     queryFn: () => api.listCveAnalyses(cveId),
     staleTime: 60_000,
   });
+  const likeKey = ["cve-community-analyses", cveId];
+  const likeMut = useMutation({
+    mutationFn: ({ id, next }: { id: string; next: boolean }) =>
+      next ? api.likeAnalysis(id) : api.unlikeAnalysis(id),
+    onMutate: ({ id, next }) =>
+      qc.setQueryData<AnalysisList>(likeKey, (prev) =>
+        prev
+          ? {
+              ...prev,
+              items: prev.items.map((a) =>
+                a.id === id
+                  ? { ...a, isLiked: next, likeCount: Math.max(0, (a.likeCount ?? 0) + (next ? 1 : -1)) }
+                  : a,
+              ),
+            }
+          : prev,
+      ),
+    onSettled: () => qc.invalidateQueries({ queryKey: likeKey }),
+  });
+  const toggleLike = (a: AnalysisSummary) => {
+    if (!user) {
+      if (typeof window !== "undefined")
+        window.location.href = `/login?next=${encodeURIComponent(`/cve/${cveId}`)}`;
+      return;
+    }
+    likeMut.mutate({ id: a.id, next: !a.isLiked });
+  };
   // null = 닫힘. 클릭한 분석 id 를 담으면 모달이 본문을 lazy fetch.
   const [openId, setOpenId] = useState<string | null>(null);
   // 카드별 인라인 댓글 펼침(모달 안 열어도 답글 확인).
@@ -91,21 +122,36 @@ export function CveCommunity({ cveId }: { cveId: string }) {
                     {a.mitigationCount > 0 && <span>완화 {a.mitigationCount}</span>}
                   </div>
                 </button>
-                {/* 댓글 펼침 — 모달 안 열어도 답글 확인/작성 */}
-                <button
-                  type="button"
-                  onClick={() => toggleComments(a.id)}
-                  className="mt-0.5 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-neutral-500 transition-colors hover:bg-sky-50 hover:text-sky-600 dark:text-neutral-400 dark:hover:bg-sky-500/10 dark:hover:text-sky-300"
-                  aria-expanded={openComments.has(a.id)}
-                >
-                  {openComments.has(a.id) ? (
-                    <ChevronDown className="h-3 w-3" />
-                  ) : (
-                    <ChevronRight className="h-3 w-3" />
-                  )}
-                  <MessageSquare className="h-3 w-3" />
-                  댓글 {a.commentCount ?? 0}
-                </button>
+                {/* 댓글 펼침 + 좋아요 — 모달 안 열어도 */}
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => toggleComments(a.id)}
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-neutral-500 transition-colors hover:bg-sky-50 hover:text-sky-600 dark:text-neutral-400 dark:hover:bg-sky-500/10 dark:hover:text-sky-300"
+                    aria-expanded={openComments.has(a.id)}
+                  >
+                    {openComments.has(a.id) ? (
+                      <ChevronDown className="h-3 w-3" />
+                    ) : (
+                      <ChevronRight className="h-3 w-3" />
+                    )}
+                    <MessageSquare className="h-3 w-3" />
+                    댓글 {a.commentCount ?? 0}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleLike(a)}
+                    aria-pressed={a.isLiked}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-300",
+                      a.isLiked ? "text-rose-600 dark:text-rose-400" : "text-neutral-500 dark:text-neutral-400",
+                    )}
+                    title={a.isLiked ? "좋아요 취소" : "좋아요"}
+                  >
+                    <Heart className={cn("h-3 w-3", a.isLiked && "fill-current")} />
+                    {a.likeCount ?? 0}
+                  </button>
+                </div>
                 {openComments.has(a.id) && (
                   <div className="mt-1 pb-2">
                     <CommentThread analysisId={a.id} />

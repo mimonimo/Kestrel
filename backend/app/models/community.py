@@ -139,6 +139,29 @@ class PostLike(Base):
     )
 
 
+class AnalysisLike(Base):
+    """분석(AnalysisResult)에 대한 좋아요 — 사용자/분석 쌍 유니크."""
+
+    __tablename__ = "analysis_likes"
+    __table_args__ = (
+        Index("uq_analysis_like_user", "user_id", "analysis_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    analysis_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("analysis_results.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+    )
+
+
 class Comment(Base, TimestampMixin):
     __tablename__ = "comments"
 
