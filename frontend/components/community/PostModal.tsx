@@ -128,18 +128,15 @@ export function PostModal({ postId, onClose }: Props) {
     like.mutate(!data.isLiked);
   };
 
-  // ── ESC + body lock ──────────────────────────────────
+  // ── ESC 닫기 (스크롤 잠금은 useBodyScrollLock 가 담당) ──
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !editing) onClose();
     };
     document.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
     };
   }, [open, onClose, editing]);
 

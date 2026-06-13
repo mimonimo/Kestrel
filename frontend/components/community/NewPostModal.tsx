@@ -89,13 +89,10 @@ export function NewPostModal({ open, onClose, vulnerabilityId }: Props) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKey);
     return () => {
       window.clearTimeout(t);
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
     };
   }, [open, onClose, vulnerabilityId]);
 
