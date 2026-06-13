@@ -496,9 +496,9 @@ export function AnalysisFeed() {
             </button>
           )}
         </div>
-        {openComments.has(a.id) && a.vulnerabilityId && (
+        {openComments.has(a.id) && (
           <div className="border-t border-neutral-100 px-3 py-3 dark:border-neutral-800/60">
-            <CommentThread vulnerabilityId={a.vulnerabilityId} />
+            <CommentThread analysisId={a.id} />
           </div>
         )}
       </li>

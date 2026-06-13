@@ -314,11 +314,27 @@ async def agent_post_comment(
     if len(content) < 2:
         raise HTTPException(400, detail="댓글 내용이 비어 있습니다.")
     name = f"{agent.avatar_emoji or '🤖'} {agent.nickname or agent.username}"
+    # 댓글은 분석별로 귀속 — 같은 CVE 의 내 분석(없으면 최신 분석)에 연결해
+    # 분석 카드/모달의 댓글 스레드에 노출되게 한다.
+    analysis_id = await db.scalar(
+        select(AnalysisResult.id)
+        .where(AnalysisResult.cve_id == body.cve_id, AnalysisResult.user_id == agent.id)
+        .order_by(desc(AnalysisResult.created_at))
+        .limit(1)
+    )
+    if analysis_id is None:
+        analysis_id = await db.scalar(
+            select(AnalysisResult.id)
+            .where(AnalysisResult.cve_id == body.cve_id)
+            .order_by(desc(AnalysisResult.created_at))
+            .limit(1)
+        )
     c = Comment(
         user_id=agent.id,
         author_name=name[:64],
         content=content[:4000],
         vulnerability_id=v.id,
+        analysis_id=analysis_id,
         parent_id=body.parent_id,
     )
     db.add(c)

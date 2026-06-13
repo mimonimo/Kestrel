@@ -215,37 +215,36 @@ async def _build_cve_meta(
     return sev_map, types_map
 
 
-async def _cve_extra(db: AsyncSession, cve_ids: list[str]) -> tuple[dict, dict]:
-    """cve_id → vulnerability UUID(str) 맵 + cve_id → CVE 단위 댓글 수 맵.
+async def _cve_extra(db: AsyncSession, rows: list) -> tuple[dict, dict]:
+    """(cve_id → vulnerability UUID(str) 맵, analysis_id(str) → 댓글 수 맵).
 
-    분석 피드의 토론 스레드는 CVE 단위(vulnerability_id) 라, 기존 에이전트
-    대화(=CVE 댓글)도 그대로 집계·노출된다."""
-    uniq = list({c for c in cve_ids if c})
+    댓글은 분석별(analysis_id)로 귀속 — 같은 CVE 의 분석들이 서로 다른
+    댓글 스레드를 갖는다. vulnerability_id 는 표시·링크용으로만 노출한다."""
+    cve_ids = list({r.cve_id for r in rows if r.cve_id})
+    aids = [r.id for r in rows]
     vid_map: dict[str, str] = {}
     cc_map: dict[str, int] = {}
-    if not uniq:
-        return vid_map, cc_map
-    vrows = (
-        await db.execute(
-            select(Vulnerability.id, Vulnerability.cve_id).where(Vulnerability.cve_id.in_(uniq))
-        )
-    ).all()
-    id_to_cve: dict = {}
-    for vid, cve in vrows:
-        vid_map[cve] = str(vid)
-        id_to_cve[vid] = cve
-    if id_to_cve:
-        crows = (
+    if cve_ids:
+        vrows = (
             await db.execute(
-                select(Comment.vulnerability_id, func.count(Comment.id))
-                .where(Comment.vulnerability_id.in_(list(id_to_cve.keys())))
-                .group_by(Comment.vulnerability_id)
+                select(Vulnerability.id, Vulnerability.cve_id).where(
+                    Vulnerability.cve_id.in_(cve_ids)
+                )
             )
         ).all()
-        for vid, n in crows:
-            cve = id_to_cve.get(vid)
-            if cve:
-                cc_map[cve] = int(n)
+        for vid, cve in vrows:
+            vid_map[cve] = str(vid)
+    if aids:
+        crows = (
+            await db.execute(
+                select(Comment.analysis_id, func.count(Comment.id))
+                .where(Comment.analysis_id.in_(aids))
+                .group_by(Comment.analysis_id)
+            )
+        ).all()
+        for aid, n in crows:
+            if aid is not None:
+                cc_map[str(aid)] = int(n)
     return vid_map, cc_map
 
 
@@ -270,7 +269,7 @@ async def list_my_analyses(
     )
     rows = (await db.execute(q)).scalars().all()
     sev_map, types_map = await _build_cve_meta(db, [r.cve_id for r in rows])
-    vid_map, cc_map = await _cve_extra(db, [r.cve_id for r in rows])
+    vid_map, cc_map = await _cve_extra(db, rows)
     return AnalysisList(
         items=[
             _to_summary(
@@ -278,7 +277,7 @@ async def list_my_analyses(
                 severity=sev_map.get(r.cve_id),
                 types=types_map.get(r.cve_id, []),
                 vulnerability_id=vid_map.get(r.cve_id),
-                comment_count=cc_map.get(r.cve_id, 0),
+                comment_count=cc_map.get(str(r.id), 0),
             )
             for r in rows
         ],
@@ -318,7 +317,7 @@ async def list_community_analyses(
     q = q.limit(limit).offset(offset)
     rows = (await db.execute(q)).scalars().all()
     sev_map, types_map = await _build_cve_meta(db, [r.cve_id for r in rows])
-    vid_map, cc_map = await _cve_extra(db, [r.cve_id for r in rows])
+    vid_map, cc_map = await _cve_extra(db, rows)
     return AnalysisList(
         items=[
             _to_summary(
@@ -326,7 +325,7 @@ async def list_community_analyses(
                 severity=sev_map.get(r.cve_id),
                 types=types_map.get(r.cve_id, []),
                 vulnerability_id=vid_map.get(r.cve_id),
-                comment_count=cc_map.get(r.cve_id, 0),
+                comment_count=cc_map.get(str(r.id), 0),
             )
             for r in rows
         ],
@@ -374,7 +373,7 @@ async def list_cve_analyses(
     )
     rows = (await db.execute(q)).scalars().all()
     sev_map, types_map = await _build_cve_meta(db, [r.cve_id for r in rows])
-    vid_map, cc_map = await _cve_extra(db, [r.cve_id for r in rows])
+    vid_map, cc_map = await _cve_extra(db, rows)
     return AnalysisList(
         items=[
             _to_summary(
@@ -382,7 +381,7 @@ async def list_cve_analyses(
                 severity=sev_map.get(r.cve_id),
                 types=types_map.get(r.cve_id, []),
                 vulnerability_id=vid_map.get(r.cve_id),
-                comment_count=cc_map.get(r.cve_id, 0),
+                comment_count=cc_map.get(str(r.id), 0),
             )
             for r in rows
         ],
