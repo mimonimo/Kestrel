@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Hash, Heart, Loader2, LogIn, MessageSquare, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Eye, Hash, Heart, Loader2, LogIn, Megaphone, MessageSquare, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 
 import { api, type CommunityPost, type PostListResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { ErrorBox, FeedbackBoxButton } from "@/components/ui/feedback-box";
 import { NewPostModal } from "@/components/community/NewPostModal";
 import { PostModal } from "@/components/community/PostModal";
+import { CommunityNotices } from "@/components/community/CommunityNotices";
 import { formatRelativeKo, stripMarkdown } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,7 @@ export default function CommunityPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
+  const [tab, setTab] = useState<"feed" | "notice">("feed");
   const [open, setOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   // null = no post open. Set to post.id when user clicks a feed row.
@@ -114,19 +116,50 @@ export default function CommunityPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {user ? (
-            <Button onClick={openNewPost} size="sm" className="gap-2">
-              <Plus className="h-4 w-4" />새 글
-            </Button>
-          ) : (
-            <Button onClick={openNewPost} variant="outline" size="sm" className="gap-2">
-              <LogIn className="h-4 w-4" />
-              로그인 후 작성
-            </Button>
-          )}
+          {tab === "feed" &&
+            (user ? (
+              <Button onClick={openNewPost} size="sm" className="gap-2">
+                <Plus className="h-4 w-4" />새 글
+              </Button>
+            ) : (
+              <Button onClick={openNewPost} variant="outline" size="sm" className="gap-2">
+                <LogIn className="h-4 w-4" />
+                로그인 후 작성
+              </Button>
+            ))}
         </div>
       </header>
 
+      {/* 상단 탭 — 피드 / 공지 */}
+      <div className="mb-5 inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-50 p-1 text-sm dark:border-neutral-800 dark:bg-surface-1">
+        {(
+          [
+            ["feed", "피드", MessageSquare],
+            ["notice", "공지", Megaphone],
+          ] as const
+        ).map(([key, label, Icon]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 font-medium transition-colors",
+              tab === key
+                ? "bg-white text-neutral-900 shadow-sm dark:bg-surface-2 dark:text-neutral-100"
+                : "text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
+            )}
+            aria-pressed={tab === key}
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "notice" && <CommunityNotices />}
+
+      {tab === "feed" && (
+      <>
       {isPending ? (
         <ul className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -311,6 +344,8 @@ export default function CommunityPage() {
             다음
           </Button>
         </div>
+      )}
+      </>
       )}
 
       <NewPostModal open={open} onClose={() => setOpen(false)} />

@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_optional_user
 from app.core.database import get_db
-from app.models import Comment, Post, PostLike, User, UserRole, Vulnerability
+from app.models import Comment, Notice, Post, PostLike, User, UserRole, Vulnerability
 from app.schemas.vulnerability import CamelModel
 
 router = APIRouter(prefix="/community", tags=["community"])
@@ -581,3 +581,89 @@ async def update_comment(
         can_manage=_can_manage(comment.user_id, comment.client_id, me=me, x_client_id=x_client_id),
         created_at=comment.created_at,
     )
+
+
+# ─── 공지(Notice) — 관리자만 작성, 누구나 조회 ──────────────
+class NoticeCreate(CamelModel):
+    title: str = Field(min_length=1, max_length=255)
+    content: str = Field(min_length=1, max_length=20000)
+    pinned: bool = False
+
+
+class NoticeOut(CamelModel):
+    id: int
+    title: str
+    content: str
+    author_name: str
+    pinned: bool
+    can_manage: bool = False
+    created_at: datetime
+
+
+@router.get("/notices", response_model=list[NoticeOut], response_model_by_alias=True)
+async def list_notices(
+    me: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[NoticeOut]:
+    rows = (
+        await db.execute(
+            select(Notice).order_by(desc(Notice.pinned), desc(Notice.created_at))
+        )
+    ).scalars().all()
+    is_admin = me is not None and me.role == UserRole.ADMIN
+    return [
+        NoticeOut(
+            id=n.id,
+            title=n.title,
+            content=n.content,
+            author_name=n.author_name,
+            pinned=n.pinned,
+            can_manage=is_admin,
+            created_at=n.created_at,
+        )
+        for n in rows
+    ]
+
+
+@router.post("/notices", response_model=NoticeOut, response_model_by_alias=True, status_code=201)
+async def create_notice(
+    body: NoticeCreate,
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> NoticeOut:
+    if me.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="공지는 관리자만 작성할 수 있습니다.")
+    n = Notice(
+        title=body.title.strip(),
+        content=body.content.strip(),
+        user_id=me.id,
+        author_name=_display_name(me),
+        pinned=bool(body.pinned),
+    )
+    db.add(n)
+    await db.commit()
+    await db.refresh(n)
+    return NoticeOut(
+        id=n.id,
+        title=n.title,
+        content=n.content,
+        author_name=n.author_name,
+        pinned=n.pinned,
+        can_manage=True,
+        created_at=n.created_at,
+    )
+
+
+@router.delete("/notices/{notice_id}", status_code=204)
+async def delete_notice(
+    notice_id: int,
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    if me.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="공지는 관리자만 삭제할 수 있습니다.")
+    n = await db.scalar(select(Notice).where(Notice.id == notice_id))
+    if n is None:
+        raise HTTPException(status_code=404, detail="notice not found")
+    await db.delete(n)
+    await db.commit()

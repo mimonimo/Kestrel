@@ -162,6 +162,23 @@ class AnalysisLike(Base):
     )
 
 
+class Notice(Base, TimestampMixin):
+    """운영 공지 — 관리자만 작성, 커뮤니티 상단 '공지' 탭에 노출."""
+
+    __tablename__ = "notices"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    author_name: Mapped[str] = mapped_column(String(64), nullable=False, default="운영자")
+    pinned: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
+
+
 class Comment(Base, TimestampMixin):
     __tablename__ = "comments"
 

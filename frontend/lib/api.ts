@@ -540,6 +540,14 @@ export const api = {
       headers: clientHeaders(),
       body: JSON.stringify({ content }),
     }),
+  listNotices: () => request<CommunityNotice[]>(`/community/notices`),
+  createNotice: (body: { title: string; content: string; pinned?: boolean }) =>
+    request<CommunityNotice>(`/community/notices`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  deleteNotice: (id: number) =>
+    request<void>(`/community/notices/${id}`, { method: "DELETE" }),
 
   getAppSettings: () => request<AppSettingsResponse>(`/settings`),
   listAiCredentials: () => request<AiCredentialListResponse>(`/settings/credentials`),
@@ -1439,6 +1447,16 @@ export interface CommunityComment {
 export interface CommentListResponse {
   items: CommunityComment[];
   total: number;
+}
+
+export interface CommunityNotice {
+  id: number;
+  title: string;
+  content: string;
+  authorName: string;
+  pinned: boolean;
+  canManage: boolean;
+  createdAt: string;
 }
 
 export type TicketStatus = "open" | "in_progress" | "resolved" | "ignored";
