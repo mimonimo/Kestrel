@@ -84,6 +84,32 @@ def _run(cmd: list[str], *, cwd: str | None = None, timeout: int = 1200) -> str:
     return res.stdout
 
 
+def _clear_stale_git_locks(repo_path: Path) -> None:
+    """이전에 중단된 git 작업이 남긴 lock 파일을 제거한다.
+
+    ``git fetch --deepen`` 이 타임아웃·컨테이너 재시작·OOM 등으로 중간에
+    죽으면 ``.git/shallow.lock`` 이 남고, 이후 모든 fetch 가
+    ``fatal: Unable to create '.../.git/shallow.lock': File exists`` 로
+    계속 실패한다. 스케줄러는 단일 writer(6h 틱, 동시 실행 없음)이므로
+    fetch 직전에 잔존 lock 을 안전하게 걷어낼 수 있다.
+    """
+    git_dir = repo_path / ".git"
+    if not git_dir.exists():
+        return
+    try:
+        locks = list(git_dir.glob("*.lock")) + list(git_dir.glob("**/*.lock"))
+    except OSError:
+        return
+    for lock in locks:
+        try:
+            lock.unlink()
+            log.warning("mitre.stale_lock.removed", lock=str(lock))
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            log.warning("mitre.stale_lock.remove_failed", lock=str(lock), error=str(exc))
+
+
 def sync_repo() -> Path:
     """Clone the cvelistV5 repo on first call, fast-forward subsequently."""
     settings = get_settings()
@@ -118,6 +144,11 @@ def sync_repo() -> Path:
     # every tracked file every time, defeating the delta optimization.
     # 200 commits ≈ a few weeks of cvelistV5 activity, which the 6h
     # scheduler tick is well within.
+    #
+    # 직전 fetch 가 중단돼 남은 .git/shallow.lock 등을 먼저 정리한다 —
+    # 안 그러면 "Unable to create '.../shallow.lock': File exists" 로
+    # 매 틱 실패가 반복된다.
+    _clear_stale_git_locks(repo_path)
     _run(
         ["git", "fetch", "--deepen=200", "origin", "HEAD"],
         cwd=str(repo_path),
