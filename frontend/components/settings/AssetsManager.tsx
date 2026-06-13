@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { useAssets } from "@/lib/assets";
 import { useDebounce } from "@/hooks/useDebounce";
 import { api } from "@/lib/api";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { cn } from "@/lib/utils";
 
 const OS_LABEL: Record<string, string> = {
@@ -91,14 +92,12 @@ const MODE_TABS: { value: RegisterMode; label: string }[] = [
 function AssetRegisterModal({ onClose }: { onClose: () => void }) {
   const { add } = useAssets();
   const [mode, setMode] = useState<RegisterMode>("search");
+  useBodyScrollLock(true);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
     };
   }, [onClose]);
 

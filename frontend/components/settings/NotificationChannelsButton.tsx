@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Bell, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { NotificationChannelsPanel } from "./NotificationChannelsPanel";
 
 // 알림 채널(Slack/Discord 웹훅) 관리 — 설정 본문엔 버튼만, 클릭 시 모달에서 관리.
@@ -22,14 +23,12 @@ export function NotificationChannelsButton() {
 }
 
 function ChannelsModal({ onClose }: { onClose: () => void }) {
+  useBodyScrollLock(true);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
     };
   }, [onClose]);
 

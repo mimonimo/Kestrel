@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { KeyRound, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { ApiKeyField } from "./ApiKeyField";
 
 // 외부 연결 키(NVD·GitHub) 관리 — 설정 본문엔 버튼만, 클릭 시 모달에서 관리.
@@ -21,14 +22,12 @@ export function ApiKeysManagerButton() {
 }
 
 function KeysModal({ onClose }: { onClose: () => void }) {
+  useBodyScrollLock(true);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
     };
   }, [onClose]);
 

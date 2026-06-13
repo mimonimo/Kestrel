@@ -5,6 +5,7 @@ import { Check, KeyRound, Loader2, X } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 
 // 비밀번호 변경 — 설정 본문에는 버튼만, 클릭 시 모달로 입력 폼.
 // 서버가 현재 비밀번호를 재검증하므로 세션 탈취만으로는 변경 불가.
@@ -54,17 +55,15 @@ function PasswordChangeModal({
   const mismatch = confirm.length > 0 && next !== confirm;
   const canSubmit = !!current && next.length >= 8 && next === confirm && !busy;
 
-  // ESC 닫기 + body 스크롤 잠금
+  // ESC 닫기 (스크롤 잠금은 useBodyScrollLock)
+  useBodyScrollLock(true);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !busy) onClose();
     };
     document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
     };
   }, [onClose, busy]);
 

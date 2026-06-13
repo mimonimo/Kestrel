@@ -27,6 +27,7 @@ import {
 import { ApiError } from "@/lib/api";
 import { formatRelativeKo } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { UserManagementPanel } from "@/components/settings/UserManagementPanel";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -399,14 +400,12 @@ function StatCard({ label, value, tint }: { label: string; value: number; tint: 
 function ConsoleModal({ initial, onClose }: { initial: Which; onClose: () => void }) {
   const [tab, setTab] = useState<Which>(initial);
   const { label } = META[tab];
+  useBodyScrollLock(true);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
     };
   }, [onClose]);
 
