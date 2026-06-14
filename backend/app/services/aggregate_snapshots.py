@@ -14,8 +14,6 @@ Redis 에 저장하고, API 는 요청 시 이 스냅샷을 즉시 반환한다 
 """
 from __future__ import annotations
 
-from sqlalchemy import text
-
 from app.core.logging import get_logger
 from app.core.redis_client import get_redis
 
@@ -65,17 +63,12 @@ async def refresh_snapshots() -> None:
     from app.api.v1.dashboard import _compute, _compute_priorities
     from app.api.v1.search import _build_facets
 
-    from app.core.database import SessionLocal
+    from app.core.database import background_session
 
     redis = await get_redis()
-    async with SessionLocal() as session:
-        # 풀 커넥션이 API 요청에서 SET 한 statement_timeout(20s)을 물려받아
-        # 무거운 집계가 잘리는 문제 방지 — 백그라운드는 끝까지 계산.
-        try:
-            await session.execute(text("SET statement_timeout = 0"))
-            await session.commit()
-        except Exception:
-            await session.rollback()
+    # background_session: 풀 커넥션이 API 요청에서 남긴 statement_timeout(20s)을
+    # 물려받아 무거운 집계가 잘리는 것을 막는다(timeout 해제).
+    async with background_session() as session:
 
         try:
             facets = await _build_facets(session)

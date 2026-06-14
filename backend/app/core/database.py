@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -40,3 +41,21 @@ async def get_db() -> AsyncIterator[AsyncSession]:
                 await session.execute(text("RESET statement_timeout"))
             except Exception:
                 pass
+
+
+@asynccontextmanager
+async def background_session() -> AsyncIterator[AsyncSession]:
+    """백그라운드 작업(스케줄러/백필)용 세션.
+
+    get_db 가 건 statement_timeout(20s)이 비정상 종료(요청 취소 등)로 RESET 되지
+    못한 채 풀 커넥션에 남으면, 이 커넥션을 물려받은 백그라운드 잡의 무거운
+    집계/대량 UPDATE 가 ``QueryCanceledError`` 로 잘린다. 백그라운드는 끝까지
+    돌아야 하므로 세션 시작 시 statement_timeout 을 명시적으로 해제(0)한다.
+    """
+    async with SessionLocal() as session:
+        try:
+            await session.execute(text("SET statement_timeout = 0"))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+        yield session

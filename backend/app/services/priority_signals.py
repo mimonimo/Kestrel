@@ -24,7 +24,7 @@ from typing import Iterable
 import httpx
 from sqlalchemy import text, update
 
-from app.core.database import SessionLocal
+from app.core.database import background_session
 from app.core.logging import get_logger
 from app.models import Vulnerability
 
@@ -92,7 +92,7 @@ async def refresh_kev() -> dict:
         log.info("kev.empty_payload")
         return result
 
-    async with SessionLocal() as session:
+    async with background_session() as session:
         # First reset everything (so de-listed CVEs go back to False).
         # The KEV catalog is small enough that this is cheap.
         await session.execute(
@@ -201,7 +201,7 @@ async def refresh_epss(insert_batch: int = 5000, update_batch: int = 20000) -> d
 
     now = datetime.now(timezone.utc)
 
-    async with SessionLocal() as session:
+    async with background_session() as session:
         # 스테이징 — 배치마다 커밋하므로 테이블이 커밋 후에도 살아 있어야 한다.
         # TEMP 테이블은 세션(커넥션)에 묶여, uvicorn 의 풀링된 asyncpg 커넥션에선
         # 커밋/재사용 시 사라져 "relation _epss_staging does not exist" 로 깨졌다
