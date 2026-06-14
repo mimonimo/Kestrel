@@ -112,7 +112,9 @@ services:
     # 스필되어 수 분~수십 분 걸렸다. 단일 호스트(t4g.small 2GB)에 맞춰 상향.
     #   - shared_buffers: PG 전용 캐시. 인스턴스 RAM 의 ~20%.
     #   - effective_cache_size: 플래너 힌트(실제 할당 X) — OS page cache 포함 가용량.
-    #   - work_mem: 정렬/해시 집계 1노드당. distinct/group by 가 메모리에 머물게.
+    #   - work_mem: 정렬/해시 집계 1노드당. 무거운 집계는 커버링 인덱스 +
+    #     백그라운드 스냅샷 캐시로 처리되므로, 2GB 박스의 동시-쿼리 메모리 피크를
+    #     낮추려 16MB 로 둔다(과거 32MB → 스파이크로 스왑 유발).
     #   - maintenance_work_mem: VACUUM/인덱스.
     #   - random_page_cost/effective_io_concurrency: gp3 SSD 가정.
     #   - jit off: 약한 CPU 에서 JIT 컴파일 오버헤드가 분석쿼리에 오히려 손해.
@@ -125,9 +127,9 @@ services:
       - "-c"
       - "effective_cache_size=1GB"
       - "-c"
-      - "work_mem=32MB"
+      - "work_mem=16MB"
       - "-c"
-      - "maintenance_work_mem=96MB"
+      - "maintenance_work_mem=64MB"
       - "-c"
       - "random_page_cost=1.1"
       - "-c"
@@ -149,7 +151,7 @@ services:
       - "-c"
       - "autovacuum_naptime=30s"
       - "-c"
-      - "autovacuum_max_workers=3"
+      - "autovacuum_max_workers=2"
     ports:
       - "5432:5432"
     environment:
