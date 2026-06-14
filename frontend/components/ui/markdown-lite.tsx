@@ -1,13 +1,25 @@
 "use client";
 
 /**
- * 경량 Markdown 렌더러 — Kestrel AI 분석 본문(result_md)용. 외부 의존성 없음.
+ * Markdown 렌더러 — Kestrel AI 분석·커뮤니티 글·댓글·공지 공용.
  *
- * 처리: ## 섹션(카드+아이콘·색상), ### 소제목, **bold**, `code`(삼중/이중 포함),
- * _italic_, 펜스/한 줄 코드블록(언어 라벨·줄번호·복사·경량 하이라이트),
- * 1. 순서목록, - 불릿, --- 구분선, 문단.
+ * 표준 파서(react-markdown + remark-gfm)를 사용해 CommonMark/GFM 규칙대로 정확히
+ * 렌더한다. 과거의 직접 파서가 의존하던 "깨진 마크업 강제 정리"(고아 마커 삭제,
+ * 줄바꿈 강제 병합) 휴리스틱을 제거 — 외부(BYOA) 에이전트가 내놓는 마크다운도
+ * 규칙대로 처리된다. ``remark-breaks`` 로 단락 내 단일 줄바꿈을 그대로(<br>) 보존해
+ * 사용자가 입력한 줄바꿈이 임의로 합쳐지지 않는다.
+ *
+ * Kestrel 고유 렌더링은 커스텀 컴포넌트/플러그인으로 보존한다:
+ *  - ``## 제목`` → 섹션 카드(아이콘·색상). compact 모드(댓글 등)에서는 소제목.
+ *  - 코드블록 → 언어 라벨·줄번호·복사·경량 하이라이트.
+ *  - ``CVE-XXXX`` → 해당 취약점 상세로 자동 링크(원문 텍스트는 건드리지 않음).
+ *  - raw HTML 은 렌더하지 않는다(rehype-raw 미사용) → XSS 차단.
  */
 import { type ReactNode, useMemo, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import {
   Check,
   Code2,
@@ -19,133 +31,51 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// 인라인: 코드 → **굵게**/__굵게__ → _기울임_ → 고아 마커 정리.
-// 단일 ``*`` 는 ``/api/*`` · 정규식 ``.*`` 등 보안 텍스트에서 흔해 절대 건드리지
-// 않는다. 모델이 종종 토해내는 깨진 마크업(``**_x_**`` 중첩, 닫히지 않은
-// ``**`` / 끝에 매달린 ``_``)을 안전하게 정리해 ``###`` · ``**`` · ``_`` 가
-// 본문에 글자 그대로 노출되지 않게 한다.
+// ─── CVE 자동 링크 remark 플러그인 ───────────────────────
+// mdast 의 text 노드만 분할해 CVE-XXXX 를 내부 링크 노드로 치환한다.
+// 코드(inlineCode/code)·기존 링크 안은 건드리지 않는다(중첩 링크 방지).
+const CVE_TEST = /\bCVE-\d{4}-\d{4,7}\b/;
+const CVE_SPLIT = /\bCVE-\d{4}-\d{4,7}\b/g;
 
-function stripCode(tok: string): string {
-  if (tok.startsWith("```")) return tok.slice(3, -3);
-  if (tok.startsWith("``")) return tok.slice(2, -2);
-  return tok.slice(1, -1);
+interface MdNode {
+  type: string;
+  value?: string;
+  url?: string;
+  children?: MdNode[];
+  data?: Record<string, unknown>;
 }
 
-// 짝이 맞지 않아 남은 강조 마커 제거. ``**`` 런과 *단어 경계가 아닌* ``_`` 만
-// 지운다(식별자 TARGET_HOST 의 ``_`` 는 보존).
-function cleanMarkers(s: string): string {
-  let out = s.replace(/\*\*+/g, "");
-  out = out.replace(/_+/g, (m, off: number) => {
-    const before = out[off - 1] || "";
-    const after = out[off + m.length] || "";
-    const intraword = /[A-Za-z0-9]/.test(before) && /[A-Za-z0-9]/.test(after);
-    return intraword ? m : "";
-  });
-  return out;
+function remarkCveLinks() {
+  const walk = (node: MdNode) => {
+    if (!node.children) return;
+    if (node.type === "link" || node.type === "linkReference") return;
+    const next: MdNode[] = [];
+    for (const child of node.children) {
+      if (child.type === "text" && child.value && CVE_TEST.test(child.value)) {
+        const val = child.value;
+        let last = 0;
+        let m: RegExpExecArray | null;
+        CVE_SPLIT.lastIndex = 0;
+        while ((m = CVE_SPLIT.exec(val)) !== null) {
+          if (m.index > last) next.push({ type: "text", value: val.slice(last, m.index) });
+          next.push({
+            type: "link",
+            url: `/cve/${m[0]}`,
+            children: [{ type: "text", value: m[0] }],
+            data: { hProperties: { className: "cve-link" } },
+          });
+          last = m.index + m[0].length;
+        }
+        if (last < val.length) next.push({ type: "text", value: val.slice(last) });
+      } else {
+        walk(child);
+        next.push(child);
+      }
+    }
+    node.children = next;
+  };
+  return (tree: MdNode) => walk(tree);
 }
-
-function renderInline(text: string): ReactNode[] {
-  let k = 0;
-  const nextKey = () => `il-${k++}`;
-  const leaf = (s: string): ReactNode[] => {
-    const c = cleanMarkers(s);
-    if (!c) return [];
-    // CVE-XXXX 멘션을 해당 취약점 상세로 가는 링크로 자동 변환(바로가기).
-    const re = /\bCVE-\d{4}-\d{4,7}\b/g;
-    const out: ReactNode[] = [];
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(c)) !== null) {
-      if (m.index > last) out.push(c.slice(last, m.index));
-      out.push(
-        <a
-          key={nextKey()}
-          href={`/cve/${m[0]}`}
-          className="font-mono font-medium text-sky-600 hover:underline dark:text-sky-400"
-        >
-          {m[0]}
-        </a>,
-      );
-      last = m.index + m[0].length;
-    }
-    if (last === 0) return [c];
-    if (last < c.length) out.push(c.slice(last));
-    return out;
-  };
-
-  const italic = (t: string): ReactNode[] => {
-    const re = /(?<![A-Za-z0-9])_(?!\s)([^_]+?)(?<!\s)_(?![A-Za-z0-9])/g;
-    const out: ReactNode[] = [];
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(t)) !== null) {
-      if (m.index > last) out.push(...leaf(t.slice(last, m.index)));
-      out.push(
-        <em key={nextKey()} className="italic text-neutral-800 dark:text-neutral-200">
-          {cleanMarkers(m[1])}
-        </em>,
-      );
-      last = m.index + m[0].length;
-    }
-    if (last < t.length) out.push(...leaf(t.slice(last)));
-    return out;
-  };
-
-  const bold = (t: string): ReactNode[] => {
-    const re = /\*\*([\s\S]+?)\*\*|(?<![A-Za-z0-9])__([\s\S]+?)__(?![A-Za-z0-9])/g;
-    const out: ReactNode[] = [];
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(t)) !== null) {
-      if (m.index > last) out.push(...italic(t.slice(last, m.index)));
-      out.push(
-        <strong key={nextKey()} className="font-semibold text-neutral-900 dark:text-neutral-100">
-          {italic(m[1] ?? m[2] ?? "")}
-        </strong>,
-      );
-      last = m.index + m[0].length;
-    }
-    if (last < t.length) out.push(...italic(t.slice(last)));
-    return out;
-  };
-
-  const code = (t: string): ReactNode[] => {
-    const re = /```[^`]+```|``[^`]+``|`[^`]+`/g;
-    const out: ReactNode[] = [];
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(t)) !== null) {
-      if (m.index > last) out.push(...bold(t.slice(last, m.index)));
-      const raw = stripCode(m[0]);
-      out.push(
-        raw.includes("\n") ? (
-          // 줄바꿈이 든 인라인 코드(모델이 백틱 안에 멀티라인 패치를 넣는 경우)
-          // 는 한 줄로 뭉개지지 않게 블록(pre-wrap)으로 렌더한다.
-          <code
-            key={nextKey()}
-            className="my-1 block overflow-x-auto whitespace-pre-wrap rounded-md bg-neutral-100 p-2 font-mono text-[0.8em] leading-relaxed text-neutral-800 dark:bg-surface-3 dark:text-neutral-100"
-          >
-            {raw}
-          </code>
-        ) : (
-          <code
-            key={nextKey()}
-            className="rounded bg-neutral-200/70 px-1 py-0.5 font-mono text-[0.85em] text-violet-700 dark:bg-surface-3 dark:text-violet-300"
-          >
-            {raw}
-          </code>
-        ),
-      );
-      last = m.index + m[0].length;
-    }
-    if (last < t.length) out.push(...bold(t.slice(last)));
-    return out;
-  };
-
-  return code(text);
-}
-
-const FULL_CODE = /^\s*(```|``|`)([\s\S]+?)\1\s*$/;
 
 // ─── 코드블록(언어 라벨 + 줄번호 + 복사 + 경량 하이라이트) ──
 function detectLanguage(source: string): string {
@@ -207,7 +137,7 @@ function CodeBlock({ code }: { code: string }) {
     }
   };
   return (
-    <div className="overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-2">
+    <div className="my-2 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-2">
       <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-3 py-1.5 dark:border-neutral-800 dark:bg-surface-3">
         <span className="font-mono text-[10px] uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
           {lang}
@@ -272,7 +202,8 @@ function sectionMeta(title: string): SectionMeta {
   if (/완화|대응|패치|방어|조치|mitigat|remediat|fix|patch/.test(t))
     return {
       icon: ShieldCheck,
-      headerCls: "border-emerald-200 bg-emerald-50/70 dark:border-emerald-500/20 dark:bg-emerald-500/5",
+      headerCls:
+        "border-emerald-200 bg-emerald-50/70 dark:border-emerald-500/20 dark:bg-emerald-500/5",
       iconCls: "text-emerald-600 dark:text-emerald-400",
     };
   if (/q&a|질문|문의|추가|faq/.test(t))
@@ -288,25 +219,159 @@ function sectionMeta(title: string): SectionMeta {
   };
 }
 
-function SectionCard({ title, children }: { title: string; children: ReactNode }) {
+// ─── react-markdown 컴포넌트 매핑 ────────────────────────
+const COMPONENTS: Components = {
+  // 펜스 코드블록(<pre><code>)은 pre 를 풀고 code 가 CodeBlock 을 그린다
+  // (div 를 pre 안에 넣으면 안 되므로).
+  pre: ({ children }) => <>{children}</>,
+  code({ className, children }) {
+    const text = String(children ?? "");
+    const isBlock = /language-/.test(className || "") || text.includes("\n");
+    if (isBlock) return <CodeBlock code={text.replace(/\n$/, "")} />;
+    return (
+      <code className="rounded bg-neutral-200/70 px-1 py-0.5 font-mono text-[0.85em] text-violet-700 dark:bg-surface-3 dark:text-violet-300">
+        {children}
+      </code>
+    );
+  },
+  a({ href, children }) {
+    const url = href || "#";
+    const internal = url.startsWith("/");
+    return (
+      <a
+        href={url}
+        {...(internal ? {} : { target: "_blank", rel: "noopener noreferrer" })}
+        className="font-medium text-sky-600 hover:underline dark:text-sky-400"
+      >
+        {children}
+      </a>
+    );
+  },
+  p: ({ children }) => (
+    <p className="leading-relaxed text-neutral-800 dark:text-neutral-200">{children}</p>
+  ),
+  strong: ({ children }) => (
+    <strong className="font-semibold text-neutral-900 dark:text-neutral-100">{children}</strong>
+  ),
+  em: ({ children }) => (
+    <em className="italic text-neutral-800 dark:text-neutral-200">{children}</em>
+  ),
+  del: ({ children }) => (
+    <del className="text-neutral-500 dark:text-neutral-500">{children}</del>
+  ),
+  h1: ({ children }) => (
+    <h2 className="text-base font-bold text-neutral-900 dark:text-neutral-100">{children}</h2>
+  ),
+  h2: ({ children }) => (
+    <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{children}</h3>
+  ),
+  h3: ({ children }) => (
+    <h4 className="font-semibold text-neutral-800 dark:text-neutral-200">{children}</h4>
+  ),
+  h4: ({ children }) => (
+    <h5 className="font-semibold text-neutral-800 dark:text-neutral-200">{children}</h5>
+  ),
+  h5: ({ children }) => (
+    <h6 className="font-semibold text-neutral-700 dark:text-neutral-300">{children}</h6>
+  ),
+  h6: ({ children }) => (
+    <h6 className="font-semibold text-neutral-700 dark:text-neutral-300">{children}</h6>
+  ),
+  ul: ({ children }) => (
+    <ul className="ml-5 list-disc space-y-1.5 leading-relaxed marker:text-neutral-400 dark:marker:text-neutral-500">
+      {children}
+    </ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="ml-5 list-decimal space-y-1.5 leading-relaxed marker:text-neutral-400 dark:marker:text-neutral-500">
+      {children}
+    </ol>
+  ),
+  li: ({ children }) => <li className="pl-1">{children}</li>,
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-2 border-neutral-300 pl-3 text-neutral-600 dark:border-neutral-700 dark:text-neutral-400">
+      {children}
+    </blockquote>
+  ),
+  hr: () => <hr className="border-neutral-200 dark:border-neutral-800" />,
+  table: ({ children }) => (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-sm">{children}</table>
+    </div>
+  ),
+  th: ({ children }) => (
+    <th className="border border-neutral-200 bg-neutral-50 px-2 py-1 text-left font-semibold dark:border-neutral-800 dark:bg-surface-2">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="border border-neutral-200 px-2 py-1 dark:border-neutral-800">{children}</td>
+  ),
+};
+
+const REMARK_PLUGINS = [remarkGfm, remarkBreaks, remarkCveLinks];
+const REMARK_PLUGINS_INLINE = [remarkGfm, remarkCveLinks];
+
+function Md({ children }: { children: string }) {
+  return (
+    <div className="space-y-3 text-sm">
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={COMPONENTS}>
+        {children}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+// 섹션 제목 등 인라인 전용 — 블록 <p> 래핑 없이 한 줄로.
+function InlineMd({ children }: { children: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={REMARK_PLUGINS_INLINE}
+      components={{ ...COMPONENTS, p: ({ children: c }) => <>{c}</> }}
+    >
+      {children}
+    </ReactMarkdown>
+  );
+}
+
+function SectionCard({ title, body }: { title: string; body: string }) {
   const { icon: Icon, headerCls, iconCls } = sectionMeta(title);
   return (
     <section className="overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-800">
       <div className={cn("flex items-center gap-2 border-b px-4 py-2.5", headerCls)}>
         <Icon className={cn("h-4 w-4 shrink-0", iconCls)} />
         <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-          {renderInline(title)}
+          <InlineMd>{title}</InlineMd>
         </h3>
       </div>
-      <div className="space-y-3 px-4 py-3.5 text-sm">{children}</div>
+      <div className="px-4 py-3.5 text-sm">
+        <Md>{body}</Md>
+      </div>
     </section>
   );
 }
 
-// ─── 본문 파서 ───────────────────────────────────────────
-interface Section {
+// ─── 본문: ``## 제목`` 기준으로 섹션 카드 분할(코드펜스 안의 ## 은 무시) ──
+interface Part {
   title: string | null; // null = 카드 없는 프리앰블
-  blocks: ReactNode[];
+  body: string;
+}
+
+function splitSections(source: string): Part[] {
+  const lines = source.split("\n");
+  const parts: Part[] = [{ title: null, body: "" }];
+  const cur = () => parts[parts.length - 1];
+  let inFence = false;
+  for (const line of lines) {
+    if (/^\s*(```+|~~~+)/.test(line)) inFence = !inFence;
+    const h2 = !inFence && /^##\s+(.*)$/.exec(line);
+    if (h2) {
+      parts.push({ title: h2[1].replace(/\s*#+\s*$/, "").trim(), body: "" });
+    } else {
+      cur().body += (cur().body ? "\n" : "") + line;
+    }
+  }
+  return parts;
 }
 
 export function MarkdownLite({
@@ -319,217 +384,24 @@ export function MarkdownLite({
   /** 댓글 등 좁은 영역용 — ``##`` 를 섹션 카드 대신 소제목으로 렌더. */
   compact?: boolean;
 }) {
-  const lines = source.replace(/\r\n/g, "\n").split("\n");
-  const sections: Section[] = [{ title: null, blocks: [] }];
-  let para: string[] = [];
-  let key = 0;
-  const cur = () => sections[sections.length - 1];
+  const src = (source ?? "").replace(/\r\n/g, "\n");
 
-  const flushPara = () => {
-    if (para.length === 0) return;
-    cur().blocks.push(
-      <p key={key++} className="leading-relaxed text-neutral-800 dark:text-neutral-200">
-        {renderInline(para.join(" "))}
-      </p>,
+  if (compact) {
+    return (
+      <div className={className}>
+        <Md>{src}</Md>
+      </div>
     );
-    para = [];
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // 코드 펜스 — 불릿 접두사(- ```)·여는 줄 같은 줄 내용·줄 끝 닫힘까지 처리.
-    const fence = /^\s*(?:[-*]\s+)?(```+)(.*)$/.exec(line);
-    if (fence) {
-      flushPara();
-      const buf: string[] = [];
-      const firstRest = fence[2];
-      let closed = false;
-      if (firstRest) {
-        const ci = firstRest.indexOf("```");
-        if (ci !== -1) {
-          buf.push(firstRest.slice(0, ci));
-          closed = true;
-        } else {
-          buf.push(firstRest);
-        }
-      }
-      if (!closed) {
-        i++;
-        while (i < lines.length) {
-          const l = lines[i];
-          const ci = l.indexOf("```");
-          if (ci !== -1) {
-            const before = l.slice(0, ci);
-            if (before.trim()) buf.push(before);
-            closed = true;
-            break;
-          }
-          buf.push(l);
-          i++;
-        }
-      }
-      const code = buf.join("\n").replace(/^\n+|\n+$/g, "");
-      cur().blocks.push(<CodeBlock key={key++} code={code} />);
-      continue;
-    }
-
-    if (/^---+\s*$/.test(line)) {
-      flushPara();
-      cur().blocks.push(<hr key={key++} className="border-neutral-200 dark:border-neutral-800" />);
-      continue;
-    }
-
-    const h = /^(#{1,6})\s+(.*)$/.exec(line);
-    if (h) {
-      flushPara();
-      const level = h[1].length;
-      const text = h[2].replace(/\s*#+\s*$/, ""); // 끝에 매달린 ATX 닫는 # 제거
-      if (level === 2) {
-        if (compact) {
-          // 좁은 영역(댓글): 카드 대신 소제목으로.
-          cur().blocks.push(
-            <h3
-              key={key++}
-              className="text-sm font-semibold text-neutral-900 dark:text-neutral-100"
-            >
-              {renderInline(text)}
-            </h3>,
-          );
-        } else {
-          // 새 섹션 카드 시작.
-          sections.push({ title: text, blocks: [] });
-        }
-      } else if (level === 1) {
-        cur().blocks.push(
-          <h2 key={key++} className="text-base font-bold text-neutral-900 dark:text-neutral-100">
-            {renderInline(text)}
-          </h2>,
-        );
-      } else {
-        cur().blocks.push(
-          <h4 key={key++} className="font-semibold text-neutral-800 dark:text-neutral-200">
-            {renderInline(text)}
-          </h4>,
-        );
-      }
-      continue;
-    }
-
-    if (/^\s*\d+\.\s+/.test(line)) {
-      flushPara();
-      const items: { n: string; text: string }[] = [];
-      while (i < lines.length) {
-        const l = lines[i];
-        const mm = /^\s*(\d+)\.\s+(.*)$/.exec(l);
-        if (mm) {
-          items.push({ n: mm[1], text: mm[2] });
-          i++;
-        } else if (
-          items.length > 0 &&
-          l.trim() !== "" &&
-          !/^\s*[-*]\s+/.test(l) &&
-          !/^#{1,6}\s+/.test(l) &&
-          !/^---+\s*$/.test(l) &&
-          !/^\s*```+/.test(l)
-        ) {
-          items[items.length - 1].text += "\n" + l;
-          i++;
-        } else {
-          break;
-        }
-      }
-      i--;
-      // list-decimal CSS 카운터는 목록이 조각나면 매번 1 로 리셋된다.
-      // 모델이 항목 사이에 하위 불릿/코드를 끼워 넣어 <ol> 이 분리돼도
-      // 원본 번호(1,2,3,4)가 유지되도록 소스의 번호를 직접 렌더한다.
-      cur().blocks.push(
-        <ol key={key++} className="space-y-1.5 text-neutral-800 dark:text-neutral-200">
-          {items.map((it, j) => (
-            <li key={j} className="flex gap-2 leading-relaxed">
-              <span className="shrink-0 tabular-nums font-medium text-neutral-400 dark:text-neutral-500">
-                {it.n}.
-              </span>
-              <span className="min-w-0 flex-1">{renderInline(it.text)}</span>
-            </li>
-          ))}
-        </ol>,
-      );
-      continue;
-    }
-
-    if (/^\s*[-*]\s+/.test(line)) {
-      flushPara();
-      const items: string[] = [];
-      while (i < lines.length) {
-        const l = lines[i];
-        if (/^\s*[-*]\s+/.test(l)) {
-          items.push(l.replace(/^\s*[-*]\s+/, ""));
-          i++;
-        } else if (
-          items.length > 0 &&
-          l.trim() !== "" &&
-          !/^\s*\d+\.\s+/.test(l) &&
-          !/^#{1,6}\s+/.test(l) &&
-          !/^---+\s*$/.test(l) &&
-          !/^\s*```+/.test(l)
-        ) {
-          // 이전 항목이 이어지는 줄(백틱 안 멀티라인 코드 등으로 줄바꿈된 경우)
-          // — 줄 단위로 끊지 말고 합친다.
-          items[items.length - 1] += "\n" + l;
-          i++;
-        } else {
-          break;
-        }
-      }
-      i--;
-      cur().blocks.push(
-        <ul key={key++} className="space-y-1.5 text-neutral-800 dark:text-neutral-200">
-          {items.map((it, j) => {
-            const fc = FULL_CODE.exec(it);
-            if (fc) {
-              return (
-                <li key={j} className="list-none">
-                  <CodeBlock code={fc[2]} />
-                </li>
-              );
-            }
-            return (
-              <li
-                key={j}
-                className="ml-5 list-disc leading-relaxed marker:text-neutral-400 dark:marker:text-neutral-500"
-              >
-                {renderInline(it)}
-              </li>
-            );
-          })}
-        </ul>,
-      );
-      continue;
-    }
-
-    if (line.trim() === "") {
-      flushPara();
-      continue;
-    }
-
-    para.push(line.trim());
   }
-  flushPara();
 
+  const parts = splitSections(src);
   return (
     <div className={cn("space-y-4", className)}>
-      {sections.map((s, i) =>
-        s.title === null ? (
-          s.blocks.length ? (
-            <div key={i} className="space-y-3 text-sm">
-              {s.blocks}
-            </div>
-          ) : null
+      {parts.map((p, i) =>
+        p.title === null ? (
+          p.body.trim() ? <Md key={i}>{p.body}</Md> : null
         ) : (
-          <SectionCard key={i} title={s.title}>
-            {s.blocks}
-          </SectionCard>
+          <SectionCard key={i} title={p.title} body={p.body} />
         ),
       )}
     </div>
