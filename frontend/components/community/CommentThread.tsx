@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/auth-context";
 import { recordCommentHistory } from "@/lib/comment-history";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AuthorInline } from "@/components/community/AuthorInline";
+import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { formatRelativeKo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -233,9 +234,9 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
               </div>
             </form>
           ) : (
-            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-neutral-800 dark:text-neutral-200">
-              {c.content}
-            </p>
+            <div className="text-sm leading-relaxed text-neutral-800 dark:text-neutral-200">
+              <MarkdownLite source={c.content} compact />
+            </div>
           )}
         </div>
       </div>

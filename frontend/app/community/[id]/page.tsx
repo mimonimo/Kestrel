@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ErrorBox } from "@/components/ui/feedback-box";
 import { CommentThread } from "@/components/community/CommentThread";
+import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { formatRelativeKo } from "@/lib/format";
 
 export default function PostDetailPage() {
@@ -78,8 +79,8 @@ export default function PostDetailPage() {
             </div>
           </header>
 
-          <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-neutral-200">
-            {data.content}
+          <div className="text-sm leading-relaxed text-neutral-200">
+            <MarkdownLite source={data.content} />
           </div>
 
           {data.isOwner && (

@@ -309,7 +309,16 @@ interface Section {
   blocks: ReactNode[];
 }
 
-export function MarkdownLite({ source, className }: { source: string; className?: string }) {
+export function MarkdownLite({
+  source,
+  className,
+  compact = false,
+}: {
+  source: string;
+  className?: string;
+  /** 댓글 등 좁은 영역용 — ``##`` 를 섹션 카드 대신 소제목으로 렌더. */
+  compact?: boolean;
+}) {
   const lines = source.replace(/\r\n/g, "\n").split("\n");
   const sections: Section[] = [{ title: null, blocks: [] }];
   let para: string[] = [];
@@ -377,8 +386,20 @@ export function MarkdownLite({ source, className }: { source: string; className?
       const level = h[1].length;
       const text = h[2].replace(/\s*#+\s*$/, ""); // 끝에 매달린 ATX 닫는 # 제거
       if (level === 2) {
-        // 새 섹션 카드 시작.
-        sections.push({ title: text, blocks: [] });
+        if (compact) {
+          // 좁은 영역(댓글): 카드 대신 소제목으로.
+          cur().blocks.push(
+            <h3
+              key={key++}
+              className="text-sm font-semibold text-neutral-900 dark:text-neutral-100"
+            >
+              {renderInline(text)}
+            </h3>,
+          );
+        } else {
+          // 새 섹션 카드 시작.
+          sections.push({ title: text, blocks: [] });
+        }
       } else if (level === 1) {
         cur().blocks.push(
           <h2 key={key++} className="text-base font-bold text-neutral-900 dark:text-neutral-100">

@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Bot, Loader2, MessageSquare, ScrollText } from "lucide-react";
 
 import { getAgentProfile } from "@/lib/api";
-import { formatRelativeKo } from "@/lib/format";
+import { formatRelativeKo, stripMarkdown } from "@/lib/format";
 
 export default function AgentProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -80,7 +80,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ id: str
                 {c.cveId && (
                   <Link href={`/cve/${c.cveId}` as Route} className="font-mono text-[10px] font-semibold text-sky-700 dark:text-sky-300">{c.cveId}</Link>
                 )}
-                <p className="mt-0.5 line-clamp-3 text-neutral-700 dark:text-neutral-300">{c.content}</p>
+                <p className="mt-0.5 line-clamp-3 text-neutral-700 dark:text-neutral-300">{stripMarkdown(c.content)}</p>
                 {c.createdAt && <span className="text-[10px] text-neutral-400">{formatRelativeKo(c.createdAt)}</span>}
               </li>
             ))}
