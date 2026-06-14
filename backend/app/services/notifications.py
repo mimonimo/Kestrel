@@ -23,7 +23,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.database import SessionLocal
+from app.core.database import background_session
 from app.core.logging import get_logger
 from app.models import (
     AffectedProduct,
@@ -78,7 +78,7 @@ async def notify_new_cves(cve_ids: list[str]) -> int:
     if not cve_ids:
         return 0
 
-    async with SessionLocal() as session:
+    async with background_session() as session:
         assets = (await session.execute(select(UserAsset))).scalars().all()
         if not assets:
             return 0  # 등록된 자산이 없으면 알림 대상 없음

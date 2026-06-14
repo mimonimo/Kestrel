@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.database import SessionLocal
+from app.core.database import background_session
 from app.core.logging import get_logger
 from app.models import (
     AffectedProduct,
@@ -118,7 +118,7 @@ async def run_parser(parser: BaseParser, full_resync: bool = False) -> dict:
     # 25만 건을 한꺼번에 알림하면 안 되므로 아예 수집하지 않는다.
     new_ids: list[str] = []
 
-    async with SessionLocal() as session:
+    async with background_session() as session:
         log_row = IngestionLog(source=parser.source, started_at=started, status="running")
         session.add(log_row)
         await session.flush()
@@ -166,7 +166,7 @@ async def run_parser(parser: BaseParser, full_resync: bool = False) -> dict:
     CHUNK = 1000
     for i in range(0, len(new_or_updated_ids), CHUNK):
         chunk_ids = new_or_updated_ids[i : i + CHUNK]
-        async with SessionLocal() as session:
+        async with background_session() as session:
             rows = (
                 (
                     await session.execute(

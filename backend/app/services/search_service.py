@@ -231,13 +231,13 @@ async def reindex_all(batch: int = 500) -> int:
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
-    from app.core.database import SessionLocal
+    from app.core.database import background_session
     from app.models import Vulnerability
 
     ensure_index()
     total = 0
     last_id: _uuid.UUID | None = None
-    async with SessionLocal() as session:
+    async with background_session() as session:
         while True:
             stmt = (
                 select(Vulnerability)

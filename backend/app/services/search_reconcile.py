@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from sqlalchemy import func, select
 
-from app.core.database import SessionLocal
+from app.core.database import background_session
 from app.core.logging import get_logger
 from app.models import Vulnerability
 from app.services import search_service
@@ -24,7 +24,7 @@ _DRIFT_THRESHOLD = 100
 
 
 async def reconcile_search_index() -> dict:
-    async with SessionLocal() as session:
+    async with background_session() as session:
         pg = int(
             (await session.execute(select(func.count()).select_from(Vulnerability))).scalar_one()
             or 0

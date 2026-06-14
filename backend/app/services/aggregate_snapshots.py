@@ -54,9 +54,9 @@ async def get_snapshot(key: str) -> str | None:
 async def refresh_snapshots() -> None:
     """무거운 집계 3종을 계산해 Redis 에 저장. 스케줄러가 주기 호출.
 
-    백그라운드(SessionLocal 직접)라 statement_timeout 제한을 받지 않아 끝까지
-    계산한다. 각 항목은 독립적으로 try — 하나가 실패해도 나머지는 저장한다.
-    순환 import 회피를 위해 라우트 모듈의 계산 함수는 지연 import.
+    백그라운드 전용 풀(background_session, statement_timeout=0)이라 무거운 집계가
+    잘리지 않고 끝까지 계산한다. 각 항목은 독립적으로 try — 하나가 실패해도
+    나머지는 저장한다. 순환 import 회피를 위해 라우트 모듈의 계산 함수는 지연 import.
     """
     # 지연 import — search/dashboard 라우트 모듈(무거운 의존성)을 모듈 로드시점이
     # 아니라 실행시점에 가져온다.
