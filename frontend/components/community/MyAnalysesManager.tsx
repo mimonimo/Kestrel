@@ -3,7 +3,7 @@
 // 내 프로필에서 "공유한 분석"을 관리 — 단건 공개/비공개 토글·삭제·본문 보기에
 // 더해, 체크박스로 여러 건을 골라 일괄 공개/비공개/삭제까지 한다.
 // 데이터는 owner 스코프(/me/analyses)라 비공개 분석까지 포함한다.
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckSquare, Globe, Heart, Loader2, Lock, MessageSquare, ScrollText, Search, Square, Trash2, X } from "lucide-react";
 
@@ -46,25 +46,12 @@ export function MyAnalysesManager() {
       return true;
     });
     const dir = sort === "new" ? 1 : -1;
-    const byDate = (x: AnalysisSummary, y: AnalysisSummary) =>
-      dir * (+new Date(y.createdAt) - +new Date(x.createdAt));
-    // CVE 별로 묶어 같은 취약점의 (재)분석들이 인접하게. 그룹 순서는 각 그룹의
-    // 최신(또는 오래된) 분석 기준, 그룹 내부도 같은 정렬.
-    const groups = new Map<string, AnalysisSummary[]>();
-    for (const a of [...arr].sort(byDate)) {
-      const g = groups.get(a.cveId);
-      if (g) g.push(a);
-      else groups.set(a.cveId, [a]);
-    }
-    return Array.from(groups.values()).flat();
+    return [...arr].sort(
+      (x: AnalysisSummary, y: AnalysisSummary) =>
+        dir * (+new Date(y.createdAt) - +new Date(x.createdAt)),
+    );
   }, [items, search, vis, sort]);
   const publicCount = useMemo(() => items.filter((a) => a.visibility === "public").length, [items]);
-  // CVE 별 분석 건수 — 그룹 헤더(여러 건일 때만) 표시용.
-  const cveCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const a of visibleItems) m.set(a.cveId, (m.get(a.cveId) ?? 0) + 1);
-    return m;
-  }, [visibleItems]);
 
   // 토글/삭제 후 공개 프로필·CVE 상세·커뮤니티 피드 표시를 모두 갱신.
   const invalidateSharedViews = () => {
@@ -314,34 +301,21 @@ export function MyAnalysesManager() {
           조건에 맞는 분석이 없어요. 검색어나 필터를 바꿔 보세요.
         </p>
       ) : (
-        <ul className="space-y-2">
-          {visibleItems.map((a, idx) => {
+        <ul className="divide-y divide-neutral-200 overflow-hidden rounded-xl border border-neutral-200 bg-white dark:divide-neutral-800 dark:border-neutral-800 dark:bg-surface-1">
+          {visibleItems.map((a) => {
             const isPublic = a.visibility === "public";
             const next = isPublic ? "private" : "public";
             const toggling = toggle.isPending && toggle.variables?.id === a.id;
             const deleting = remove.isPending && remove.variables === a.id;
             const checked = selected.has(a.id);
-            const groupStart = a.cveId !== visibleItems[idx - 1]?.cveId;
-            const groupCount = cveCounts.get(a.cveId) ?? 1;
-            const showHeader = groupStart && groupCount > 1;
             return (
-              <Fragment key={a.id}>
-                {showHeader && (
-                  <li className="flex items-center gap-2 px-1 pt-1 text-[11px] font-semibold text-neutral-500 dark:text-neutral-500">
-                    <span className="font-mono text-sky-700 dark:text-sky-300">{a.cveId}</span>
-                    <span className="rounded-full bg-neutral-100 px-1.5 py-0.5 tabular-nums text-neutral-600 dark:bg-surface-2 dark:text-neutral-400">
-                      {groupCount}건
-                    </span>
-                    <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" />
-                  </li>
-                )}
               <li
+                key={a.id}
                 className={cn(
-                  groupCount > 1 && "ml-3",
-                  "flex items-start gap-2 rounded-lg border bg-white p-3 dark:bg-surface-1",
+                  "flex items-center gap-2.5 px-3 py-2 transition-colors",
                   checked
-                    ? "border-sky-300 ring-1 ring-sky-200 dark:border-sky-500/50 dark:ring-sky-500/20"
-                    : "border-neutral-200 dark:border-neutral-800",
+                    ? "bg-sky-50 dark:bg-sky-500/10"
+                    : "hover:bg-neutral-50 dark:hover:bg-surface-2",
                 )}
               >
                 {/* 선택 체크박스 */}
@@ -350,7 +324,7 @@ export function MyAnalysesManager() {
                   onClick={() => toggleOne(a.id)}
                   aria-label={checked ? "선택 해제" : "선택"}
                   aria-pressed={checked}
-                  className="mt-0.5 shrink-0 text-neutral-400 transition-colors hover:text-sky-600 dark:hover:text-sky-400"
+                  className="shrink-0 text-neutral-400 transition-colors hover:text-sky-600 dark:hover:text-sky-400"
                 >
                   {checked ? (
                     <CheckSquare className="h-4 w-4 text-sky-600 dark:text-sky-400" />
@@ -359,73 +333,62 @@ export function MyAnalysesManager() {
                   )}
                 </button>
 
-                {/* 본문 — 클릭 시 상세 모달 */}
+                {/* 본문(한 줄) — 클릭 시 상세 모달 */}
                 <button
                   type="button"
                   onClick={() => setOpenId(a.id)}
-                  className="min-w-0 flex-1 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  title={a.title || a.cveId}
                 >
-                  <div className="flex flex-wrap items-baseline gap-x-2 text-xs">
-                    <span className="font-mono font-semibold text-sky-700 dark:text-sky-300">{a.cveId}</span>
-                    <span className="text-neutral-400">·</span>
-                    <span className="tabular-nums text-neutral-500 dark:text-neutral-500">
-                      {formatRelativeKo(a.createdAt)}
-                    </span>
-                    <span
-                      className={cn(
-                        "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-                        isPublic
-                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200"
-                          : "bg-neutral-100 text-neutral-600 dark:bg-surface-2 dark:text-neutral-400",
-                      )}
-                    >
-                      {isPublic ? "공개" : "비공개"}
-                    </span>
-                    {!!a.commentCount && (
-                      <span className="inline-flex items-center gap-0.5 tabular-nums text-neutral-500 dark:text-neutral-500">
-                        <MessageSquare className="h-3 w-3" />
-                        {a.commentCount}
-                      </span>
+                  <span className="shrink-0 rounded-md bg-sky-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
+                    {a.cveId}
+                  </span>
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 shrink-0 rounded-full",
+                      isPublic ? "bg-emerald-500" : "bg-neutral-300 dark:bg-neutral-600",
                     )}
-                    {!!a.likeCount && (
-                      <span className="inline-flex items-center gap-0.5 tabular-nums text-rose-500 dark:text-rose-400">
-                        <Heart className="h-3 w-3 fill-current" />
-                        {a.likeCount}
-                      </span>
-                    )}
-                  </div>
-                  {a.title && (
-                    <p className="mt-1 truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                      {a.title}
-                    </p>
-                  )}
-                  <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-neutral-600 dark:text-neutral-400">
-                    {a.excerpt}
-                  </p>
+                    title={isPublic ? "공개" : "비공개"}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm text-neutral-800 dark:text-neutral-200">
+                    {a.title || a.excerpt || "분석"}
+                  </span>
                 </button>
 
-                {/* 단건 관리 액션 */}
-                <div className="flex shrink-0 flex-col items-stretch gap-1.5">
+                {/* 우측 메타 + 액션 */}
+                <div className="flex shrink-0 items-center gap-2 text-[11px] text-neutral-500 dark:text-neutral-500">
+                  {!!a.commentCount && (
+                    <span className="hidden items-center gap-0.5 tabular-nums sm:inline-flex">
+                      <MessageSquare className="h-3 w-3" />
+                      {a.commentCount}
+                    </span>
+                  )}
+                  {!!a.likeCount && (
+                    <span className="hidden items-center gap-0.5 tabular-nums text-rose-500 sm:inline-flex dark:text-rose-400">
+                      <Heart className="h-3 w-3 fill-current" />
+                      {a.likeCount}
+                    </span>
+                  )}
+                  <span className="hidden tabular-nums sm:inline">{formatRelativeKo(a.createdAt)}</span>
                   <button
                     type="button"
                     onClick={() => toggle.mutate({ id: a.id, visibility: next })}
                     disabled={toggling}
-                    title={isPublic ? "비공개로 전환" : "공개로 전환"}
+                    title={isPublic ? "공개됨 — 클릭 시 비공개" : "공유(공개)로 전환"}
                     className={cn(
-                      "inline-flex items-center justify-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-60",
+                      "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors disabled:opacity-50",
                       isPublic
-                        ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-200"
-                        : "border-neutral-300 bg-white text-neutral-700 hover:border-violet-400 hover:text-violet-700 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-300 dark:hover:border-violet-500/60 dark:hover:text-violet-200",
+                        ? "text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-500/15"
+                        : "text-neutral-400 hover:bg-neutral-100 hover:text-violet-600 dark:hover:bg-surface-3 dark:hover:text-violet-300",
                     )}
                   >
                     {toggling ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : isPublic ? (
-                      <Globe className="h-3 w-3" />
+                      <Globe className="h-3.5 w-3.5" />
                     ) : (
-                      <Lock className="h-3 w-3" />
+                      <Lock className="h-3.5 w-3.5" />
                     )}
-                    {isPublic ? "공개됨" : "공유"}
                   </button>
                   <button
                     type="button"
@@ -434,14 +397,12 @@ export function MyAnalysesManager() {
                     }}
                     disabled={deleting}
                     title="삭제"
-                    className="inline-flex items-center justify-center gap-1 rounded-full border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-60 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/40"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950/40 dark:hover:text-red-300"
                   >
-                    {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-                    삭제
+                    {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                   </button>
                 </div>
               </li>
-              </Fragment>
             );
           })}
         </ul>
