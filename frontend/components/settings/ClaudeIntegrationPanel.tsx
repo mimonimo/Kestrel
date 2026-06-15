@@ -34,9 +34,9 @@ const CREDS_KEY = ["ai-credentials"];
 // Available models for the Claude Code CLI provider. Order = recommendation
 // rank (top = best for deep analysis, bottom = fastest/cheapest).
 const MODELS: { value: string; label: string; tagline: string }[] = [
-  { value: "claude-opus-4-7", label: "Opus 4.7", tagline: "최고 성능 · 깊은 분석" },
-  { value: "claude-sonnet-4-6", label: "Sonnet 4.6", tagline: "균형 · 일상 분석" },
-  { value: "claude-haiku-4-5-20251001", label: "Haiku 4.5", tagline: "빠른 응답 · 가벼운 작업" },
+  { value: "claude-opus-4-7", label: "Opus", tagline: "최고 성능 · 깊은 분석" },
+  { value: "claude-sonnet-4-6", label: "Sonnet", tagline: "균형 · 일상 분석" },
+  { value: "claude-haiku-4-5-20251001", label: "Haiku", tagline: "빠른 응답 · 가벼운 작업" },
 ];
 
 export function ClaudeIntegrationPanel() {
