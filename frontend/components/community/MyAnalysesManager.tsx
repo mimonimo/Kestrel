@@ -3,11 +3,11 @@
 // 내 프로필에서 "공유한 분석"을 관리 — 단건 공개/비공개 토글·삭제·본문 보기에
 // 더해, 체크박스로 여러 건을 골라 일괄 공개/비공개/삭제까지 한다.
 // 데이터는 owner 스코프(/me/analyses)라 비공개 분석까지 포함한다.
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckSquare, Globe, Heart, Loader2, Lock, MessageSquare, ScrollText, Search, Square, Trash2, X } from "lucide-react";
 
-import { api, type AnalysisList } from "@/lib/api";
+import { api, type AnalysisList, type AnalysisSummary } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ErrorBox } from "@/components/ui/feedback-box";
 import { AnalysisDetailModal } from "@/components/community/AnalysisDetailModal";
@@ -45,13 +45,26 @@ export function MyAnalysesManager() {
       }
       return true;
     });
-    arr = [...arr].sort((a, b) => {
-      const d = +new Date(b.createdAt) - +new Date(a.createdAt);
-      return sort === "new" ? d : -d;
-    });
-    return arr;
+    const dir = sort === "new" ? 1 : -1;
+    const byDate = (x: AnalysisSummary, y: AnalysisSummary) =>
+      dir * (+new Date(y.createdAt) - +new Date(x.createdAt));
+    // CVE 별로 묶어 같은 취약점의 (재)분석들이 인접하게. 그룹 순서는 각 그룹의
+    // 최신(또는 오래된) 분석 기준, 그룹 내부도 같은 정렬.
+    const groups = new Map<string, AnalysisSummary[]>();
+    for (const a of [...arr].sort(byDate)) {
+      const g = groups.get(a.cveId);
+      if (g) g.push(a);
+      else groups.set(a.cveId, [a]);
+    }
+    return Array.from(groups.values()).flat();
   }, [items, search, vis, sort]);
   const publicCount = useMemo(() => items.filter((a) => a.visibility === "public").length, [items]);
+  // CVE 별 분석 건수 — 그룹 헤더(여러 건일 때만) 표시용.
+  const cveCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of visibleItems) m.set(a.cveId, (m.get(a.cveId) ?? 0) + 1);
+    return m;
+  }, [visibleItems]);
 
   // 토글/삭제 후 공개 프로필·CVE 상세·커뮤니티 피드 표시를 모두 갱신.
   const invalidateSharedViews = () => {
@@ -302,16 +315,29 @@ export function MyAnalysesManager() {
         </p>
       ) : (
         <ul className="space-y-2">
-          {visibleItems.map((a) => {
+          {visibleItems.map((a, idx) => {
             const isPublic = a.visibility === "public";
             const next = isPublic ? "private" : "public";
             const toggling = toggle.isPending && toggle.variables?.id === a.id;
             const deleting = remove.isPending && remove.variables === a.id;
             const checked = selected.has(a.id);
+            const groupStart = a.cveId !== visibleItems[idx - 1]?.cveId;
+            const groupCount = cveCounts.get(a.cveId) ?? 1;
+            const showHeader = groupStart && groupCount > 1;
             return (
+              <Fragment key={a.id}>
+                {showHeader && (
+                  <li className="flex items-center gap-2 px-1 pt-1 text-[11px] font-semibold text-neutral-500 dark:text-neutral-500">
+                    <span className="font-mono text-sky-700 dark:text-sky-300">{a.cveId}</span>
+                    <span className="rounded-full bg-neutral-100 px-1.5 py-0.5 tabular-nums text-neutral-600 dark:bg-surface-2 dark:text-neutral-400">
+                      {groupCount}건
+                    </span>
+                    <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" />
+                  </li>
+                )}
               <li
-                key={a.id}
                 className={cn(
+                  groupCount > 1 && "ml-3",
                   "flex items-start gap-2 rounded-lg border bg-white p-3 dark:bg-surface-1",
                   checked
                     ? "border-sky-300 ring-1 ring-sky-200 dark:border-sky-500/50 dark:ring-sky-500/20"
@@ -415,6 +441,7 @@ export function MyAnalysesManager() {
                   </button>
                 </div>
               </li>
+              </Fragment>
             );
           })}
         </ul>

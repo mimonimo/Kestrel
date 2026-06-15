@@ -4,7 +4,7 @@ import { use } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Loader2, MessageSquare, ScrollText } from "lucide-react";
+import { Bot, ChevronRight, Loader2, MessageSquare, ScrollText } from "lucide-react";
 
 import { getAgentProfile } from "@/lib/api";
 import { formatRelativeKo, stripMarkdown } from "@/lib/format";
@@ -57,10 +57,11 @@ export default function AgentProfilePage({ params }: { params: Promise<{ id: str
           <ul className="space-y-1.5">
             {a.analyses.map((an) => (
               <li key={an.id}>
-                <Link href={`/cve/${an.cveId}` as Route} className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm transition-colors hover:border-sky-300 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-sky-500/40">
-                  <span className="font-mono text-[11px] font-semibold text-sky-700 dark:text-sky-300">{an.cveId}</span>
-                  <span className="min-w-0 flex-1 truncate text-neutral-700 dark:text-neutral-300">{an.title || "분석"}</span>
-                  {an.createdAt && <span className="shrink-0 text-[10px] text-neutral-400">{formatRelativeKo(an.createdAt)}</span>}
+                <Link href={`/cve/${an.cveId}` as Route} className="group flex items-center gap-2.5 rounded-xl border border-neutral-200 bg-white px-3 py-2.5 transition-colors hover:border-sky-300 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-sky-500/40">
+                  <span className="shrink-0 rounded-md bg-sky-50 px-1.5 py-1 font-mono text-[11px] font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">{an.cveId}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-neutral-800 dark:text-neutral-200">{an.title || "분석"}</span>
+                  {an.createdAt && <span className="shrink-0 tabular-nums text-[10px] text-neutral-400">{formatRelativeKo(an.createdAt)}</span>}
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-neutral-300 transition-colors group-hover:text-sky-500 dark:text-neutral-600" />
                 </Link>
               </li>
             ))}
@@ -76,12 +77,16 @@ export default function AgentProfilePage({ params }: { params: Promise<{ id: str
         ) : (
           <ul className="space-y-1.5">
             {a.comments.map((c, i) => (
-              <li key={i} className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs dark:border-neutral-800 dark:bg-surface-1">
-                {c.cveId && (
-                  <Link href={`/cve/${c.cveId}` as Route} className="font-mono text-[10px] font-semibold text-sky-700 dark:text-sky-300">{c.cveId}</Link>
-                )}
-                <p className="mt-0.5 line-clamp-3 text-neutral-700 dark:text-neutral-300">{stripMarkdown(c.content)}</p>
-                {c.createdAt && <span className="text-[10px] text-neutral-400">{formatRelativeKo(c.createdAt)}</span>}
+              <li key={i} className="rounded-xl border border-neutral-200 bg-white px-3 py-2.5 dark:border-neutral-800 dark:bg-surface-1">
+                <div className="flex items-center gap-2">
+                  {c.cveId ? (
+                    <Link href={`/cve/${c.cveId}` as Route} className="shrink-0 rounded-md bg-sky-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-sky-700 hover:bg-sky-100 dark:bg-sky-500/10 dark:text-sky-300">{c.cveId}</Link>
+                  ) : (
+                    <span className="shrink-0 text-[10px] text-neutral-400">댓글</span>
+                  )}
+                  {c.createdAt && <span className="ml-auto shrink-0 tabular-nums text-[10px] text-neutral-400">{formatRelativeKo(c.createdAt)}</span>}
+                </div>
+                <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-neutral-700 dark:text-neutral-300">{stripMarkdown(c.content)}</p>
               </li>
             ))}
           </ul>
