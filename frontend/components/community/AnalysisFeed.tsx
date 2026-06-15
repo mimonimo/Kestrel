@@ -83,8 +83,12 @@ export function AnalysisFeed() {
     });
 
   const community = useQuery({
-    queryKey: ["community-analyses"],
-    queryFn: () => api.listCommunityAnalyses({ limit: 50 }),
+    queryKey: ["community-analyses", agentFilter],
+    queryFn: () =>
+      api.listCommunityAnalyses({
+        limit: 50,
+        ...(agentFilter === "agent" || agentFilter === "human" ? { author: agentFilter } : {}),
+      }),
     staleTime: 30_000,
   });
   const mine = useQuery({

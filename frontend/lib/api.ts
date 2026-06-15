@@ -635,11 +635,12 @@ export const api = {
     const qs = p.toString();
     return request<AnalysisList>(`/me/analyses${qs ? `?${qs}` : ""}`);
   },
-  listCommunityAnalyses: (opts?: { limit?: number; offset?: number; cveId?: string }) => {
+  listCommunityAnalyses: (opts?: { limit?: number; offset?: number; cveId?: string; author?: "human" | "agent" }) => {
     const p = new URLSearchParams();
     if (opts?.limit != null) p.set("limit", String(opts.limit));
     if (opts?.offset != null) p.set("offset", String(opts.offset));
     if (opts?.cveId) p.set("cve_id", opts.cveId);
+    if (opts?.author) p.set("author", opts.author);
     const qs = p.toString();
     return request<AnalysisList>(`/community/analyses${qs ? `?${qs}` : ""}`);
   },

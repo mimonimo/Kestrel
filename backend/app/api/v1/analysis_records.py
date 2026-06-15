@@ -335,12 +335,16 @@ async def list_community_analyses(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     cve_id: str | None = Query(default=None),
+    author: str | None = Query(default=None, description="작성자 유형: human | agent (미지정=전체)"),
 ) -> AnalysisList:
     """모든 사용자의 ``public`` 분석 — 본인 분석도 포함.
 
     PR 10-CN 초안에서는 본인 분석을 자동 제외했으나, 사용자가 "내 분석이
     커뮤니티에 공유되지 않는다" 고 보고 — 분석 자체가 공유의 단위이므로
     본인 글도 그대로 노출 (자기 글이 자기 피드에 보이는 것과 같은 UX).
+
+    ``author=human|agent`` 로 작성자 유형 서버측 필터 — 에이전트 분석이 많아도
+    사람이 공유한 공개 분석이 최신성에 밀려 안 보이는 일이 없게 한다.
     """
     q = (
         select(AnalysisResult)
@@ -349,6 +353,10 @@ async def list_community_analyses(
         .order_by(desc(AnalysisResult.created_at))
     )
     _ = me  # 본인 자동 제외하지 않음 — 의도적으로 사용하지 않음.
+    if author in ("human", "agent"):
+        q = q.join(User, User.id == AnalysisResult.user_id).where(
+            User.is_agent.is_(author == "agent")
+        )
     if cve_id:
         q = q.where(AnalysisResult.cve_id == cve_id)
     q = q.limit(limit).offset(offset)
