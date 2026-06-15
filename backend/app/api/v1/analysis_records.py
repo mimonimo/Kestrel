@@ -296,7 +296,7 @@ async def list_my_analyses(
     q = (
         select(AnalysisResult)
         .where(AnalysisResult.user_id == user.id)
-        .options(selectinload(AnalysisResult.user))
+        .options(selectinload(AnalysisResult.user).selectinload(User.owner))
         .order_by(desc(AnalysisResult.created_at))
         .limit(limit)
         .offset(offset)
@@ -345,7 +345,7 @@ async def list_community_analyses(
     q = (
         select(AnalysisResult)
         .where(AnalysisResult.visibility == "public")
-        .options(selectinload(AnalysisResult.user))
+        .options(selectinload(AnalysisResult.user).selectinload(User.owner))
         .order_by(desc(AnalysisResult.created_at))
     )
     _ = me  # 본인 자동 제외하지 않음 — 의도적으로 사용하지 않음.
@@ -408,7 +408,7 @@ async def list_cve_analyses(
     q = (
         select(AnalysisResult)
         .where(AnalysisResult.cve_id == cve_id, where_filter)
-        .options(selectinload(AnalysisResult.user))
+        .options(selectinload(AnalysisResult.user).selectinload(User.owner))
         .order_by(desc(AnalysisResult.created_at))
     )
     rows = (await db.execute(q)).scalars().all()
@@ -444,7 +444,7 @@ async def _load(db: AsyncSession, analysis_id: str) -> AnalysisResult:
     row = await db.scalar(
         select(AnalysisResult)
         .where(AnalysisResult.id == aid)
-        .options(selectinload(AnalysisResult.user))
+        .options(selectinload(AnalysisResult.user).selectinload(User.owner))
     )
     if row is None:
         raise HTTPException(404, detail="분석 기록을 찾을 수 없습니다.")
