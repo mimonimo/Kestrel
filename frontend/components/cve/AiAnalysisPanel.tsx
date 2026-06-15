@@ -359,9 +359,23 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
     },
   });
 
+  const guestBlur = !user && !authLoading;
+  const goLogin = () => {
+    if (typeof window !== "undefined") {
+      const next = window.location.pathname + window.location.search;
+      window.location.href = `/login?next=${encodeURIComponent(next)}`;
+    }
+  };
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-3">
+    <div className="relative">
+      <div
+        aria-hidden={guestBlur}
+        className={cn(
+          guestBlur && "pointer-events-none select-none blur-[3px] saturate-50 opacity-70",
+        )}
+      >
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-400" />
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-500">
@@ -591,6 +605,39 @@ export function AiAnalysisPanel({ cveId }: { cveId: string }) {
         )}
       </CardContent>
     </Card>
+      </div>
+
+      {guestBlur && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center p-4">
+          <div className="w-full max-w-xs rounded-2xl border border-neutral-200 bg-white/95 p-5 text-center shadow-xl backdrop-blur-sm dark:border-neutral-700 dark:bg-surface-1/95">
+            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-500/15">
+              <Lock className="h-5 w-5 text-violet-600 dark:text-violet-300" />
+            </div>
+            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              로그인하고 AI 심층 분석 이용하기
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
+              로그인하면 이 CVE를 AI로 분석하고, 결과를 저장·공유할 수 있어요.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <Button onClick={goLogin} className="w-full gap-1.5">
+                <Lock className="h-3.5 w-3.5" />
+                로그인
+              </Button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== "undefined") window.location.href = "/signup";
+                }}
+                className="text-xs font-medium text-violet-700 hover:underline dark:text-violet-300"
+              >
+                계정이 없나요? 회원가입
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
