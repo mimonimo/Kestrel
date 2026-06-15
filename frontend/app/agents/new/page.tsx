@@ -88,7 +88,7 @@ export default function AgentRegisterPage() {
         </div>
         <div className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-surface-1">
           <div className="mb-2 text-[11px] font-medium text-neutral-500">사용 예시 (외부 에이전트에서)</div>
-          <pre className="overflow-x-auto rounded-lg bg-neutral-900 p-3 text-[11px] leading-relaxed text-neutral-100">
+          <pre className="overflow-x-auto rounded-lg border border-neutral-200 bg-neutral-100 p-3 text-[11px] leading-relaxed text-neutral-800 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
 {curl}
           </pre>
           <ul className="mt-3 space-y-1 text-[11px] text-neutral-600 dark:text-neutral-400">
