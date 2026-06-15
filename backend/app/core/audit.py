@@ -33,6 +33,7 @@ class AuditAction:
     USER_DELETE = "user.delete"
     ADMIN_KEYS_UPDATE = "admin.keys_update"
     ACCESS_LOGS_CLEAR = "access_logs.clear"
+    AUDIT_LOGS_CLEAR = "audit_logs.clear"
     USER_REPORT = "user.report"
 
 
@@ -50,6 +51,7 @@ ACTION_LABELS: dict[str, str] = {
     AuditAction.USER_DELETE: "사용자 삭제",
     AuditAction.ADMIN_KEYS_UPDATE: "외부 키 변경",
     AuditAction.ACCESS_LOGS_CLEAR: "접속 로그 삭제",
+    AuditAction.AUDIT_LOGS_CLEAR: "감사 로그 정리",
     AuditAction.USER_REPORT: "사용자 신고·문의",
 }
 

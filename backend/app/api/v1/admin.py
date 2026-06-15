@@ -11,6 +11,8 @@ import asyncio
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+from sqlalchemy import delete as _sa_delete
+from sqlalchemy import or_ as _sa_or
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -350,22 +352,50 @@ async def list_user_login_logs(
 @router.get("/audit/logs", response_model=_AuditLogsList, response_model_by_alias=True)
 async def list_audit_logs(
     action: str | None = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=200),
+    q: str | None = Query(default=None, description="행위자·대상·상세·IP·액션 부분검색"),
+    after: _dt | None = Query(default=None, description="이 시각 이후(ISO)"),
+    before: _dt | None = Query(default=None, description="이 시각 이전(ISO)"),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> _AuditLogsList:
-    """전역 감사 피드 — 로그인 성공/실패·가입·비번 변경·역할 변경·삭제·키 변경 등을
-    시간 역순으로. ``action`` 으로 특정 이벤트만 필터."""
+    """전역 감사 피드 — 시간 역순. action·검색어(q)·기간(after/before)으로 서버측 필터하고
+    offset/limit 페이지네이션 + 필터 적용된 정확한 total 을 반환한다(클라 200캡 제거)."""
     from sqlalchemy import desc as _desc
+    from sqlalchemy import func as _func
 
-    stmt = select(_AuditLog).order_by(_desc(_AuditLog.created_at)).limit(limit)
+    conds = []
     if action:
-        stmt = (
+        conds.append(_AuditLog.action == action)
+    if q:
+        like = f"%{q.strip()}%"
+        conds.append(
+            _sa_or(
+                _AuditLog.actor_label.ilike(like),
+                _AuditLog.target.ilike(like),
+                _AuditLog.detail.ilike(like),
+                _AuditLog.action.ilike(like),
+                _AuditLog.ip.ilike(like),
+            )
+        )
+    if after is not None:
+        conds.append(_AuditLog.created_at >= after)
+    if before is not None:
+        conds.append(_AuditLog.created_at <= before)
+
+    total = int(
+        (await db.execute(select(_func.count()).select_from(_AuditLog).where(*conds))).scalar_one()
+        or 0
+    )
+    rows = (
+        await db.execute(
             select(_AuditLog)
-            .where(_AuditLog.action == action)
+            .where(*conds)
             .order_by(_desc(_AuditLog.created_at))
+            .offset(offset)
             .limit(limit)
         )
-    rows = (await db.execute(stmt)).scalars().all()
+    ).scalars().all()
     items = [
         _AuditLogOut(
             id=r.id,
@@ -380,7 +410,87 @@ async def list_audit_logs(
         )
         for r in rows
     ]
-    return _AuditLogsList(items=items, total=len(items))
+    return _AuditLogsList(items=items, total=total)
+
+
+class _AuditDeleteIn(_PydBaseModel):
+    model_config = _PydConfigDict(populate_by_name=True, alias_generator=lambda s: "".join(
+        [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
+    ))
+    ids: list[int] = []
+
+
+class _AuditCleanupIn(_PydBaseModel):
+    model_config = _PydConfigDict(populate_by_name=True, alias_generator=lambda s: "".join(
+        [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
+    ))
+    older_than_days: int | None = None
+    action: str | None = None
+
+
+@router.delete("/audit/logs")
+async def delete_audit_logs(
+    body: _AuditDeleteIn,
+    request: Request,
+    admin: _User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """선택한 감사 로그 부분 삭제(id 목록). 삭제 행위 자체도 감사에 남긴다."""
+    ids = [i for i in (body.ids or []) if isinstance(i, int)]
+    if not ids:
+        return {"deleted": 0}
+    res = await db.execute(_sa_delete(_AuditLog).where(_AuditLog.id.in_(ids)))
+    await db.commit()
+    deleted = int(res.rowcount or 0)
+    await record_audit(
+        db,
+        action=AuditAction.AUDIT_LOGS_CLEAR,
+        actor=admin,
+        request=request,
+        detail=f"선택 삭제 {deleted}건",
+    )
+    return {"deleted": deleted}
+
+
+@router.post("/audit/logs/cleanup")
+async def cleanup_audit_logs(
+    body: _AuditCleanupIn,
+    request: Request,
+    admin: _User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """기간/액션 기준 일괄 정리. 안전장치: 조건(olderThanDays≥1 또는 action) 없이는 거부해
+    실수로 전체 삭제되는 일을 막는다."""
+    from datetime import timedelta as _td
+    from datetime import timezone as _tz
+
+    conds = []
+    days = body.older_than_days
+    if days is not None and days >= 1:
+        cutoff = _dt.now(_tz.utc) - _td(days=days)
+        conds.append(_AuditLog.created_at < cutoff)
+    if body.action:
+        conds.append(_AuditLog.action == body.action)
+    if not conds:
+        raise HTTPException(
+            400, detail="정리 조건이 필요합니다(보존 기간 또는 액션). 조건 없는 전체 삭제는 막혀 있습니다."
+        )
+    res = await db.execute(_sa_delete(_AuditLog).where(*conds))
+    await db.commit()
+    deleted = int(res.rowcount or 0)
+    crit = []
+    if days is not None and days >= 1:
+        crit.append(f"{days}일 이전")
+    if body.action:
+        crit.append(f"액션={body.action}")
+    await record_audit(
+        db,
+        action=AuditAction.AUDIT_LOGS_CLEAR,
+        actor=admin,
+        request=request,
+        detail=f"정리({', '.join(crit)}) {deleted}건",
+    )
+    return {"deleted": deleted}
 
 
 @router.get("/audit/actions")

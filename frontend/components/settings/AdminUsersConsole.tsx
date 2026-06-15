@@ -1067,42 +1067,104 @@ const AUDIT_SORTS: SortOption[] = [
 ];
 
 function AuditFeed() {
+  const qc = useQueryClient();
   const [action, setAction] = useState("");
   const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
   const [period, setPeriod] = useState<Period>("all");
   const [limit, setLimit] = useState(150);
   const [sortKey, setSortKey] = useState("time");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+  useEffect(() => {
+    setSelected(new Set());
+  }, [action, debounced, period]);
+
+  const afterIso = (() => {
+    const c = periodCutoffMs(period);
+    return c ? new Date(c).toISOString() : "";
+  })();
   const actionsQ = useQuery({
     queryKey: ["admin-audit-actions"],
     queryFn: () => getJSON<{ actions: Record<string, string> }>("/admin/audit/actions"),
     staleTime: 5 * 60_000,
   });
   const q = useQuery({
-    queryKey: ["admin-audit-logs", action, limit],
-    queryFn: () => getJSON<{ items: AuditLog[] }>(`/admin/audit/logs?limit=${limit}${action ? `&action=${action}` : ""}`),
+    queryKey: ["admin-audit-logs", action, debounced, afterIso, limit],
+    queryFn: () => {
+      const p = new URLSearchParams({ limit: String(limit) });
+      if (action) p.set("action", action);
+      if (debounced) p.set("q", debounced);
+      if (afterIso) p.set("after", afterIso);
+      return getJSON<{ items: AuditLog[]; total: number }>(`/admin/audit/logs?${p.toString()}`);
+    },
     staleTime: 15_000,
   });
   const all = q.data?.items ?? [];
-  const cutoff = periodCutoffMs(period);
-  const ql = search.trim().toLowerCase();
-  const itemsF = all.filter((l) => {
-    if (cutoff && new Date(l.createdAt).getTime() < cutoff) return false;
-    if (
-      ql &&
-      !`${l.actionLabel ?? l.action} ${l.actorLabel ?? ""} ${l.target ?? ""} ${l.detail ?? ""} ${l.ip ?? ""}`
-        .toLowerCase()
-        .includes(ql)
-    )
-      return false;
-    return true;
-  });
-  const items = sortRows(itemsF, sortKey, sortDir, {
+  const total = q.data?.total ?? all.length;
+  // 서버에서 action·검색(q)·기간(after) 필터 후 받은 페이지를 화면 정렬만 한다.
+  const items = sortRows(all, sortKey, sortDir, {
     time: (l) => new Date(l.createdAt).getTime(),
     action: (l) => l.actionLabel ?? l.action,
     actor: (l) => l.actorLabel ?? "",
   });
-  const canMore = all.length >= limit && limit < 200;
+  const canMore = all.length < total && limit < 500;
+
+  const toggleSel = (id: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const allChecked = items.length > 0 && items.every((l) => selected.has(l.id));
+  const toggleAll = () =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (items.every((l) => next.has(l.id))) items.forEach((l) => next.delete(l.id));
+      else items.forEach((l) => next.add(l.id));
+      return next;
+    });
+  const deleteSelected = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`선택한 ${selected.size}건의 감사 로그를 삭제할까요? 되돌릴 수 없습니다.`)) return;
+    setBusy(true);
+    try {
+      await fetch(`${BASE}/admin/audit/logs`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selected) }),
+      });
+      setSelected(new Set());
+      qc.invalidateQueries({ queryKey: ["admin-audit-logs"] });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const cleanup = async (days: number) => {
+    const scope = action ? `'${actionMap[action] ?? action}' ` : "";
+    if (!confirm(`${days}일 이전 ${scope}감사 로그를 모두 정리할까요? 되돌릴 수 없습니다.`)) return;
+    setBusy(true);
+    try {
+      await fetch(`${BASE}/admin/audit/logs/cleanup`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ olderThanDays: days, ...(action ? { action } : {}) }),
+      });
+      qc.invalidateQueries({ queryKey: ["admin-audit-logs"] });
+    } finally {
+      setBusy(false);
+    }
+  };
   const actionMap = actionsQ.data?.actions ?? {};
   // 필터 버튼 — 역할 변경/사용자 삭제는 제외(운영상 드물어 노이즈).
   const HIDDEN = new Set(["user.role_change", "user.delete"]);
@@ -1156,12 +1218,80 @@ function AuditFeed() {
           </button>
         ))}
       </LogToolbar>
+
+      {/* 관리 바 — 선택 삭제 / 기간 정리 */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-[11px] dark:border-neutral-800 dark:bg-surface-2">
+        <button
+          type="button"
+          onClick={() => {
+            setSelectMode((v) => !v);
+            setSelected(new Set());
+          }}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-medium transition-colors",
+            selectMode
+              ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
+              : "border-neutral-300 text-neutral-600 hover:text-neutral-900 dark:border-neutral-700 dark:text-neutral-400",
+          )}
+        >
+          <ListChecks className="h-3 w-3" />
+          {selectMode ? "선택 취소" : "선택 삭제"}
+        </button>
+        {selectMode && (
+          <button
+            type="button"
+            disabled={busy || selected.size === 0}
+            onClick={deleteSelected}
+            className="inline-flex items-center gap-1 rounded-full border border-red-300 px-2.5 py-1 font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/40"
+          >
+            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+            선택 {selected.size}건 삭제
+          </button>
+        )}
+        <span className="ml-auto inline-flex items-center gap-1.5 text-neutral-500 dark:text-neutral-500">
+          정리:
+          {[30, 90, 180].map((d) => (
+            <button
+              key={d}
+              type="button"
+              disabled={busy}
+              onClick={() => cleanup(d)}
+              className="rounded-full border border-neutral-300 px-2 py-0.5 font-medium text-neutral-600 transition-colors hover:border-amber-400 hover:text-amber-700 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-amber-300"
+              title={`${d}일 이전 ${action ? "해당 액션 " : ""}감사 로그 삭제`}
+            >
+              {d}일 이전
+            </button>
+          ))}
+        </span>
+      </div>
+
+      {selectMode && items.length > 0 && (
+        <button
+          type="button"
+          onClick={toggleAll}
+          className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-600 dark:text-neutral-400"
+        >
+          {allChecked ? <CheckSquare className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" /> : <Square className="h-3.5 w-3.5" />}
+          이 페이지 전체 선택
+        </button>
+      )}
+
       <FeedState q={q} empty={items.length === 0} />
       {!q.isPending && !q.isError && items.length > 0 && (
         <>
           <ul className="space-y-1.5">
             {items.map((l) => (
               <li key={l.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800">
+                {selectMode && (
+                  <button
+                    type="button"
+                    onClick={() => toggleSel(l.id)}
+                    aria-label={selected.has(l.id) ? "선택 해제" : "선택"}
+                    className="shrink-0 text-neutral-400 hover:text-sky-600 dark:hover:text-sky-400"
+                  >
+                    {selected.has(l.id) ? <CheckSquare className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" /> : <Square className="h-3.5 w-3.5" />}
+                  </button>
+                )}
                 <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", auditTone(l.action))}>{l.actionLabel || l.action}</span>
                 {l.actorLabel && <span className="font-medium text-neutral-800 dark:text-neutral-200">{l.actorLabel}</span>}
                 {l.target && <span className="text-neutral-600 dark:text-neutral-400">→ {l.target}</span>}
@@ -1177,7 +1307,7 @@ function AuditFeed() {
           {canMore && (
             <button
               type="button"
-              onClick={() => setLimit((l) => Math.min(200, l + 150))}
+              onClick={() => setLimit((l) => Math.min(500, l + 150))}
               className="mx-auto block rounded-full border border-neutral-300 px-3 py-1 text-[11px] text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-surface-3"
             >
               더 보기
