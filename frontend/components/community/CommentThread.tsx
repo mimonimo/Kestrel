@@ -39,6 +39,17 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
   const { user } = useAuth();
   const queryKey = ["community-comments", { postId, vulnerabilityId, analysisId }];
 
+  // 댓글 수가 표시되는 모든 목록/상세를 즉시 동기화 — 댓글 작성/삭제 시 호출.
+  const invalidateCounts = () => {
+    qc.invalidateQueries({ queryKey });
+    qc.invalidateQueries({ queryKey: ["community-posts"] });
+    qc.invalidateQueries({ queryKey: ["community-post"] });
+    qc.invalidateQueries({ queryKey: ["community-analyses"] });
+    qc.invalidateQueries({ queryKey: ["my-analyses"] });
+    qc.invalidateQueries({ queryKey: ["cve-community-analyses"] });
+    qc.invalidateQueries({ queryKey: ["cve-analyses"] });
+  };
+
   const list = useQuery({
     queryKey,
     queryFn: () => api.listComments({ postId, vulnerabilityId, analysisId }),
@@ -83,7 +94,7 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
         setContent("");
       }
       setError(null);
-      qc.invalidateQueries({ queryKey });
+      invalidateCounts();
     },
     onError: (err) =>
       setError(err instanceof ApiError ? err.message : "댓글 작성에 실패했어요."),
@@ -91,7 +102,7 @@ export function CommentThread({ postId, vulnerabilityId, analysisId }: Props) {
 
   const remove = useMutation({
     mutationFn: (id: number) => api.deleteComment(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey }),
+    onSuccess: () => invalidateCounts(),
   });
 
   const update = useMutation({

@@ -13,7 +13,7 @@ import { ErrorBox, FeedbackBoxButton } from "@/components/ui/feedback-box";
 import { NewPostModal } from "@/components/community/NewPostModal";
 import { PostModal } from "@/components/community/PostModal";
 import { CommunityNotices } from "@/components/community/CommunityNotices";
-import { formatRelativeKo, stripMarkdown } from "@/lib/format";
+import { formatRelativeKo, stripMarkdown, avatarInitial } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // 작성자 이름 기반 결정적 아바타 색상 — 피드에서 작성자 구분이 쉽게.
@@ -218,7 +218,7 @@ export default function CommunityPage() {
                     avatarTone(p.authorName),
                   )}
                 >
-                  {(p.authorName.trim().charAt(0) || "?").toUpperCase()}
+                  {avatarInitial(p.authorName).toUpperCase()}
                 </span>
 
                 <div className="min-w-0 flex-1">

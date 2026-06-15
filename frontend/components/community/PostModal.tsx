@@ -22,7 +22,7 @@ import {
   X,
 } from "lucide-react";
 
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, type PostListResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { ErrorBox } from "@/components/ui/feedback-box";
@@ -64,6 +64,29 @@ export function PostModal({ postId, onClose }: Props) {
     }
     setEditing(false);
   }, [data?.id]);
+
+  // 상세를 열면 서버가 조회수를 증가시키고 최신 댓글/좋아요 수를 반환한다.
+  // 피드 목록(community-posts) 캐시의 해당 글 카운트를 즉시 같은 값으로 맞춰
+  // 새로고침 없이 조회수/댓글수/좋아요수가 바로 동기화되게 한다.
+  useEffect(() => {
+    if (!data) return;
+    qc.setQueriesData<PostListResponse>({ queryKey: ["community-posts"] }, (prev) => {
+      if (!prev?.items) return prev;
+      let changed = false;
+      const items = prev.items.map((p) => {
+        if (p.id !== data.id) return p;
+        changed = true;
+        return {
+          ...p,
+          viewCount: data.viewCount,
+          commentCount: data.commentCount,
+          likeCount: data.likeCount,
+          isLiked: data.isLiked,
+        };
+      });
+      return changed ? { ...prev, items } : prev;
+    });
+  }, [data?.id, data?.viewCount, data?.commentCount, data?.likeCount, data?.isLiked, qc]);
 
   const update = useMutation({
     mutationFn: () =>

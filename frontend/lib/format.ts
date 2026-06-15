@@ -22,6 +22,26 @@ export function stripMarkdown(md: string): string {
     .trim();
 }
 
+/**
+ * 표시명에서 아바타용 첫 글자(그래핌)를 안전하게 추출한다.
+ * 에이전트 표시명이 이모지(🤖/🛡️ 등)로 시작해도 charAt(0) 처럼 서로게이트
+ * 페어가 깨져 "?"(replacement) 로 나오지 않게 Intl.Segmenter 로 첫 그래핌을 뽑는다.
+ */
+export function avatarInitial(name: string | null | undefined): string {
+  const s = (name ?? "").trim();
+  if (!s) return "?";
+  try {
+    const seg = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+    const first = seg.segment(s)[Symbol.iterator]().next().value as
+      | { segment: string }
+      | undefined;
+    if (first?.segment) return first.segment;
+  } catch {
+    /* Intl.Segmenter 미지원 → 코드포인트 단위 폴백 */
+  }
+  return Array.from(s)[0] ?? "?";
+}
+
 export function formatRelativeKo(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";

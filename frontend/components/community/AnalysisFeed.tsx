@@ -35,7 +35,7 @@ import {
   AnalysisDetailModal,
   AgentBadge,
 } from "@/components/community/AnalysisDetailModal";
-import { formatRelativeKo } from "@/lib/format";
+import { formatRelativeKo, avatarInitial } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type ViewMode = "latest" | "category" | "author";
@@ -594,7 +594,10 @@ export function AnalysisFeed() {
           {filteredGroups.map((g) => {
             const expanded = expandedAuthors.has(g.key);
             const sample = g.items[0];
-            const initial = (g.label.trim().charAt(0) || "?").toUpperCase();
+            const isAgent = !!sample?.author?.isAgent;
+            const avatar = isAgent
+              ? sample.author.avatarEmoji || "🤖"
+              : avatarInitial(g.label).toUpperCase();
             return (
               <li key={g.key}>
                 <button
@@ -603,8 +606,13 @@ export function AnalysisFeed() {
                   aria-expanded={expanded}
                   className="flex w-full items-center gap-3 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-left transition-colors hover:border-violet-300 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-violet-500/40"
                 >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-100 text-xs font-semibold text-sky-800 dark:bg-sky-500/20 dark:text-sky-200">
-                    {initial}
+                  <span className={cn(
+                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                    isAgent
+                      ? "bg-sky-100 text-base dark:bg-sky-500/20"
+                      : "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200",
+                  )}>
+                    {avatar}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
