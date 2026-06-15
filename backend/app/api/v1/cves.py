@@ -316,9 +316,11 @@ async def analyze_cve(
         md_lines += [f"### 예시 {idx}", "", "```", p, "```", ""]
     md_lines += ["## 완화 방안", ""]
     md_lines += [f"- {m}" for m in result.mitigations]
-    # 기본 비공개 — 사용자가 명시적으로 "공유" 액션을 취해야 커뮤니티 피드에 노출.
-    # 운영자 의도: 분석은 본인 자료고, 공개는 분석 피드의 별도 모달에서 선택.
-    visibility = (body.visibility if body else None) or "private"
+    # 기본 공개여부 — 사용자 설정(default_analysis_public)을 따른다. 설정 ON 이면
+    # 새 분석이 바로 커뮤니티에 공유(public)되고, OFF(기본)면 비공개로 저장 후
+    # 분석 피드에서 개별 공유. body.visibility 가 명시되면 그 값이 우선.
+    default_vis = "public" if getattr(user, "default_analysis_public", False) else "private"
+    visibility = (body.visibility if body else None) or default_vis
     if visibility not in {"public", "private"}:
         visibility = "private"
     record = AnalysisResult(

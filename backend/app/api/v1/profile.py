@@ -30,11 +30,13 @@ class ProfileOut(CamelModel):
     bio: str | None
     role: str
     is_admin: bool
+    default_analysis_public: bool = False
 
 
 class ProfileUpdate(CamelModel):
     nickname: str | None = Field(default=None, max_length=64)
     bio: str | None = Field(default=None, max_length=2000)
+    default_analysis_public: bool | None = None
 
 
 _NICKNAME_RE = re.compile(r"^[a-zA-Z0-9_가-힣\- .]{2,64}$")
@@ -49,6 +51,7 @@ def _to_profile(u: User) -> ProfileOut:
         bio=u.bio,
         role=u.role.value if hasattr(u.role, "value") else str(u.role),
         is_admin=u.role == UserRole.ADMIN,
+        default_analysis_public=bool(getattr(u, "default_analysis_public", False)),
     )
 
 
@@ -73,6 +76,8 @@ async def update_profile(
             user.nickname = nick
     if body.bio is not None:
         user.bio = body.bio.strip() or None
+    if body.default_analysis_public is not None:
+        user.default_analysis_public = bool(body.default_analysis_public)
 
     db.add(user)
     await db.commit()

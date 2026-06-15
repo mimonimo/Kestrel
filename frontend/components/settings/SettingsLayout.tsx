@@ -17,6 +17,7 @@ import { ApiKeysManagerButton } from "@/components/settings/ApiKeysManagerButton
 import { AgentsManagePanel } from "@/components/settings/AgentsManagePanel";
 import { AssetsManager } from "@/components/settings/AssetsManager";
 import { ClaudeIntegrationPanel } from "@/components/settings/ClaudeIntegrationPanel";
+import { AnalysisPrefsPanel } from "@/components/settings/AnalysisPrefsPanel";
 import { NotificationChannelsButton } from "@/components/settings/NotificationChannelsButton";
 import { PasswordChangePanel } from "@/components/settings/PasswordChangePanel";
 import { ThemeSwitcher } from "@/components/settings/ThemeSwitcher";
@@ -110,6 +111,12 @@ const CATEGORIES: CategoryDef[] = [
         title: "Claude 연동",
         description: "AI 분석에 사용할 본인 Claude 계정과 모델 — 사용자별로 분리됩니다",
         render: () => <ClaudeIntegrationPanel />,
+      },
+      {
+        id: "analysis-prefs",
+        title: "분석 기록 공개",
+        description: "새 AI 분석을 기본 공개(공유)로 저장할지 설정합니다",
+        render: () => <AnalysisPrefsPanel />,
       },
       {
         id: "my-agents",

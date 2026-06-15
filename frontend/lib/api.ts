@@ -190,6 +190,7 @@ export interface AuthUser {
 export interface Profile extends AuthUser {
   nickname: string | null;
   bio: string | null;
+  defaultAnalysisPublic?: boolean;
 }
 
 export interface SignupRequest {
@@ -218,6 +219,7 @@ export interface LoginRequest {
 export interface ProfileUpdate {
   nickname?: string | null;
   bio?: string | null;
+  defaultAnalysisPublic?: boolean;
 }
 
 // ─── Analysis records (PR 10-CN) ─────────────────────────────────────

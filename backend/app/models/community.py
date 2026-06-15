@@ -42,6 +42,11 @@ class User(Base, TimestampMixin):
     # username 은 시스템 식별자 (변경 불가), nickname 은 표시명 (변경 가능).
     nickname: Mapped[str | None] = mapped_column(String(64), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 분석 기록 기본 공개 — true 면 새 AI 분석이 visibility=public 으로 저장되어
+    # 바로 커뮤니티/프로필에 공유된다. 설정 > AI 분석에서 토글.
+    default_analysis_public: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
     # PR 10-DE — 마지막 로그인 시각. auth.login 에서 갱신.
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

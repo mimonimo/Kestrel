@@ -5,7 +5,7 @@
 // 데이터는 owner 스코프(/me/analyses)라 비공개 분석까지 포함한다.
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckSquare, Globe, Loader2, Lock, ScrollText, Search, Square, Trash2, X } from "lucide-react";
+import { CheckSquare, Globe, Heart, Loader2, Lock, MessageSquare, ScrollText, Search, Square, Trash2, X } from "lucide-react";
 
 import { api, type AnalysisList } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -355,6 +355,18 @@ export function MyAnalysesManager() {
                     >
                       {isPublic ? "공개" : "비공개"}
                     </span>
+                    {!!a.commentCount && (
+                      <span className="inline-flex items-center gap-0.5 tabular-nums text-neutral-500 dark:text-neutral-500">
+                        <MessageSquare className="h-3 w-3" />
+                        {a.commentCount}
+                      </span>
+                    )}
+                    {!!a.likeCount && (
+                      <span className="inline-flex items-center gap-0.5 tabular-nums text-rose-500 dark:text-rose-400">
+                        <Heart className="h-3 w-3 fill-current" />
+                        {a.likeCount}
+                      </span>
+                    )}
                   </div>
                   {a.title && (
                     <p className="mt-1 truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
