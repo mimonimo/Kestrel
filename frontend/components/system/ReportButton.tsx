@@ -139,7 +139,7 @@ export function ReportButton() {
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-2xl overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/10 animate-in zoom-in-95 duration-150 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/40"
+              className="w-full max-w-lg overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/10 animate-in zoom-in-95 duration-150 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/40"
             >
               {/* 헤더 */}
               <div className="flex items-start justify-between gap-3 border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
@@ -188,53 +188,31 @@ export function ReportButton() {
                   </button>
                 </div>
               ) : (
-                <div className="space-y-4 px-5 py-4">
-                  {/* 카테고리 — 아이콘 카드 그리드 */}
-                  <div>
-                    <p className="mb-2 text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
-                      어떤 내용인가요?
-                    </p>
-                    <div className="space-y-1.5">
-                      {CATEGORIES.map((c) => {
-                        const Icon = c.icon;
-                        const selected = category === c.value;
-                        return (
-                          <button
-                            key={c.value}
-                            type="button"
-                            onClick={() => setCategory(c.value)}
-                            aria-pressed={selected}
-                            className={cn(
-                              "flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all",
-                              selected
-                                ? `${c.tone} shadow-sm`
-                                : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-800 dark:bg-surface-1 dark:text-neutral-300 dark:hover:border-neutral-700 dark:hover:bg-surface-2",
-                            )}
-                          >
-                            <Icon className="h-5 w-5 shrink-0" />
-                            <span className="min-w-0 flex-1">
-                              <span className="block text-sm font-semibold">{c.label}</span>
-                              <span
-                                className={cn(
-                                  "mt-0.5 block text-[11px] leading-tight",
-                                  selected ? "opacity-80" : "text-neutral-400 dark:text-neutral-500",
-                                )}
-                              >
-                                {c.desc}
-                              </span>
-                            </span>
-                            <span
-                              className={cn(
-                                "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-                                selected ? "border-current" : "border-neutral-300 dark:border-neutral-600",
-                              )}
-                            >
-                              {selected && <span className="h-2.5 w-2.5 rounded-full bg-current" />}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                <div className="space-y-3.5 px-5 py-4">
+                  {/* 카테고리 — 컴팩트 칩 */}
+                  <div className="flex flex-wrap gap-1.5">
+                    {CATEGORIES.map((c) => {
+                      const Icon = c.icon;
+                      const selected = category === c.value;
+                      return (
+                        <button
+                          key={c.value}
+                          type="button"
+                          onClick={() => setCategory(c.value)}
+                          aria-pressed={selected}
+                          title={c.desc}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                            selected
+                              ? c.tone
+                              : "border-neutral-200 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-800 dark:text-neutral-400 dark:hover:bg-surface-2",
+                          )}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                          {c.label}
+                        </button>
+                      );
+                    })}
                   </div>
 
                   {/* 내용 */}
@@ -261,49 +239,40 @@ export function ReportButton() {
                     </div>
                   </div>
 
-                  {/* 회신받을 연락처 — 토글로 펼침 (선택) */}
-                  <div className="rounded-xl border border-neutral-200 dark:border-neutral-800">
+                  {/* 회신 연락처 — 슬림 토글 */}
+                  <div>
                     <button
                       type="button"
                       role="switch"
                       aria-checked={wantContact}
                       onClick={() => setWantContact((v) => !v)}
-                      className="flex w-full items-center justify-between gap-3 p-3 text-left"
+                      className="inline-flex items-center gap-2 text-xs font-medium text-neutral-600 dark:text-neutral-400"
                     >
-                      <span className="min-w-0">
-                        <span className="block text-sm font-semibold text-neutral-800 dark:text-neutral-200">
-                          처리 결과를 회신받기
-                        </span>
-                        <span className="mt-0.5 block text-[11px] text-neutral-400 dark:text-neutral-500">
-                          연락처를 남기면 결과를 알려드려요 (선택)
-                        </span>
-                      </span>
                       <span
                         className={cn(
-                          "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
+                          "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors",
                           wantContact ? "bg-sky-500" : "bg-neutral-300 dark:bg-neutral-700",
                         )}
                       >
                         <span
                           className={cn(
-                            "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
-                            wantContact ? "translate-x-[22px]" : "translate-x-0.5",
+                            "inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform",
+                            wantContact ? "translate-x-3.5" : "translate-x-0.5",
                           )}
                         />
                       </span>
+                      결과 회신받기 <span className="font-normal text-neutral-400">(선택)</span>
                     </button>
                     {wantContact && (
-                      <div className="border-t border-neutral-200 p-3 dark:border-neutral-800">
-                        <input
-                          type="text"
-                          value={contact}
-                          onChange={(e) => setContact(e.target.value)}
-                          maxLength={200}
-                          autoFocus
-                          placeholder="이메일 또는 전화번호"
-                          className="block w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-sky-500/30"
-                        />
-                      </div>
+                      <input
+                        type="text"
+                        value={contact}
+                        onChange={(e) => setContact(e.target.value)}
+                        maxLength={200}
+                        autoFocus
+                        placeholder="이메일 또는 전화번호"
+                        className="mt-2 block w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-sky-500/30"
+                      />
                     )}
                   </div>
 
@@ -318,7 +287,7 @@ export function ReportButton() {
                     <button
                       type="button"
                       onClick={close}
-                      className="rounded-full px-4 py-2 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-surface-2"
+                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-surface-2"
                     >
                       취소
                     </button>
@@ -326,7 +295,7 @@ export function ReportButton() {
                       type="button"
                       onClick={submit}
                       disabled={state === "sending" || message.trim().length < MIN}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-sky-500 px-5 py-2 text-xs font-semibold text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500 px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {state === "sending" ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
