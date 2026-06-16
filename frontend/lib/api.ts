@@ -1484,6 +1484,7 @@ export interface ReportInput {
   category: string;
   message: string;
   url?: string;
+  contact?: string;
 }
 
 export async function submitReport(

@@ -32,6 +32,7 @@ class ReportIn(CamelModel):
     category: str = Field(default="bug", max_length=32)
     message: str = Field(min_length=5, max_length=2000)
     url: str | None = Field(default=None, max_length=500)
+    contact: str | None = Field(default=None, max_length=200)
 
 
 class ReportOut(CamelModel):
@@ -53,11 +54,13 @@ async def submit_report(
     cat = _CATEGORY_LABELS.get(body.category, body.category)
     who = f"{me.email} ({me.username})" if me is not None else f"비회원 ({ip})"
     url = body.url or "-"
+    contact = (body.contact or "").strip()
 
     subject = f"[Kestrel 신고] {cat}"
     text = (
         f"분류: {cat}\n"
         f"신고자: {who}\n"
+        f"회신 연락처: {contact or '-'}\n"
         f"페이지: {url}\n"
         f"IP: {ip}\n"
         f"────────────\n"

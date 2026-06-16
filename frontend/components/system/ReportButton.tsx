@@ -65,6 +65,7 @@ export function ReportButton() {
   const [open, setOpen] = useState(false);
   const [category, setCategory] = useState("bug");
   const [message, setMessage] = useState("");
+  const [contact, setContact] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "done" | "error">("idle");
   const [error, setError] = useState("");
 
@@ -73,6 +74,7 @@ export function ReportButton() {
   const reset = () => {
     setCategory("bug");
     setMessage("");
+    setContact("");
     setState("idle");
     setError("");
   };
@@ -102,7 +104,7 @@ export function ReportButton() {
         typeof window !== "undefined"
           ? window.location.pathname + window.location.search
           : undefined;
-      await submitReport({ category, message: message.trim(), url });
+      await submitReport({ category, message: message.trim(), url, contact: contact.trim() || undefined });
       setState("done");
     } catch (e) {
       setState("error");
@@ -135,7 +137,7 @@ export function ReportButton() {
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/10 animate-in zoom-in-95 duration-150 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/40"
+              className="w-full max-w-xl overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/10 animate-in zoom-in-95 duration-150 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/40"
             >
               {/* 헤더 */}
               <div className="flex items-start justify-between gap-3 border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
@@ -247,6 +249,21 @@ export function ReportButton() {
                         {message.length}/{MAX}
                       </span>
                     </div>
+                  </div>
+
+                  {/* 회신받을 연락처 (선택) */}
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+                      회신받을 연락처 <span className="font-normal text-neutral-400">(선택)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={contact}
+                      onChange={(e) => setContact(e.target.value)}
+                      maxLength={200}
+                      placeholder="이메일·전화 등 — 남기시면 처리 결과를 회신드립니다"
+                      className="block w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-sky-500/30"
+                    />
                   </div>
 
                   {error && !tooShort && (
