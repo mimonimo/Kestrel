@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import {
   Bug,
   Check,
+  ChevronDown,
   Lightbulb,
   Loader2,
   Megaphone,
@@ -66,7 +67,6 @@ export function ReportButton() {
   const [category, setCategory] = useState("bug");
   const [message, setMessage] = useState("");
   const [contact, setContact] = useState("");
-  const [wantContact, setWantContact] = useState(false);
   const [state, setState] = useState<"idle" | "sending" | "done" | "error">("idle");
   const [error, setError] = useState("");
 
@@ -76,7 +76,6 @@ export function ReportButton() {
     setCategory("bug");
     setMessage("");
     setContact("");
-    setWantContact(false);
     setState("idle");
     setError("");
   };
@@ -106,7 +105,7 @@ export function ReportButton() {
         typeof window !== "undefined"
           ? window.location.pathname + window.location.search
           : undefined;
-      await submitReport({ category, message: message.trim(), url, contact: (wantContact && contact.trim()) || undefined });
+      await submitReport({ category, message: message.trim(), url, contact: contact.trim() || undefined });
       setState("done");
     } catch (e) {
       setState("error");
@@ -139,7 +138,7 @@ export function ReportButton() {
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/10 animate-in zoom-in-95 duration-150 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/40"
+              className="w-full max-w-2xl overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-2xl shadow-black/10 animate-in zoom-in-95 duration-150 dark:border-neutral-800 dark:bg-surface-1 dark:shadow-black/40"
             >
               {/* 헤더 */}
               <div className="flex items-start justify-between gap-3 border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
@@ -188,46 +187,58 @@ export function ReportButton() {
                   </button>
                 </div>
               ) : (
-                <div className="space-y-3.5 px-5 py-4">
-                  {/* 카테고리 — 컴팩트 칩 */}
-                  <div className="flex flex-wrap gap-1.5">
-                    {CATEGORIES.map((c) => {
-                      const Icon = c.icon;
-                      const selected = category === c.value;
-                      return (
-                        <button
-                          key={c.value}
-                          type="button"
-                          onClick={() => setCategory(c.value)}
-                          aria-pressed={selected}
-                          title={c.desc}
-                          className={cn(
-                            "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                            selected
-                              ? c.tone
-                              : "border-neutral-200 text-neutral-600 hover:bg-neutral-50 dark:border-neutral-800 dark:text-neutral-400 dark:hover:bg-surface-2",
-                          )}
-                        >
-                          <Icon className="h-3.5 w-3.5" />
-                          {c.label}
-                        </button>
-                      );
-                    })}
+                <div className="space-y-4 px-6 py-5">
+                  {/* 유형 — 드롭다운 */}
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-neutral-600 dark:text-neutral-300">
+                      유형
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={category}
+                        onChange={(e) => setCategory(e.target.value)}
+                        className="block w-full appearance-none rounded-lg border border-neutral-300 bg-white px-3 py-2.5 pr-9 text-sm text-neutral-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100 dark:focus:ring-sky-500/30"
+                      >
+                        {CATEGORIES.map((c) => (
+                          <option key={c.value} value={c.value}>
+                            {c.label} — {c.desc}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                    </div>
+                  </div>
+
+                  {/* 회신받을 연락처 */}
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-neutral-600 dark:text-neutral-300">
+                      회신받을 연락처 <span className="font-normal text-neutral-400">(선택)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={contact}
+                      onChange={(e) => setContact(e.target.value)}
+                      maxLength={200}
+                      placeholder="이메일 또는 전화번호 — 남기면 처리 결과를 회신드립니다"
+                      className="block w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-sky-500/30"
+                    />
                   </div>
 
                   {/* 내용 */}
                   <div>
+                    <label className="mb-1.5 block text-xs font-medium text-neutral-600 dark:text-neutral-300">
+                      내용
+                    </label>
                     <textarea
                       value={message}
                       onChange={(e) => {
                         setMessage(e.target.value);
                         if (error) setError("");
                       }}
-                      rows={5}
+                      rows={7}
                       maxLength={MAX}
-                      autoFocus
                       placeholder="어떤 문제가 있었는지, 또는 의견을 자유롭게 남겨주세요.&#10;예: '취약점 조회에서 특정 필터를 누르면 페이지가 안 열려요'"
-                      className="block w-full resize-none rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-sky-500/30"
+                      className="block w-full resize-none rounded-lg border border-neutral-300 bg-white px-3 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-sky-500/30"
                     />
                     <div className="mt-1 flex items-center justify-between text-[10px]">
                       <span className={cn(tooShort ? "text-rose-500 dark:text-rose-400" : "text-neutral-400")}>
@@ -237,43 +248,6 @@ export function ReportButton() {
                         {message.length}/{MAX}
                       </span>
                     </div>
-                  </div>
-
-                  {/* 회신 연락처 — 슬림 토글 */}
-                  <div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={wantContact}
-                      onClick={() => setWantContact((v) => !v)}
-                      className="inline-flex items-center gap-2 text-xs font-medium text-neutral-600 dark:text-neutral-400"
-                    >
-                      <span
-                        className={cn(
-                          "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors",
-                          wantContact ? "bg-sky-500" : "bg-neutral-300 dark:bg-neutral-700",
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform",
-                            wantContact ? "translate-x-3.5" : "translate-x-0.5",
-                          )}
-                        />
-                      </span>
-                      결과 회신받기 <span className="font-normal text-neutral-400">(선택)</span>
-                    </button>
-                    {wantContact && (
-                      <input
-                        type="text"
-                        value={contact}
-                        onChange={(e) => setContact(e.target.value)}
-                        maxLength={200}
-                        autoFocus
-                        placeholder="이메일 또는 전화번호"
-                        className="mt-2 block w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-sky-500/30"
-                      />
-                    )}
                   </div>
 
                   {error && !tooShort && (
@@ -287,7 +261,7 @@ export function ReportButton() {
                     <button
                       type="button"
                       onClick={close}
-                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-surface-2"
+                      className="rounded-lg px-4 py-2 text-sm font-medium text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-surface-2"
                     >
                       취소
                     </button>
@@ -295,7 +269,7 @@ export function ReportButton() {
                       type="button"
                       onClick={submit}
                       disabled={state === "sending" || message.trim().length < MIN}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500 px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {state === "sending" ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
