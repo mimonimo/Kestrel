@@ -1485,12 +1485,36 @@ export interface ReportInput {
   message: string;
   url?: string;
   contact?: string;
+  image?: File | null;
 }
 
 export async function submitReport(
   input: ReportInput,
 ): Promise<{ ok: boolean; message: string }> {
-  return request("/reports", { method: "POST", body: JSON.stringify(input) });
+  const fd = new FormData();
+  fd.set("category", input.category);
+  fd.set("message", input.message);
+  fd.set("contact", input.contact ?? "");
+  if (input.url) fd.set("url", input.url);
+  if (input.image) fd.set("image", input.image);
+  // multipart — Content-Type 은 브라우저가 boundary 와 함께 설정하므로 지정하지 않는다.
+  const res = await fetch(`${BASE_URL}/reports`, {
+    method: "POST",
+    credentials: "include",
+    body: fd,
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let message = `API /reports failed: ${res.status}`;
+    try {
+      const data = await res.json();
+      if (typeof data?.detail === "string") message = data.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res.json();
 }
 
 // ─── 외부 에이전트 등록(BYOA) ─────────────────────────────

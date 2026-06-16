@@ -6,6 +6,7 @@ import {
   Bug,
   Check,
   ChevronDown,
+  ImagePlus,
   Lightbulb,
   Loader2,
   Megaphone,
@@ -67,6 +68,7 @@ export function ReportButton() {
   const [category, setCategory] = useState("bug");
   const [message, setMessage] = useState("");
   const [contact, setContact] = useState("");
+  const [image, setImage] = useState<File | null>(null);
   const [state, setState] = useState<"idle" | "sending" | "done" | "error">("idle");
   const [error, setError] = useState("");
 
@@ -76,6 +78,7 @@ export function ReportButton() {
     setCategory("bug");
     setMessage("");
     setContact("");
+    setImage(null);
     setState("idle");
     setError("");
   };
@@ -98,6 +101,10 @@ export function ReportButton() {
       setError(`내용을 ${MIN}자 이상 입력해 주세요.`);
       return;
     }
+    if (!contact.trim()) {
+      setError("회신받을 연락처를 입력해 주세요.");
+      return;
+    }
     setState("sending");
     setError("");
     try {
@@ -105,7 +112,7 @@ export function ReportButton() {
         typeof window !== "undefined"
           ? window.location.pathname + window.location.search
           : undefined;
-      await submitReport({ category, message: message.trim(), url, contact: contact.trim() || undefined });
+      await submitReport({ category, message: message.trim(), url, contact: contact.trim(), image });
       setState("done");
     } catch (e) {
       setState("error");
@@ -201,7 +208,7 @@ export function ReportButton() {
                       >
                         {CATEGORIES.map((c) => (
                           <option key={c.value} value={c.value}>
-                            {c.label} — {c.desc}
+                            {c.label}
                           </option>
                         ))}
                       </select>
@@ -212,7 +219,7 @@ export function ReportButton() {
                   {/* 회신받을 연락처 */}
                   <div>
                     <label className="mb-1.5 block text-xs font-medium text-neutral-600 dark:text-neutral-300">
-                      회신받을 연락처 <span className="font-normal text-neutral-400">(선택)</span>
+                      회신받을 연락처 <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -250,6 +257,53 @@ export function ReportButton() {
                     </div>
                   </div>
 
+                  {/* 사진 첨부 (선택) */}
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-neutral-600 dark:text-neutral-300">
+                      사진 첨부 <span className="font-normal text-neutral-400">(선택 · 최대 8MB)</span>
+                    </label>
+                    {image ? (
+                      <div className="flex items-center gap-3 rounded-lg border border-neutral-200 p-2 dark:border-neutral-800">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={URL.createObjectURL(image)}
+                          alt="첨부 미리보기"
+                          className="h-12 w-12 shrink-0 rounded-md object-cover"
+                        />
+                        <span className="min-w-0 flex-1 truncate text-xs text-neutral-600 dark:text-neutral-400">
+                          {image.name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setImage(null)}
+                          className="shrink-0 rounded-full p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-surface-2"
+                          aria-label="첨부 제거"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-neutral-300 px-3 py-3 text-xs text-neutral-500 transition-colors hover:border-sky-400 hover:text-sky-600 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-sky-500/50 dark:hover:text-sky-300">
+                        <ImagePlus className="h-4 w-4" />
+                        스크린샷 추가 (PNG·JPEG·GIF·WEBP)
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/gif,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0] ?? null;
+                            if (f && f.size > 8 * 1024 * 1024) {
+                              setError("이미지는 8MB 이하만 첨부할 수 있습니다.");
+                              return;
+                            }
+                            setError("");
+                            setImage(f);
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+
                   {error && !tooShort && (
                     <p className="rounded-lg bg-rose-50 px-3 py-2 text-[11px] text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
                       {error}
@@ -268,7 +322,7 @@ export function ReportButton() {
                     <button
                       type="button"
                       onClick={submit}
-                      disabled={state === "sending" || message.trim().length < MIN}
+                      disabled={state === "sending" || message.trim().length < MIN || contact.trim().length === 0}
                       className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {state === "sending" ? (

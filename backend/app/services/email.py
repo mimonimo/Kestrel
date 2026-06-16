@@ -207,3 +207,52 @@ async def send_password_reset_email(to: str, token: str) -> None:
         f"이 링크는 {ttl_m}분 동안만 유효합니다."
     )
     await _send(to, subject, html, text)
+
+
+async def send_with_attachment(
+    to: str,
+    subject: str,
+    text_body: str,
+    *,
+    attachment: bytes | None = None,
+    filename: str | None = None,
+    content_type: str | None = None,
+) -> None:
+    """첨부 포함 메일 — SES SendRawEmail(MIME). 신고/문의에 스크린샷을 붙일 때 사용.
+
+    email_enabled=false(콘솔 모드)면 로그만 남긴다. SES 전용(provider 무관하게 SES
+    raw 사용 — 첨부는 SES 로만 처리). 실패는 호출자에게 전달한다.
+    """
+    settings = get_settings()
+    if not settings.email_enabled:
+        log.info("email.console_mode_attach", to=to, subject=subject, has_file=bool(attachment))
+        return
+
+    from_addr = f"{settings.email_from_name} <{settings.email_from}>"
+
+    def _do_send() -> str:
+        from email.mime.application import MIMEApplication
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+
+        msg = MIMEMultipart("mixed")
+        msg["Subject"] = subject
+        msg["From"] = from_addr
+        msg["To"] = to
+        msg.attach(MIMEText(text_body, "plain", "utf-8"))
+        if attachment:
+            maintype, _, subtype = (content_type or "application/octet-stream").partition("/")
+            part = MIMEApplication(attachment, _subtype=subtype or "octet-stream")
+            part.add_header(
+                "Content-Disposition", "attachment", filename=(filename or "attachment")
+            )
+            msg.attach(part)
+        resp = _ses_client().send_raw_email(
+            Source=settings.email_from,
+            Destinations=[to],
+            RawMessage={"Data": msg.as_string()},
+        )
+        return resp.get("MessageId", "")
+
+    message_id = await asyncio.to_thread(_do_send)
+    log.info("email.attach_sent", to=to, subject=subject, message_id=message_id)
