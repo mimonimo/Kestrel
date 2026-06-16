@@ -62,6 +62,7 @@ const CATEGORIES: Cat[] = [
 
 const MAX = 2000;
 const MIN = 5;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function ReportButton() {
   const [open, setOpen] = useState(false);
@@ -102,7 +103,11 @@ export function ReportButton() {
       return;
     }
     if (!contact.trim()) {
-      setError("회신받을 연락처를 입력해 주세요.");
+      setError("회신받을 이메일을 입력해 주세요.");
+      return;
+    }
+    if (!EMAIL_RE.test(contact.trim())) {
+      setError("올바른 이메일 형식으로 입력해 주세요.");
       return;
     }
     setState("sending");
@@ -219,14 +224,19 @@ export function ReportButton() {
                   {/* 회신받을 연락처 */}
                   <div>
                     <label className="mb-1.5 block text-xs font-medium text-neutral-600 dark:text-neutral-300">
-                      회신받을 연락처 <span className="text-rose-500">*</span>
+                      회신받을 이메일 <span className="text-rose-500">*</span>
                     </label>
                     <input
-                      type="text"
+                      type="email"
+                      inputMode="email"
+                      autoComplete="email"
                       value={contact}
-                      onChange={(e) => setContact(e.target.value)}
+                      onChange={(e) => {
+                        setContact(e.target.value);
+                        if (error) setError("");
+                      }}
                       maxLength={200}
-                      placeholder="이메일 또는 전화번호 — 남기면 처리 결과를 회신드립니다"
+                      placeholder="you@example.com"
                       className="block w-full rounded-lg border border-neutral-300 bg-white px-3 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-sky-500/30"
                     />
                   </div>
@@ -322,7 +332,7 @@ export function ReportButton() {
                     <button
                       type="button"
                       onClick={submit}
-                      disabled={state === "sending" || message.trim().length < MIN || contact.trim().length === 0}
+                      disabled={state === "sending" || message.trim().length < MIN || !EMAIL_RE.test(contact.trim())}
                       className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {state === "sending" ? (

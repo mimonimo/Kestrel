@@ -8,6 +8,8 @@ SES SendRawEmail 첨부 메일을 추가 발송한다(저장소 불필요).
 """
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +37,7 @@ _CATEGORY_LABELS = {
 # 첨부 이미지 제한 — 메일 첨부라 과도한 크기를 막는다.
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024  # 8MB
 _ALLOWED_IMAGE = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
 class ReportOut(CamelModel):
@@ -62,7 +65,9 @@ async def submit_report(
 
     contact = (contact or "").strip()
     if not contact:
-        raise HTTPException(400, detail="회신받을 연락처를 입력해 주세요.")
+        raise HTTPException(400, detail="회신받을 이메일을 입력해 주세요.")
+    if not _EMAIL_RE.match(contact):
+        raise HTTPException(400, detail="올바른 이메일 형식으로 입력해 주세요.")
 
     cat = _CATEGORY_LABELS.get(category, category)
     who = f"{me.email} ({me.username})" if me is not None else f"비회원 ({ip})"
