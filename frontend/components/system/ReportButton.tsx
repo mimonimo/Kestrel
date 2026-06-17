@@ -63,6 +63,19 @@ const CATEGORIES: Cat[] = [
 const MAX = 2000;
 const MIN = 5;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// 흔한 예시·일회용 도메인 — 즉시 피드백용(서버가 MX까지 최종 검증).
+const DISPOSABLE_DOMAINS = new Set([
+  "example.com", "example.org", "example.net", "test.com", "email.com",
+  "domain.com", "sample.com", "asdf.com", "aaa.com",
+  "mailinator.com", "10minutemail.com", "guerrillamail.com", "yopmail.com",
+  "trashmail.com", "tempmail.com", "temp-mail.org", "throwawaymail.com",
+  "getnada.com", "maildrop.cc", "fakeinbox.com", "sharklasers.com",
+]);
+function emailLooksReal(addr: string): boolean {
+  const a = addr.trim().toLowerCase();
+  if (!EMAIL_RE.test(a)) return false;
+  return !DISPOSABLE_DOMAINS.has(a.split("@")[1] ?? "");
+}
 
 export function ReportButton() {
   const [open, setOpen] = useState(false);
@@ -108,6 +121,10 @@ export function ReportButton() {
     }
     if (!EMAIL_RE.test(contact.trim())) {
       setError("올바른 이메일 형식으로 입력해 주세요.");
+      return;
+    }
+    if (!emailLooksReal(contact)) {
+      setError("일회용·예시 이메일은 사용할 수 없습니다. 실제 회신 가능한 이메일을 입력해 주세요.");
       return;
     }
     setState("sending");

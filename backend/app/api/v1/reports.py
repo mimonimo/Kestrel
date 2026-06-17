@@ -39,6 +39,44 @@ _MAX_IMAGE_BYTES = 8 * 1024 * 1024  # 8MB
 _ALLOWED_IMAGE = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
+# 예시·일회용(버리는) 메일 도메인 — 무성의/장난성 입력 1차 차단.
+_DISPOSABLE_DOMAINS = {
+    "example.com", "example.org", "example.net", "test.com", "test.test",
+    "email.com", "domain.com", "sample.com", "asdf.com", "aaa.com",
+    "mailinator.com", "10minutemail.com", "guerrillamail.com", "guerrillamail.info",
+    "yopmail.com", "trashmail.com", "tempmail.com", "temp-mail.org", "throwawaymail.com",
+    "getnada.com", "dispostable.com", "maildrop.cc", "fakeinbox.com", "sharklasers.com",
+    "mailnesia.com", "mintemail.com", "spam4.me", "discard.email", "tmail.com",
+}
+
+
+def _validate_report_email(addr: str) -> str | None:
+    """신고 회신 이메일 검증. 통과 시 None, 거부 시 사용자용 에러 메시지 반환.
+
+    1) 형식 + 일회용/예시 도메인 차단.
+    2) email-validator 로 형식 + MX(도메인 메일서버) 확인. DNS 일시장애는 통과(fail-open).
+    """
+    if not _EMAIL_RE.match(addr):
+        return "올바른 이메일 형식으로 입력해 주세요."
+    domain = addr.rsplit("@", 1)[-1].lower()
+    if domain in _DISPOSABLE_DOMAINS:
+        return "일회용·예시 이메일은 사용할 수 없습니다. 실제 회신 가능한 이메일을 입력해 주세요."
+    try:
+        from email_validator import EmailNotValidError, validate_email
+
+        try:
+            validate_email(addr, check_deliverability=True)
+        except EmailNotValidError as e:
+            msg = str(e).lower()
+            # 도메인이 없거나 메일을 받지 않는 '확정적' 실패만 거부.
+            # DNS 타임아웃 등 일시적 오류는 통과(fail-open)시켜 정상 사용자를 막지 않는다.
+            if "does not exist" in msg or "does not accept email" in msg:
+                return "받는 메일 서버를 찾을 수 없는 이메일입니다. 주소를 다시 확인해 주세요."
+            log.info("report.email_mx_check_inconclusive", error=str(e))
+    except Exception as exc:  # noqa: BLE001 — 라이브러리/DNS 장애는 통과(fail-open)
+        log.info("report.email_mx_check_skipped", error=str(exc))
+    return None
+
 
 class ReportOut(CamelModel):
     ok: bool
@@ -66,8 +104,9 @@ async def submit_report(
     contact = (contact or "").strip()
     if not contact:
         raise HTTPException(400, detail="회신받을 이메일을 입력해 주세요.")
-    if not _EMAIL_RE.match(contact):
-        raise HTTPException(400, detail="올바른 이메일 형식으로 입력해 주세요.")
+    _email_err = _validate_report_email(contact)
+    if _email_err:
+        raise HTTPException(400, detail=_email_err)
 
     cat = _CATEGORY_LABELS.get(category, category)
     who = f"{me.email} ({me.username})" if me is not None else f"비회원 ({ip})"
