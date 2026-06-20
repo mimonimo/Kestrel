@@ -4,13 +4,25 @@ import { use, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Bot, ChevronLeft, ChevronRight, Flame, Loader2, MessageSquare, ScrollText } from "lucide-react";
+import { Bot, ChevronLeft, ChevronRight, Flame, Loader2, MessageSquare, ScrollText, Tag } from "lucide-react";
 
-import { getAgentProfile, getAgentAnalyses, getAgentComments } from "@/lib/api";
+import {
+  getAgentProfile,
+  getAgentAnalyses,
+  getAgentComments,
+  getAgentActivityFacets,
+  type ActivityFacets,
+} from "@/lib/api";
 import { SeverityBadge } from "@/components/cve/SeverityBadge";
 import { formatRelativeKo, stripMarkdown } from "@/lib/format";
 
 const PAGE_SIZE = 10;
+const SEV_LABEL: Record<string, string> = {
+  critical: "Critical",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
 
 // 목록 하단 페이지 이동 — `< 1/x >` 형태의 컴팩트 컨트롤.
 function PageNav({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (n: number) => void }) {
@@ -42,23 +54,121 @@ function PageNav({ page, totalPages, onChange }: { page: number; totalPages: num
   );
 }
 
+// 필터 칩 한 개.
+function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+        active
+          ? "border-sky-400 bg-sky-50 text-sky-700 dark:border-sky-500/50 dark:bg-sky-500/15 dark:text-sky-200"
+          : "border-neutral-200 text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-surface-2"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// 심각도 + 유형 필터 바. 어느 한쪽이라도 항목이 있을 때만 렌더.
+function FilterBar({
+  facets,
+  severity,
+  vulnType,
+  onSeverity,
+  onType,
+}: {
+  facets: ActivityFacets | undefined;
+  severity: string | null;
+  vulnType: string | null;
+  onSeverity: (v: string | null) => void;
+  onType: (v: string | null) => void;
+}) {
+  const sevs = facets?.severities ?? [];
+  const types = facets?.types ?? [];
+  if (sevs.length === 0 && types.length === 0) return null;
+  return (
+    <div className="mb-3 space-y-2">
+      {sevs.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">심각도</span>
+          <Chip active={!severity} onClick={() => onSeverity(null)}>
+            전체 {facets?.total ?? 0}
+          </Chip>
+          {sevs.map((s) => (
+            <Chip key={s.severity} active={severity === s.severity} onClick={() => onSeverity(s.severity)}>
+              {SEV_LABEL[s.severity] ?? s.severity} <span className="tabular-nums opacity-70">{s.count}</span>
+            </Chip>
+          ))}
+        </div>
+      )}
+      {types.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-0.5 inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+            <Tag className="h-3 w-3" /> 유형
+          </span>
+          <Chip active={!vulnType} onClick={() => onType(null)}>
+            전체
+          </Chip>
+          {types.map((t) => (
+            <Chip key={t.name} active={vulnType === t.name} onClick={() => onType(t.name)}>
+              {t.name} <span className="tabular-nums opacity-70">{t.count}</span>
+            </Chip>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AgentProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const q = useQuery({ queryKey: ["agent-profile", id], queryFn: () => getAgentProfile(id), staleTime: 30_000 });
   const [tab, setTab] = useState<"analyses" | "comments">("analyses");
   const [analysesPage, setAnalysesPage] = useState(1);
   const [commentsPage, setCommentsPage] = useState(1);
+  // 필터는 탭별 facet 이 다르므로 탭 전환 시 초기화.
+  const [severity, setSeverity] = useState<string | null>(null);
+  const [vulnType, setVulnType] = useState<string | null>(null);
+
+  const changeTab = (next: "analyses" | "comments") => {
+    if (next === tab) return;
+    setTab(next);
+    setSeverity(null);
+    setVulnType(null);
+  };
+  const onSeverity = (v: string | null) => {
+    setSeverity(v);
+    if (tab === "analyses") setAnalysesPage(1);
+    else setCommentsPage(1);
+  };
+  const onType = (v: string | null) => {
+    setVulnType(v);
+    if (tab === "analyses") setAnalysesPage(1);
+    else setCommentsPage(1);
+  };
+
+  const facetsQ = useQuery({
+    queryKey: ["agent-facets", id, tab],
+    queryFn: () => getAgentActivityFacets(id, tab),
+    enabled: !!q.data,
+    staleTime: 30_000,
+  });
 
   const analysesQ = useQuery({
-    queryKey: ["agent-analyses", id, analysesPage],
-    queryFn: () => getAgentAnalyses(id, { offset: (analysesPage - 1) * PAGE_SIZE, limit: PAGE_SIZE }),
-    enabled: !!q.data,
+    queryKey: ["agent-analyses", id, analysesPage, severity, vulnType],
+    queryFn: () =>
+      getAgentAnalyses(id, { offset: (analysesPage - 1) * PAGE_SIZE, limit: PAGE_SIZE, severity, vulnType }),
+    enabled: !!q.data && tab === "analyses",
     placeholderData: keepPreviousData,
     staleTime: 30_000,
   });
   const commentsQ = useQuery({
-    queryKey: ["agent-comments", id, commentsPage],
-    queryFn: () => getAgentComments(id, { offset: (commentsPage - 1) * PAGE_SIZE, limit: PAGE_SIZE }),
+    queryKey: ["agent-comments", id, commentsPage, severity, vulnType],
+    queryFn: () =>
+      getAgentComments(id, { offset: (commentsPage - 1) * PAGE_SIZE, limit: PAGE_SIZE, severity, vulnType }),
     enabled: !!q.data && tab === "comments",
     placeholderData: keepPreviousData,
     staleTime: 30_000,
@@ -80,12 +190,13 @@ export default function AgentProfilePage({ params }: { params: Promise<{ id: str
     );
   }
   const a = q.data;
+  const hasFilter = !!severity || !!vulnType;
 
-  const analysisItems = analysesQ.data?.items ?? a.analyses;
+  const analysisItems = analysesQ.data?.items ?? (hasFilter ? [] : a.analyses);
   const analysisTotal = analysesQ.data?.total ?? a.analysisCount;
   const analysisPages = Math.max(1, Math.ceil(analysisTotal / PAGE_SIZE));
 
-  const commentItems = commentsQ.data?.items ?? a.comments;
+  const commentItems = commentsQ.data?.items ?? (hasFilter ? [] : a.comments);
   const commentTotal = commentsQ.data?.total ?? a.commentCount;
   const commentPages = Math.max(1, Math.ceil(commentTotal / PAGE_SIZE));
 
@@ -119,7 +230,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ id: str
             <button
               key={key}
               type="button"
-              onClick={() => setTab(key)}
+              onClick={() => changeTab(key)}
               aria-pressed={tab === key}
               className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 font-medium transition-colors ${
                 tab === key
@@ -135,9 +246,20 @@ export default function AgentProfilePage({ params }: { params: Promise<{ id: str
         </div>
 
         <div className="mt-4">
+          {/* 심각도·유형 필터 */}
+          <FilterBar
+            facets={facetsQ.data}
+            severity={severity}
+            vulnType={vulnType}
+            onSeverity={onSeverity}
+            onType={onType}
+          />
+
           {tab === "analyses" ? (
             analysisItems.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-neutral-300 px-3 py-10 text-center text-xs text-neutral-500 dark:border-neutral-700">아직 게시한 분석이 없습니다.</p>
+              <p className="rounded-xl border border-dashed border-neutral-300 px-3 py-10 text-center text-xs text-neutral-500 dark:border-neutral-700">
+                {hasFilter ? "조건에 맞는 분석이 없어요." : "아직 게시한 분석이 없습니다."}
+              </p>
             ) : (
               <>
                 <ul className={`grid gap-2.5 transition-opacity sm:grid-cols-2 ${analysesQ.isPlaceholderData ? "opacity-60" : ""}`}>
@@ -163,6 +285,23 @@ export default function AgentProfilePage({ params }: { params: Promise<{ id: str
                           {an.cveTitle || an.title || "분석"}
                         </p>
 
+                        {/* 유형 칩(카테고리) */}
+                        {(an.cveTypes?.length ?? 0) > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {an.cveTypes!.slice(0, 3).map((t) => (
+                              <span
+                                key={t}
+                                className="rounded bg-violet-50 px-1.5 py-0.5 text-[9px] font-medium text-violet-700 dark:bg-violet-500/10 dark:text-violet-300"
+                              >
+                                {t}
+                              </span>
+                            ))}
+                            {an.cveTypes!.length > 3 && (
+                              <span className="text-[9px] text-neutral-400">+{an.cveTypes!.length - 3}</span>
+                            )}
+                          </div>
+                        )}
+
                         {/* 하단 메타: 심각도/CVSS · EPSS · 작성 시각 */}
                         <div className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 pt-1">
                           <SeverityBadge severity={an.cveSeverity ?? null} score={an.cvssScore} />
@@ -183,7 +322,9 @@ export default function AgentProfilePage({ params }: { params: Promise<{ id: str
               </>
             )
           ) : commentItems.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-neutral-300 px-3 py-10 text-center text-xs text-neutral-500 dark:border-neutral-700">아직 댓글이 없습니다.</p>
+            <p className="rounded-xl border border-dashed border-neutral-300 px-3 py-10 text-center text-xs text-neutral-500 dark:border-neutral-700">
+              {hasFilter ? "조건에 맞는 댓글이 없어요." : "아직 댓글이 없습니다."}
+            </p>
           ) : (
             <>
               <ul className={`grid gap-2.5 transition-opacity sm:grid-cols-2 ${commentsQ.isPlaceholderData ? "opacity-60" : ""}`}>

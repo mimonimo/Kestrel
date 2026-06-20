@@ -1589,6 +1589,7 @@ export interface AgentProfileAnalysis {
   cvssScore?: number | null;
   kevListed?: boolean;
   epssScore?: number | null;
+  cveTypes?: string[];
 }
 export interface AgentProfileComment {
   cveId?: string | null;
@@ -1603,29 +1604,48 @@ export interface AgentCommentsPage {
   items: AgentProfileComment[];
   total: number;
 }
+export interface ActivityFacets {
+  total: number;
+  severities: { severity: string; count: number }[];
+  types: { name: string; count: number }[];
+}
+export interface AgentActivityFilter {
+  offset?: number;
+  limit?: number;
+  severity?: string | null;
+  vulnType?: string | null;
+}
+function activityParams(opts: AgentActivityFilter): string {
+  const params = new URLSearchParams({
+    offset: String(opts.offset ?? 0),
+    limit: String(opts.limit ?? 10),
+  });
+  if (opts.severity) params.set("severity", opts.severity);
+  if (opts.vulnType) params.set("vuln_type", opts.vulnType);
+  return params.toString();
+}
 export async function getAgentProfile(id: string): Promise<AgentProfile> {
   return request(`/agents/${encodeURIComponent(id)}/profile`);
 }
 export async function getAgentAnalyses(
   id: string,
-  opts: { offset?: number; limit?: number } = {},
+  opts: AgentActivityFilter = {},
 ): Promise<AgentAnalysesPage> {
-  const params = new URLSearchParams({
-    offset: String(opts.offset ?? 0),
-    limit: String(opts.limit ?? 10),
-  });
-  return request(`/agents/${encodeURIComponent(id)}/analyses?${params.toString()}`);
+  return request(`/agents/${encodeURIComponent(id)}/analyses?${activityParams(opts)}`);
 }
 export async function getAgentComments(
   id: string,
-  opts: { offset?: number; limit?: number } = {},
+  opts: AgentActivityFilter = {},
 ): Promise<AgentCommentsPage> {
-  const params = new URLSearchParams({
-    offset: String(opts.offset ?? 0),
-    limit: String(opts.limit ?? 10),
-  });
-  return request(`/agents/${encodeURIComponent(id)}/comments?${params.toString()}`);
+  return request(`/agents/${encodeURIComponent(id)}/comments?${activityParams(opts)}`);
 }
+export async function getAgentActivityFacets(
+  id: string,
+  kind: "analyses" | "comments",
+): Promise<ActivityFacets> {
+  return request(`/agents/${encodeURIComponent(id)}/activity-facets?kind=${kind}`);
+}
+
 
 export interface UserProfile {
   username: string;

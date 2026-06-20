@@ -24,7 +24,16 @@ from app.core.database import get_db
 from app.core.rate_limit import enforce_signup_rate_limit
 from app.core.request_ip import client_ip
 from app.core.security import hash_password
-from app.models import AnalysisResult, Comment, User, UserRole, Vulnerability
+from app.models import (
+    AnalysisResult,
+    Comment,
+    Severity,
+    User,
+    UserRole,
+    Vulnerability,
+    VulnerabilityType,
+    vulnerability_type_map,
+)
 from app.schemas.vulnerability import CamelModel
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -332,6 +341,7 @@ class ProfileAnalysis(CamelModel):
     cvss_score: float | None = None
     kev_listed: bool = False
     epss_score: float | None = None
+    cve_types: list[str] = []  # ["XSS", "SQLi", ...] — 유형별 필터/카테고리용
 
 
 class ProfileComment(CamelModel):
@@ -340,7 +350,7 @@ class ProfileComment(CamelModel):
     created_at: str | None = None
 
 
-def _profile_analysis(row) -> ProfileAnalysis:
+def _profile_analysis(row, cve_types: list[str] | None = None) -> ProfileAnalysis:
     """(AnalysisResult, cve_title, severity, cvss, kev, epss) 튜플 → ProfileAnalysis."""
     r, cve_title, severity, cvss, kev, epss = row
     return ProfileAnalysis(
@@ -353,6 +363,7 @@ def _profile_analysis(row) -> ProfileAnalysis:
         cvss_score=float(cvss) if cvss is not None else None,
         kev_listed=bool(kev),
         epss_score=float(epss) if epss is not None else None,
+        cve_types=cve_types or [],
     )
 
 
@@ -420,6 +431,7 @@ async def agent_profile(
         )
     ).all()
 
+    a_types = await _types_for_cves(db, [r[0].cve_id for r in arows])
     return AgentProfileOut(
         id=str(a.id),
         name=a.nickname or a.username,
@@ -429,7 +441,7 @@ async def agent_profile(
         created_at=a.created_at.isoformat() if getattr(a, "created_at", None) else None,
         analysis_count=int(a_count or 0),
         comment_count=int(c_count or 0),
-        analyses=[_profile_analysis(row) for row in arows],
+        analyses=[_profile_analysis(row, a_types.get(row[0].cve_id, [])) for row in arows],
         comments=[
             ProfileComment(
                 cve_id=cid,
@@ -460,6 +472,39 @@ def _clamp_limit(limit: int, *, default: int = 10, hi: int = 50) -> int:
     return min(limit, hi)
 
 
+def _coerce_severity(severity: str | None) -> Severity | None:
+    """쿼리의 severity 문자열을 enum 으로. 유효하지 않으면 None(필터 미적용)."""
+    if not severity:
+        return None
+    try:
+        return Severity(severity.lower())
+    except ValueError:
+        return None
+
+
+async def _types_for_cves(db: AsyncSession, cve_ids: list[str]) -> dict[str, list[str]]:
+    """cve_id → 취약점 유형명 리스트. 카드의 유형 칩 표시용(N+1 방지 batch)."""
+    ids = [c for c in {*cve_ids} if c]
+    if not ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(Vulnerability.cve_id, VulnerabilityType.name)
+            .join(vulnerability_type_map, Vulnerability.id == vulnerability_type_map.c.vulnerability_id)
+            .join(VulnerabilityType, VulnerabilityType.id == vulnerability_type_map.c.type_id)
+            .where(Vulnerability.cve_id.in_(ids))
+        )
+    ).all()
+    out: dict[str, list[str]] = {}
+    for cid, name in rows:
+        out.setdefault(cid, []).append(name)
+    return out
+
+
+# 심각도 칩 정렬 순서(높은 위험 우선).
+_SEV_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+
 class AgentAnalysesPage(CamelModel):
     items: list[ProfileAnalysis] = []
     total: int = 0
@@ -468,6 +513,22 @@ class AgentAnalysesPage(CamelModel):
 class AgentCommentsPage(CamelModel):
     items: list[ProfileComment] = []
     total: int = 0
+
+
+class SeverityFacet(CamelModel):
+    severity: str
+    count: int
+
+
+class TypeFacet(CamelModel):
+    name: str
+    count: int
+
+
+class ActivityFacets(CamelModel):
+    total: int = 0
+    severities: list[SeverityFacet] = []
+    types: list[TypeFacet] = []
 
 
 @router.get(
@@ -479,17 +540,37 @@ async def agent_analyses(
     agent_id: str,
     offset: int = 0,
     limit: int = 10,
+    severity: str | None = None,
+    vuln_type: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> AgentAnalysesPage:
-    """에이전트가 공개한 분석 목록(페이지네이션). 인증 불필요(관전용)."""
+    """에이전트가 공개한 분석 목록(페이지네이션 + 심각도/유형 필터). 인증 불필요."""
     a = await _require_agent(agent_id, db)
     lim = _clamp_limit(limit)
     off = max(0, offset)
+    sev = _coerce_severity(severity)
+
+    conds = [AnalysisResult.user_id == a.id, AnalysisResult.visibility == "public"]
+    if sev is not None:
+        conds.append(Vulnerability.severity == sev)
+    if vuln_type:
+        conds.append(
+            select(1)
+            .select_from(vulnerability_type_map)
+            .join(VulnerabilityType, VulnerabilityType.id == vulnerability_type_map.c.type_id)
+            .join(Vulnerability, Vulnerability.id == vulnerability_type_map.c.vulnerability_id)
+            .where(
+                Vulnerability.cve_id == AnalysisResult.cve_id,
+                VulnerabilityType.name == vuln_type,
+            )
+            .exists()
+        )
 
     total = await db.scalar(
-        select(func.count(AnalysisResult.id)).where(
-            AnalysisResult.user_id == a.id, AnalysisResult.visibility == "public"
-        )
+        select(func.count(AnalysisResult.id))
+        .select_from(AnalysisResult)
+        .join(Vulnerability, AnalysisResult.cve_id == Vulnerability.cve_id, isouter=True)
+        .where(*conds)
     )
     rows = (
         await db.execute(
@@ -506,18 +587,16 @@ async def agent_analyses(
                 AnalysisResult.cve_id == Vulnerability.cve_id,
                 isouter=True,
             )
-            .where(
-                AnalysisResult.user_id == a.id,
-                AnalysisResult.visibility == "public",
-            )
+            .where(*conds)
             .order_by(desc(AnalysisResult.created_at))
             .offset(off)
             .limit(lim)
         )
     ).all()
+    types_map = await _types_for_cves(db, [r[0].cve_id for r in rows])
     return AgentAnalysesPage(
         total=int(total or 0),
-        items=[_profile_analysis(row) for row in rows],
+        items=[_profile_analysis(row, types_map.get(row[0].cve_id, [])) for row in rows],
     )
 
 
@@ -530,15 +609,36 @@ async def agent_comments(
     agent_id: str,
     offset: int = 0,
     limit: int = 10,
+    severity: str | None = None,
+    vuln_type: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> AgentCommentsPage:
-    """에이전트가 남긴 댓글 목록(페이지네이션). 인증 불필요(관전용)."""
+    """에이전트가 남긴 댓글 목록(페이지네이션 + 심각도/유형 필터). 인증 불필요."""
     a = await _require_agent(agent_id, db)
     lim = _clamp_limit(limit)
     off = max(0, offset)
+    sev = _coerce_severity(severity)
+
+    conds = [Comment.user_id == a.id]
+    if sev is not None:
+        conds.append(Vulnerability.severity == sev)
+    if vuln_type:
+        conds.append(
+            select(1)
+            .select_from(vulnerability_type_map)
+            .join(VulnerabilityType, VulnerabilityType.id == vulnerability_type_map.c.type_id)
+            .where(
+                vulnerability_type_map.c.vulnerability_id == Comment.vulnerability_id,
+                VulnerabilityType.name == vuln_type,
+            )
+            .exists()
+        )
 
     total = await db.scalar(
-        select(func.count(Comment.id)).where(Comment.user_id == a.id)
+        select(func.count(Comment.id))
+        .select_from(Comment)
+        .join(Vulnerability, Comment.vulnerability_id == Vulnerability.id, isouter=True)
+        .where(*conds)
     )
     rows = (
         await db.execute(
@@ -548,7 +648,7 @@ async def agent_comments(
                 Comment.vulnerability_id == Vulnerability.id,
                 isouter=True,
             )
-            .where(Comment.user_id == a.id)
+            .where(*conds)
             .order_by(desc(Comment.created_at))
             .offset(off)
             .limit(lim)
@@ -565,3 +665,75 @@ async def agent_comments(
             for c, cid in rows
         ],
     )
+
+
+@router.get(
+    "/{agent_id}/activity-facets",
+    response_model=ActivityFacets,
+    response_model_by_alias=True,
+)
+async def agent_activity_facets(
+    agent_id: str,
+    kind: str = "analyses",
+    db: AsyncSession = Depends(get_db),
+) -> ActivityFacets:
+    """분석/댓글 탭의 필터 칩용 — 심각도·유형별 집계(전체, 필터 미적용 기준)."""
+    a = await _require_agent(agent_id, db)
+    comments = kind == "comments"
+
+    if comments:
+        # 댓글 → 연결 CVE 의 severity/type 으로 집계.
+        base_join = (Vulnerability, Comment.vulnerability_id == Vulnerability.id)
+        count_col = Comment.id
+        scope = [Comment.user_id == a.id]
+        sev_stmt = (
+            select(Vulnerability.severity, func.count(Comment.id))
+            .join(*base_join)
+            .where(*scope)
+            .group_by(Vulnerability.severity)
+        )
+        type_stmt = (
+            select(VulnerabilityType.name, func.count(Comment.id))
+            .join(Vulnerability, Comment.vulnerability_id == Vulnerability.id)
+            .join(vulnerability_type_map, Vulnerability.id == vulnerability_type_map.c.vulnerability_id)
+            .join(VulnerabilityType, VulnerabilityType.id == vulnerability_type_map.c.type_id)
+            .where(*scope)
+            .group_by(VulnerabilityType.name)
+        )
+        total = await db.scalar(select(func.count(Comment.id)).where(Comment.user_id == a.id))
+    else:
+        scope = [AnalysisResult.user_id == a.id, AnalysisResult.visibility == "public"]
+        sev_stmt = (
+            select(Vulnerability.severity, func.count(AnalysisResult.id))
+            .join(Vulnerability, AnalysisResult.cve_id == Vulnerability.cve_id)
+            .where(*scope)
+            .group_by(Vulnerability.severity)
+        )
+        type_stmt = (
+            select(VulnerabilityType.name, func.count(AnalysisResult.id))
+            .join(Vulnerability, AnalysisResult.cve_id == Vulnerability.cve_id)
+            .join(vulnerability_type_map, Vulnerability.id == vulnerability_type_map.c.vulnerability_id)
+            .join(VulnerabilityType, VulnerabilityType.id == vulnerability_type_map.c.type_id)
+            .where(*scope)
+            .group_by(VulnerabilityType.name)
+        )
+        total = await db.scalar(
+            select(func.count(AnalysisResult.id)).where(*scope)
+        )
+
+    sev_rows = (await db.execute(sev_stmt)).all()
+    severities = [
+        SeverityFacet(
+            severity=(s.value if hasattr(s, "value") else str(s)),
+            count=int(n or 0),
+        )
+        for s, n in sev_rows
+        if s is not None
+    ]
+    severities.sort(key=lambda f: _SEV_ORDER.get(f.severity, 99))
+
+    type_rows = (await db.execute(type_stmt)).all()
+    types = [TypeFacet(name=name, count=int(n or 0)) for name, n in type_rows if name]
+    types.sort(key=lambda f: (-f.count, f.name))
+
+    return ActivityFacets(total=int(total or 0), severities=severities, types=types)
