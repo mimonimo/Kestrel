@@ -1,80 +1,21 @@
-# Kestrel — Infrastructure (AWS)
+# Kestrel 인프라
 
-전체 인프라를 Terraform 으로 정의합니다. **EC2 인스턴스를 직접 관리하는 컴포넌트는
-하나도 없도록** 설계 — 전부 managed 서비스(RDS, Fargate, EFS, CloudFront, Secrets Manager).
+이 디렉터리는 두 개의 스택으로 나뉜다. **운영(확정 아키텍처)은 `ec2/` 단 하나다.**
 
-## 단계별 가이드
+## `ec2/` — ✅ 확정 / 현재 운영 중
 
-따라하기 → [`GUIDE.md`](./GUIDE.md)
+`www.kestrel.forum` 을 실제로 서비스하는 스택. 단일 EC2 호스트(`t4g.small`, arm64)
+위에서 `docker compose` 로 전체 스택(Caddy · 프론트 · API · Postgres · Redis ·
+Meilisearch)을 구동한다. 이미지는 GitHub Actions 가 GHCR 에 빌드해 올리고
+(`/.github/workflows/build-images.yml`), 호스트는 그것을 pull 한다.
 
-## 빠른 명령
+- 배포: 푸시 → CI 빌드 → 호스트에서 `scripts/deploy.sh` (`git pull && docker compose pull && up -d`)
+- Terraform state 는 `ec2/` 안의 로컬 state (gitignore)
 
-```bash
-# 1) state 백엔드 부트스트랩 (한 번만)
-cd bootstrap && ./bootstrap.sh
+운영/배포 관련 변경은 **이 스택만** 기준으로 한다.
 
-# 2) backend 블록 활성화 (versions.tf 의 주석 풀기)
+## `legacy-ecs/` — 🗄️ 레거시 / 미사용 (미배포)
 
-# 3) 변수
-cd ..
-cp terraform.tfvars.example terraform.tfvars   # 필요 시 값 수정
-
-# 4) 인프라 생성
-terraform init
-terraform plan
-terraform apply
-```
-
-## 아키텍처
-
-```
-              ┌────────────────────┐
-              │ CloudFront (TLS)   │   ← 사용자 진입 (https://d123.cloudfront.net)
-              └─────────┬──────────┘
-                        │ HTTP (SG: CloudFront prefix list)
-                ┌───────▼────────┐
-                │  ALB (public)  │   /api/* → api-tg, default → frontend-tg
-                └─┬────────────┬─┘
-        ┌─────────┘            └────────┐
-   ┌────▼─────┐               ┌─────────▼────────┐
-   │ Frontend │               │ API (FastAPI)    │
-   │ (Next.js)│               │ Fargate Spot     │
-   │ Fargate  │               │ desired=1+spot   │
-   └────┬─────┘               └─────┬────────────┘
-        │ Service Connect (.internal)│
-        ▼                            ▼
-   ┌────────────┐  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐
-   │ Redis      │  │ Meilisearch  │  │ RDS          │  │ Scheduler   │
-   │ on Fargate │  │ on Fargate   │  │ PostgreSQL   │  │ APScheduler │
-   │ + EFS      │  │ + EFS        │  │ t4g.micro    │  │ Fargate ×1  │
-   └────────────┘  └──────────────┘  └──────────────┘  └─────────────┘
-```
-
-## 비용 (KRW 기준 약 ₩130k/월, Free Tier 첫 해 약 ₩90k)
-
-자세한 내역은 [`GUIDE.md`](./GUIDE.md#비용-예상) 참고.
-
-## 모듈 인덱스
-
-| 모듈 | 책임 |
-|---|---|
-| `network` | VPC, 2 AZ public/private 서브넷, NAT Gateway 1개, S3 endpoint |
-| `security` | Security Group 6종 (ALB, ECS, DB, Redis, Meili, EFS) |
-| `secrets` | Secrets Manager (DB 자격, 앱 시크릿, DATABASE_URL) |
-| `db` | RDS PostgreSQL 16 (`db.t4g.micro`) |
-| `cache` | Redis 7 on Fargate + EFS persistence |
-| `search` | Meilisearch on Fargate + EFS |
-| `ecr` | ECR 레포 (api, frontend) + lifecycle policy |
-| `ecs_cluster` | ECS Cluster + Fargate Spot capacity + IAM roles |
-| `alb` | ALB + path routing (`/api/*` vs default) |
-| `ecs_service_api` | FastAPI service + autoscaling |
-| `ecs_service_scheduler` | APScheduler single-instance service |
-| `ecs_service_frontend` | Next.js standalone service |
-| `cdn` | CloudFront + ACM (optional) + Route53 (optional) |
-| `observability` | SNS 알림 토픽 + monthly budget alarm |
-
-## CI/CD
-
-GitHub Actions workflow → [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)
-
-OIDC trust 셋업 → [`bootstrap/github-oidc.tf.example`](./bootstrap/github-oidc.tf.example)
+초기에 검토했던 ECS Fargate(ALB · ECR · RDS · ElastiCache · CloudFront ·
+Meilisearch) 모듈 모음. **현재 AWS 에 배포돼 있지 않으며 확정 아키텍처가 아니다.**
+참고/히스토리 목적으로만 보존한다. 운영 판단에 사용하지 말 것.
