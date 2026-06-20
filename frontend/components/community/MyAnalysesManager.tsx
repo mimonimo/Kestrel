@@ -11,8 +11,19 @@ import { api, type AnalysisList, type AnalysisSummary } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ErrorBox } from "@/components/ui/feedback-box";
 import { AnalysisDetailModal } from "@/components/community/AnalysisDetailModal";
+import { SeverityBadge } from "@/components/cve/SeverityBadge";
+import type { Severity } from "@/lib/types";
 import { formatRelativeKo } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+// 행 제목 — 왼쪽 CVE 칩과 중복되지 않도록 CVE 이름(취약점명)을 우선 노출.
+// 이름이 없으면 분석 제목에서 'CVE-… — ' 접두사를 떼어내 중복을 줄인다.
+function analysisRowTitle(a: AnalysisSummary): string {
+  const name = a.cveTitle?.trim();
+  if (name) return name;
+  const stripped = (a.title || "").replace(/^CVE-\d{4}-\d+\s*[—–-]\s*/i, "").trim();
+  return stripped || a.excerpt || "분석";
+}
 
 type BulkAction = "public" | "private" | "delete";
 type VisFilter = "all" | "public" | "private";
@@ -40,7 +51,7 @@ export function MyAnalysesManager() {
       if (vis === "public" && a.visibility !== "public") return false;
       if (vis === "private" && a.visibility === "public") return false;
       if (term) {
-        const hay = `${a.cveId} ${a.title ?? ""} ${a.excerpt}`.toLowerCase();
+        const hay = `${a.cveId} ${a.cveTitle ?? ""} ${a.title ?? ""} ${a.excerpt}`.toLowerCase();
         if (!hay.includes(term)) return false;
       }
       return true;
@@ -338,7 +349,7 @@ export function MyAnalysesManager() {
                   type="button"
                   onClick={() => setOpenId(a.id)}
                   className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                  title={a.title || a.cveId}
+                  title={`${a.cveId} — ${analysisRowTitle(a)}`}
                 >
                   <span className="shrink-0 rounded-md bg-sky-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
                     {a.cveId}
@@ -351,12 +362,17 @@ export function MyAnalysesManager() {
                     title={isPublic ? "공개" : "비공개"}
                   />
                   <span className="min-w-0 flex-1 truncate text-sm text-neutral-800 dark:text-neutral-200">
-                    {a.title || a.excerpt || "분석"}
+                    {analysisRowTitle(a)}
                   </span>
                 </button>
 
                 {/* 우측 메타 + 액션 */}
                 <div className="flex shrink-0 items-center gap-2 text-[11px] text-neutral-500 dark:text-neutral-500">
+                  {a.cveSeverity && (
+                    <span className="hidden sm:inline-flex">
+                      <SeverityBadge severity={a.cveSeverity as Severity} />
+                    </span>
+                  )}
                   {!!a.commentCount && (
                     <span className="hidden items-center gap-0.5 tabular-nums sm:inline-flex">
                       <MessageSquare className="h-3 w-3" />

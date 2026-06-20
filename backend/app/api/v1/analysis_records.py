@@ -59,6 +59,7 @@ class AnalysisSummary(CamelModel):
     attack_method: str = ""  # ``## 공격 방법`` 섹션 본문 (한 단락)
     # 그룹핑·필터링용 CVE 메타 (PR 10-DC).
     # analysis_records 의 list_* 함수가 Vulnerability JOIN 으로 채움.
+    cve_title: str | None = None     # 취약점(CVE) 이름 — 목록 제목 중복 방지용
     cve_severity: str | None = None  # critical / high / medium / low / null
     cve_types: list[str] = []        # ["XSS", "SQLi", ...] — 빈 배열은 분류 없음
 
@@ -142,6 +143,7 @@ def _to_summary(
     *,
     severity: str | None = None,
     types: list[str] | None = None,
+    cve_title: str | None = None,
     comment_count: int = 0,
     vulnerability_id: str | None = None,
     like_count: int = 0,
@@ -176,6 +178,7 @@ def _to_summary(
         payload_count=payload_count,
         mitigation_count=mitigation_count,
         attack_method=attack_method,
+        cve_title=cve_title,
         cve_severity=severity,
         cve_types=types or [],
     )
@@ -183,23 +186,25 @@ def _to_summary(
 
 async def _build_cve_meta(
     db: AsyncSession, cve_ids: list[str]
-) -> tuple[dict[str, str | None], dict[str, list[str]]]:
-    """주어진 cve_id 목록의 severity + types 한 번에 가져와 dict 반환.
+) -> tuple[dict[str, str | None], dict[str, list[str]], dict[str, str | None]]:
+    """주어진 cve_id 목록의 severity + types + title 한 번에 가져와 dict 반환.
 
     list_* 함수가 N+1 query 안 나도록 batch.
     """
     if not cve_ids:
-        return {}, {}
+        return {}, {}, {}
     sev_rows = (
         await db.execute(
-            select(Vulnerability.cve_id, Vulnerability.severity).where(
-                Vulnerability.cve_id.in_(cve_ids)
-            )
+            select(
+                Vulnerability.cve_id, Vulnerability.severity, Vulnerability.title
+            ).where(Vulnerability.cve_id.in_(cve_ids))
         )
     ).all()
     sev_map: dict[str, str | None] = {}
-    for cid, sev in sev_rows:
+    title_map: dict[str, str | None] = {}
+    for cid, sev, title in sev_rows:
         sev_map[cid] = sev.value if hasattr(sev, "value") else (str(sev) if sev else None)
+        title_map[cid] = title
 
     types_rows = (
         await db.execute(
@@ -218,7 +223,7 @@ async def _build_cve_meta(
     types_map: dict[str, list[str]] = {}
     for cid, name in types_rows:
         types_map.setdefault(cid, []).append(name)
-    return sev_map, types_map
+    return sev_map, types_map, title_map
 
 
 async def _cve_extra(db: AsyncSession, rows: list) -> tuple[dict, dict]:
@@ -302,20 +307,21 @@ async def list_my_analyses(
         .offset(offset)
     )
     rows = (await db.execute(q)).scalars().all()
-    sev_map, types_map = await _build_cve_meta(db, [r.cve_id for r in rows])
+    sev_map, types_map, title_map = await _build_cve_meta(db, [r.cve_id for r in rows])
     vid_map, cc_map = await _cve_extra(db, rows)
     lc_map, liked = await _likes(db, rows, user)
     return AnalysisList(
         items=[
             _to_summary(
-                r,
-                severity=sev_map.get(r.cve_id),
-                types=types_map.get(r.cve_id, []),
-                vulnerability_id=vid_map.get(r.cve_id),
-                comment_count=cc_map.get(str(r.id), 0),
-                like_count=lc_map.get(str(r.id), 0),
-                is_liked=str(r.id) in liked,
-            )
+                            r,
+                            severity=sev_map.get(r.cve_id),
+                            types=types_map.get(r.cve_id, []),
+                            cve_title=title_map.get(r.cve_id),
+                            vulnerability_id=vid_map.get(r.cve_id),
+                            comment_count=cc_map.get(str(r.id), 0),
+                            like_count=lc_map.get(str(r.id), 0),
+                            is_liked=str(r.id) in liked,
+                        )
             for r in rows
         ],
         total=len(rows),
@@ -361,20 +367,21 @@ async def list_community_analyses(
         q = q.where(AnalysisResult.cve_id == cve_id)
     q = q.limit(limit).offset(offset)
     rows = (await db.execute(q)).scalars().all()
-    sev_map, types_map = await _build_cve_meta(db, [r.cve_id for r in rows])
+    sev_map, types_map, title_map = await _build_cve_meta(db, [r.cve_id for r in rows])
     vid_map, cc_map = await _cve_extra(db, rows)
     lc_map, liked = await _likes(db, rows, me)
     return AnalysisList(
         items=[
             _to_summary(
-                r,
-                severity=sev_map.get(r.cve_id),
-                types=types_map.get(r.cve_id, []),
-                vulnerability_id=vid_map.get(r.cve_id),
-                comment_count=cc_map.get(str(r.id), 0),
-                like_count=lc_map.get(str(r.id), 0),
-                is_liked=str(r.id) in liked,
-            )
+                            r,
+                            severity=sev_map.get(r.cve_id),
+                            types=types_map.get(r.cve_id, []),
+                            cve_title=title_map.get(r.cve_id),
+                            vulnerability_id=vid_map.get(r.cve_id),
+                            comment_count=cc_map.get(str(r.id), 0),
+                            like_count=lc_map.get(str(r.id), 0),
+                            is_liked=str(r.id) in liked,
+                        )
             for r in rows
         ],
         total=len(rows),
@@ -420,20 +427,21 @@ async def list_cve_analyses(
         .order_by(desc(AnalysisResult.created_at))
     )
     rows = (await db.execute(q)).scalars().all()
-    sev_map, types_map = await _build_cve_meta(db, [r.cve_id for r in rows])
+    sev_map, types_map, title_map = await _build_cve_meta(db, [r.cve_id for r in rows])
     vid_map, cc_map = await _cve_extra(db, rows)
     lc_map, liked = await _likes(db, rows, me)
     return AnalysisList(
         items=[
             _to_summary(
-                r,
-                severity=sev_map.get(r.cve_id),
-                types=types_map.get(r.cve_id, []),
-                vulnerability_id=vid_map.get(r.cve_id),
-                comment_count=cc_map.get(str(r.id), 0),
-                like_count=lc_map.get(str(r.id), 0),
-                is_liked=str(r.id) in liked,
-            )
+                            r,
+                            severity=sev_map.get(r.cve_id),
+                            types=types_map.get(r.cve_id, []),
+                            cve_title=title_map.get(r.cve_id),
+                            vulnerability_id=vid_map.get(r.cve_id),
+                            comment_count=cc_map.get(str(r.id), 0),
+                            like_count=lc_map.get(str(r.id), 0),
+                            is_liked=str(r.id) in liked,
+                        )
             for r in rows
         ],
         total=len(rows),

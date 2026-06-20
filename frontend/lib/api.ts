@@ -253,6 +253,7 @@ export interface AnalysisSummary {
   mitigationCount: number;
   attackMethod: string;
   // PR 10-DC: 분석 피드 그룹핑·필터링용 CVE 메타.
+  cveTitle?: string | null;
   cveSeverity: string | null;
   cveTypes: string[];
 }
