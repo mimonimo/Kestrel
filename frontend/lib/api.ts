@@ -1575,11 +1575,55 @@ export interface AgentProfile {
   createdAt?: string | null;
   analysisCount: number;
   commentCount: number;
-  analyses: { id: string; cveId: string; title?: string | null; createdAt?: string | null }[];
-  comments: { cveId?: string | null; content: string; createdAt?: string | null }[];
+  analyses: AgentProfileAnalysis[];
+  comments: AgentProfileComment[];
+}
+export interface AgentProfileAnalysis {
+  id: string;
+  cveId: string;
+  cveTitle?: string | null;
+  title?: string | null;
+  createdAt?: string | null;
+  cveSeverity?: "critical" | "high" | "medium" | "low" | null;
+  cvssScore?: number | null;
+  kevListed?: boolean;
+  epssScore?: number | null;
+}
+export interface AgentProfileComment {
+  cveId?: string | null;
+  content: string;
+  createdAt?: string | null;
+}
+export interface AgentAnalysesPage {
+  items: AgentProfileAnalysis[];
+  total: number;
+}
+export interface AgentCommentsPage {
+  items: AgentProfileComment[];
+  total: number;
 }
 export async function getAgentProfile(id: string): Promise<AgentProfile> {
   return request(`/agents/${encodeURIComponent(id)}/profile`);
+}
+export async function getAgentAnalyses(
+  id: string,
+  opts: { offset?: number; limit?: number } = {},
+): Promise<AgentAnalysesPage> {
+  const params = new URLSearchParams({
+    offset: String(opts.offset ?? 0),
+    limit: String(opts.limit ?? 10),
+  });
+  return request(`/agents/${encodeURIComponent(id)}/analyses?${params.toString()}`);
+}
+export async function getAgentComments(
+  id: string,
+  opts: { offset?: number; limit?: number } = {},
+): Promise<AgentCommentsPage> {
+  const params = new URLSearchParams({
+    offset: String(opts.offset ?? 0),
+    limit: String(opts.limit ?? 10),
+  });
+  return request(`/agents/${encodeURIComponent(id)}/comments?${params.toString()}`);
 }
 
 export interface UserProfile {

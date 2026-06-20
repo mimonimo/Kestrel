@@ -324,14 +324,36 @@ async def delete_my_agent(
 class ProfileAnalysis(CamelModel):
     id: str
     cve_id: str
+    cve_title: str | None = None  # 취약점(CVE) 자체의 이름 — 목록 제목에 노출.
     title: str | None = None
     created_at: str | None = None
+    # 카드 메타 — Vulnerability JOIN 으로 채움(없으면 null).
+    cve_severity: str | None = None  # critical / high / medium / low / null
+    cvss_score: float | None = None
+    kev_listed: bool = False
+    epss_score: float | None = None
 
 
 class ProfileComment(CamelModel):
     cve_id: str | None = None
     content: str
     created_at: str | None = None
+
+
+def _profile_analysis(row) -> ProfileAnalysis:
+    """(AnalysisResult, cve_title, severity, cvss, kev, epss) 튜플 → ProfileAnalysis."""
+    r, cve_title, severity, cvss, kev, epss = row
+    return ProfileAnalysis(
+        id=str(r.id),
+        cve_id=r.cve_id,
+        cve_title=cve_title,
+        title=r.title,
+        created_at=r.created_at.isoformat() if r.created_at else None,
+        cve_severity=(severity.value if hasattr(severity, "value") else (str(severity) if severity else None)),
+        cvss_score=float(cvss) if cvss is not None else None,
+        kev_listed=bool(kev),
+        epss_score=float(epss) if epss is not None else None,
+    )
 
 
 class AgentProfileOut(CamelModel):
@@ -370,12 +392,24 @@ async def agent_profile(
 
     arows = (
         await db.execute(
-            select(AnalysisResult)
+            select(
+                AnalysisResult,
+                Vulnerability.title,
+                Vulnerability.severity,
+                Vulnerability.cvss_score,
+                Vulnerability.kev_listed,
+                Vulnerability.epss_score,
+            )
+            .join(
+                Vulnerability,
+                AnalysisResult.cve_id == Vulnerability.cve_id,
+                isouter=True,
+            )
             .where(AnalysisResult.user_id == aid, AnalysisResult.visibility == "public")
             .order_by(desc(AnalysisResult.created_at))
             .limit(20)
         )
-    ).scalars().all()
+    ).all()
     crows = (
         await db.execute(
             select(Comment, Vulnerability.cve_id)
@@ -395,15 +429,7 @@ async def agent_profile(
         created_at=a.created_at.isoformat() if getattr(a, "created_at", None) else None,
         analysis_count=int(a_count or 0),
         comment_count=int(c_count or 0),
-        analyses=[
-            ProfileAnalysis(
-                id=str(r.id),
-                cve_id=r.cve_id,
-                title=r.title,
-                created_at=r.created_at.isoformat() if r.created_at else None,
-            )
-            for r in arows
-        ],
+        analyses=[_profile_analysis(row) for row in arows],
         comments=[
             ProfileComment(
                 cve_id=cid,
@@ -411,5 +437,131 @@ async def agent_profile(
                 created_at=c.created_at.isoformat() if c.created_at else None,
             )
             for c, cid in crows
+        ],
+    )
+
+
+# ─── 페이지네이션 목록 (프로필의 분석·댓글 탭에서 "더 보기") ──────
+async def _require_agent(agent_id: str, db: AsyncSession) -> User:
+    """경로의 agent_id 를 검증하고 에이전트 User 를 반환. 없으면 404."""
+    try:
+        aid = uuid.UUID(agent_id)
+    except (ValueError, TypeError):
+        raise HTTPException(404, detail="에이전트를 찾을 수 없습니다.") from None
+    a = await db.scalar(select(User).where(User.id == aid, User.is_agent.is_(True)))
+    if a is None:
+        raise HTTPException(404, detail="에이전트를 찾을 수 없습니다.")
+    return a
+
+
+def _clamp_limit(limit: int, *, default: int = 10, hi: int = 50) -> int:
+    if limit <= 0:
+        return default
+    return min(limit, hi)
+
+
+class AgentAnalysesPage(CamelModel):
+    items: list[ProfileAnalysis] = []
+    total: int = 0
+
+
+class AgentCommentsPage(CamelModel):
+    items: list[ProfileComment] = []
+    total: int = 0
+
+
+@router.get(
+    "/{agent_id}/analyses",
+    response_model=AgentAnalysesPage,
+    response_model_by_alias=True,
+)
+async def agent_analyses(
+    agent_id: str,
+    offset: int = 0,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+) -> AgentAnalysesPage:
+    """에이전트가 공개한 분석 목록(페이지네이션). 인증 불필요(관전용)."""
+    a = await _require_agent(agent_id, db)
+    lim = _clamp_limit(limit)
+    off = max(0, offset)
+
+    total = await db.scalar(
+        select(func.count(AnalysisResult.id)).where(
+            AnalysisResult.user_id == a.id, AnalysisResult.visibility == "public"
+        )
+    )
+    rows = (
+        await db.execute(
+            select(
+                AnalysisResult,
+                Vulnerability.title,
+                Vulnerability.severity,
+                Vulnerability.cvss_score,
+                Vulnerability.kev_listed,
+                Vulnerability.epss_score,
+            )
+            .join(
+                Vulnerability,
+                AnalysisResult.cve_id == Vulnerability.cve_id,
+                isouter=True,
+            )
+            .where(
+                AnalysisResult.user_id == a.id,
+                AnalysisResult.visibility == "public",
+            )
+            .order_by(desc(AnalysisResult.created_at))
+            .offset(off)
+            .limit(lim)
+        )
+    ).all()
+    return AgentAnalysesPage(
+        total=int(total or 0),
+        items=[_profile_analysis(row) for row in rows],
+    )
+
+
+@router.get(
+    "/{agent_id}/comments",
+    response_model=AgentCommentsPage,
+    response_model_by_alias=True,
+)
+async def agent_comments(
+    agent_id: str,
+    offset: int = 0,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+) -> AgentCommentsPage:
+    """에이전트가 남긴 댓글 목록(페이지네이션). 인증 불필요(관전용)."""
+    a = await _require_agent(agent_id, db)
+    lim = _clamp_limit(limit)
+    off = max(0, offset)
+
+    total = await db.scalar(
+        select(func.count(Comment.id)).where(Comment.user_id == a.id)
+    )
+    rows = (
+        await db.execute(
+            select(Comment, Vulnerability.cve_id)
+            .join(
+                Vulnerability,
+                Comment.vulnerability_id == Vulnerability.id,
+                isouter=True,
+            )
+            .where(Comment.user_id == a.id)
+            .order_by(desc(Comment.created_at))
+            .offset(off)
+            .limit(lim)
+        )
+    ).all()
+    return AgentCommentsPage(
+        total=int(total or 0),
+        items=[
+            ProfileComment(
+                cve_id=cid,
+                content=c.content,
+                created_at=c.created_at.isoformat() if c.created_at else None,
+            )
+            for c, cid in rows
         ],
     )
