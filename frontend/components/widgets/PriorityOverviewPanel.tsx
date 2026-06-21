@@ -39,31 +39,35 @@ import { cn } from "@/lib/utils";
 
 const TIER_META: Record<
   DashboardPriorityBucket["key"],
-  { Icon: React.ComponentType<{ className?: string }>; tint: string; barTint: string; ringTint: string }
+  { Icon: React.ComponentType<{ className?: string }>; tint: string; barTint: string; ringTint: string; timeline: string }
 > = {
   kev: {
     Icon: Flame,
     tint: "text-rose-700 dark:text-rose-300",
     barTint: "bg-rose-500",
     ringTint: "ring-rose-400/60 dark:ring-rose-400/40",
+    timeline: "3일 이내",
   },
   epss_high: {
     Icon: TrendingUp,
     tint: "text-amber-700 dark:text-amber-300",
     barTint: "bg-amber-500",
     ringTint: "ring-amber-400/60 dark:ring-amber-400/40",
+    timeline: "14일 이내",
   },
   cvss_mid_epss_high: {
     Icon: AlertOctagon,
     tint: "text-violet-700 dark:text-violet-300",
     barTint: "bg-violet-500",
     ringTint: "ring-violet-400/60 dark:ring-violet-400/40",
+    timeline: "14~60일",
   },
   cvss_high_epss_low: {
     Icon: CalendarCheck,
     tint: "text-sky-700 dark:text-sky-300",
     barTint: "bg-sky-500",
     ringTint: "ring-sky-400/60 dark:ring-sky-400/40",
+    timeline: "60일 이내",
   },
 };
 
@@ -87,7 +91,7 @@ export function PriorityOverviewPanel({ className }: { className?: string }) {
   return (
     <WidgetCard
       title="패치 우선순위"
-      description="CVSS(이론) · EPSS(예측) · KEV(실측) 세 신호를 합쳐 본 조치 순서"
+      description="CVSS(이론) · EPSS(예측) · KEV(실측) → CISA SSVC 권장 대응 기한"
       isLoading={isLoading}
       error={error}
       className={className}
@@ -139,6 +143,15 @@ function TierDetail({ bucket }: { bucket: DashboardPriorityBucket }) {
         <Icon className={cn("h-4 w-4 shrink-0", meta.tint)} />
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-neutral-900 dark:text-neutral-100">
           {bucket.label}
+        </span>
+        <span
+          className={cn(
+            "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white",
+            meta.barTint,
+          )}
+          title="CISA SSVC 기준 권장 대응 기한"
+        >
+          {meta.timeline}
         </span>
         <span className="shrink-0 tabular-nums text-[12px] font-bold text-neutral-900 dark:text-neutral-100">
           {bucket.count.toLocaleString("ko-KR")}

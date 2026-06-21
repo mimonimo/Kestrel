@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ExternalLink, Flame, Gauge, ShieldCheck, TrendingUp, X } from "lucide-react";
+import { CalendarClock, Check, ExternalLink, Flame, Gauge, Minus, ShieldCheck, TrendingUp, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AiAnalysisPanel } from "./AiAnalysisPanel";
@@ -449,8 +449,64 @@ function ThreatSignals({ vuln }: { vuln: Vulnerability }) {
             )}
           </div>
         </div>
+
+        {/* CISA SSVC 권장 대응 기한 — 위 세 신호를 합쳐 도출한 실행 기준 */}
+        <RemediationBanner vuln={vuln} />
       </CardContent>
     </Card>
+  );
+}
+
+// CISA SSVC 결정 트리로 도출한 "권장 대응 기한" 배너. 위협 신호(CVSS·EPSS·KEV)를
+// 합쳐 "언제까지 고쳐야 하나"를 한 줄로 못 박는다.
+function RemediationBanner({ vuln }: { vuln: Vulnerability }) {
+  const r = vuln.remediation;
+  if (!r) return null;
+  const tone =
+    r.dueDays == null ? "neutral" : r.dueDays <= 3 ? "red" : r.dueDays <= 14 ? "amber" : "sky";
+  const toneCls: Record<string, string> = {
+    red: "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200",
+    amber:
+      "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200",
+    sky: "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-200",
+    neutral:
+      "border-neutral-300 bg-neutral-50 text-neutral-700 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-300",
+  };
+  const signals: [string, boolean][] = [
+    ["KEV 악용", r.kev],
+    ["자동화 가능", r.automatable],
+    ["완전 장악", r.totalImpact],
+    ["외부 노출", r.exposed],
+  ];
+  return (
+    <div className={`rounded-xl border p-3.5 ${toneCls[tone]}`}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <CalendarClock className="h-5 w-5 shrink-0" />
+        <span className="text-[11px] font-semibold uppercase tracking-wider opacity-80">권장 대응 기한</span>
+        <span className="text-xl font-bold leading-none">{r.label}</span>
+        {r.forensicTriage && (
+          <span className="rounded-full bg-rose-600/20 px-2 py-0.5 text-[10px] font-bold">+ 침해 포렌식</span>
+        )}
+        <span className="ml-auto text-[10px] font-medium opacity-70">CISA SSVC 기준</span>
+      </div>
+      <p className="mt-1.5 text-xs text-neutral-700 dark:text-neutral-300">{r.action}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {signals.map(([label, on]) => (
+          <span
+            key={label}
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+              on
+                ? "border-neutral-300 bg-white/60 text-neutral-700 dark:border-neutral-600 dark:bg-white/5 dark:text-neutral-200"
+                : "border-neutral-200 text-neutral-400 line-through dark:border-neutral-800 dark:text-neutral-600"
+            }`}
+          >
+            {on ? <Check className="h-2.5 w-2.5" /> : <Minus className="h-2.5 w-2.5" />}
+            {label}
+          </span>
+        ))}
+        <span className="text-[10px] text-neutral-500 dark:text-neutral-500">· {r.rationale}</span>
+      </div>
+    </div>
   );
 }
 

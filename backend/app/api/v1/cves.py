@@ -67,6 +67,11 @@ async def get_cve(cve_id: str, db: AsyncSession = Depends(get_db)) -> Vulnerabil
     from app.services.enrichment import build_enrichment
 
     vuln.enrichment = build_enrichment(vuln)  # type: ignore[attr-defined]
+
+    # CISA SSVC 기반 권장 대응 기한(KEV·EPSS·CVSS 신호로 도출).
+    from app.services.ssvc import remediation_for
+
+    vuln.remediation = remediation_for(vuln)  # type: ignore[attr-defined]
     return vuln
 
 

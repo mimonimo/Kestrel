@@ -124,6 +124,21 @@ export interface Vulnerability {
   kevDateAdded?: string | null;
   kevDueDate?: string | null;
   enrichment?: Enrichment | null;
+  remediation?: Remediation | null;
+}
+
+// CISA SSVC 기반 권장 대응 기한.
+export interface Remediation {
+  dueDays: number | null;
+  label: string;
+  forensicTriage: boolean;
+  action: string;
+  rationale: string;
+  kev: boolean;
+  automatable: boolean;
+  totalImpact: boolean;
+  exposed: boolean;
+  exposureBasis: string;
 }
 
 export interface CpeMatch {
