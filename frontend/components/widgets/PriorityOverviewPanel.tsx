@@ -96,9 +96,17 @@ export function PriorityOverviewPanel({ className }: { className?: string }) {
       error={error}
       className={className}
     >
-      {/* 순위 탭 — 동그란 색상 번호 버튼. 누르면 아래에 해당 순위 설명 + TOP 5. */}
-      <div className="flex flex-wrap items-center gap-2">
-        {buckets.map((b, idx) => {
+      {/* 대응 기한 분포 — 각 티어(=CISA SSVC 권장 기한)별 건수.
+          탭하면 아래에 해당 기한 그룹의 설명 + TOP 5. 카드 내부만 차지하므로
+          대시보드 3열 그리드 정렬은 그대로 유지된다. */}
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+          대응 기한 분포
+        </span>
+        <span className="text-[10px] text-neutral-400">탭하면 상세</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {buckets.map((b) => {
           const meta = TIER_META[b.key];
           const isActive = active?.key === b.key;
           return (
@@ -106,17 +114,33 @@ export function PriorityOverviewPanel({ className }: { className?: string }) {
               key={b.key}
               type="button"
               onClick={() => setActiveKey(b.key)}
-              title={`${idx + 1}순위 · ${b.label}`}
               aria-pressed={isActive}
-              aria-label={`${idx + 1}순위 ${b.label}`}
+              title={`${meta.timeline} · ${b.label} ${b.count.toLocaleString("ko-KR")}건`}
               className={cn(
-                "inline-flex h-8 w-8 items-center justify-center rounded-full text-[13px] font-bold tabular-nums transition-all",
+                "rounded-lg border px-2.5 py-2 text-left transition-all",
                 isActive
-                  ? cn(meta.barTint, "text-white shadow-sm ring-2 ring-offset-2 ring-offset-white dark:ring-offset-surface-1", meta.ringTint)
-                  : "bg-neutral-200 text-neutral-500 hover:bg-neutral-300 hover:text-neutral-700 dark:bg-surface-2 dark:text-neutral-400 dark:hover:bg-surface-3 dark:hover:text-neutral-200",
+                  ? cn(
+                      "border-transparent bg-neutral-50 ring-2 ring-offset-1 ring-offset-white dark:bg-surface-2 dark:ring-offset-surface-1",
+                      meta.ringTint,
+                    )
+                  : "border-neutral-200 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-surface-2",
               )}
             >
-              {idx + 1}
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white",
+                  meta.barTint,
+                )}
+              >
+                {meta.timeline}
+              </span>
+              <span className="mt-1.5 flex items-baseline gap-0.5">
+                <span className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">
+                  {b.count.toLocaleString("ko-KR")}
+                </span>
+                <span className="text-[10px] text-neutral-500">건</span>
+              </span>
+              <span className="mt-0.5 block truncate text-[10px] text-neutral-500">{b.label}</span>
             </button>
           );
         })}
