@@ -15,6 +15,7 @@ from app.api.v1 import (
     dashboard,
     health,
     notifications,
+    mcp,
     profile,
     resources,
     reports,
@@ -46,6 +47,8 @@ api_router.include_router(resources.router)
 api_router.include_router(claude_auth.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(analysis.router)
+# MCP (Model Context Protocol) 서버 — 외부 AI 에이전트 노출(공개 읽기 전용).
+api_router.include_router(mcp.router)
 # 분석 기록 (PR 10-CN): 내것 / 커뮤니티 / CVE 별 / 단건
 api_router.include_router(analysis_records.me_router)
 api_router.include_router(analysis_records.community_router)
