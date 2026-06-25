@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   Clock,
   Download,
+  ExternalLink,
   Filter,
   Globe,
   ListChecks,
@@ -576,6 +577,14 @@ function AccessFeed() {
     staleTime: 10_000,
   });
 
+  // IP 드릴다운 시 부가 정보(역방향 DNS·범위 분류·요약) — 온디맨드 단건 조회.
+  const ipInfoQ = useQuery({
+    queryKey: ["admin-ip-info", drill?.key],
+    queryFn: () => getJSON<IpInfo>(`/admin/ip-info?ip=${encodeURIComponent(drill!.key)}`),
+    enabled: !!drill && drill.kind === "ip" && !!drill.key,
+    staleTime: 60_000,
+  });
+
   const clearLogs = async () => {
     const scoped = drill
       ? drill.kind === "ip"
@@ -826,6 +835,7 @@ function AccessFeed() {
       {/* 드릴다운: 특정 회원/IP 의 요청 기록 */}
       {drill ? (
         <>
+          {drill.kind === "ip" && <IpInfoCard q={ipInfoQ} ip={drill.key} />}
           <FeedState q={drillQ} empty={drillItems.length === 0} />
           {!drillQ.isPending && !drillQ.isError && drillItems.length > 0 && (
             <ul className="space-y-1 font-mono">
@@ -917,7 +927,9 @@ interface ActivityLog {
   kind: string;
   kindLabel: string;
   actorLabel: string | null;
+  actorUsername?: string | null;
   ref: string | null;
+  href?: string | null;
   createdAt: string;
 }
 
@@ -1014,8 +1026,34 @@ function ActivityFeed() {
             {items.map((a, i) => (
               <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs dark:border-neutral-800">
                 <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", activityTone(a.kind))}>{a.kindLabel}</span>
-                <span className="font-medium text-neutral-800 dark:text-neutral-200">{a.actorLabel || "(삭제된 사용자)"}</span>
-                {a.ref && <span className="min-w-0 truncate text-neutral-600 dark:text-neutral-400">{a.ref}</span>}
+                {a.actorUsername ? (
+                  <a
+                    href={`/users/${encodeURIComponent(a.actorUsername)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-sky-700 hover:underline dark:text-sky-300"
+                    title="프로필 새 탭에서 열기"
+                  >
+                    {a.actorLabel || a.actorUsername}
+                  </a>
+                ) : (
+                  <span className="font-medium text-neutral-800 dark:text-neutral-200">{a.actorLabel || "(삭제된 사용자)"}</span>
+                )}
+                {a.ref &&
+                  (a.href ? (
+                    <a
+                      href={a.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex min-w-0 items-center gap-1 truncate text-sky-700 hover:underline dark:text-sky-300"
+                      title="새 탭에서 열기"
+                    >
+                      <span className="truncate">{a.ref}</span>
+                      <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-70" />
+                    </a>
+                  ) : (
+                    <span className="min-w-0 truncate text-neutral-600 dark:text-neutral-400">{a.ref}</span>
+                  ))}
                 <span className="ml-auto inline-flex shrink-0 items-center gap-1 tabular-nums text-[10px] text-neutral-500 dark:text-neutral-500">
                   <Clock className="h-2.5 w-2.5" />
                   {formatRelativeKo(a.createdAt)}
@@ -1202,21 +1240,35 @@ function AuditFeed() {
         onSortKey={setSortKey}
         onToggleDir={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
       >
-        {filterOptions.map((f) => (
-          <button
-            key={f.value}
-            type="button"
-            onClick={() => setAction(f.value)}
-            className={cn(
-              "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
-              action === f.value
-                ? "border-sky-400 bg-sky-100 text-sky-800 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-200"
-                : "border-neutral-300 text-neutral-600 hover:border-sky-300 hover:text-sky-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-sky-200",
-            )}
+        <div className="inline-flex items-center gap-1.5">
+          <select
+            value={action}
+            onChange={(e) => setAction(e.target.value)}
+            aria-label="액션 필터"
+            className="rounded-full border border-neutral-300 bg-white py-1 pl-2.5 pr-6 text-[11px] font-medium text-neutral-700 focus:border-sky-500 focus:outline-none dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-300"
           >
-            {f.label}
-          </button>
-        ))}
+            {filterOptions.map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.value === "" ? "전체 액션" : f.label}
+              </option>
+            ))}
+          </select>
+          {(action || search || period !== "all") && (
+            <button
+              type="button"
+              onClick={() => {
+                setAction("");
+                setSearch("");
+                setDebounced("");
+                setPeriod("all");
+              }}
+              className="inline-flex items-center gap-1 rounded-full border border-neutral-300 px-2.5 py-1 text-[11px] font-medium text-neutral-600 transition-colors hover:border-rose-300 hover:text-rose-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-rose-300"
+              title="필터 초기화"
+            >
+              <X className="h-3 w-3" /> 초기화
+            </button>
+          )}
+        </div>
       </LogToolbar>
 
       {/* 관리 바 — 선택 삭제 / 기간 정리 */}
@@ -1329,6 +1381,70 @@ interface WebAccessLog {
   userLabel: string | null;
   deviceKind: string | null;
   createdAt: number; // epoch seconds
+}
+
+// IP 부가 정보 — 역방향 DNS·범위 분류 + 그 IP 접속 요약.
+interface IpInfo {
+  ip: string;
+  version: number | null;
+  scope: string;
+  reverseDns: string | null;
+  requestCount: number;
+  distinctPaths: number;
+  memberLabels: string[];
+  topPath: string | null;
+  isBot: boolean;
+  firstAt: number;
+  lastAt: number;
+}
+
+const SCOPE_LABEL: Record<string, string> = {
+  public: "공인",
+  private: "사설",
+  loopback: "루프백",
+  "link-local": "링크로컬",
+  unknown: "미상",
+};
+
+function IpInfoCard({ q, ip }: { q: { data?: IpInfo; isPending: boolean; isError: boolean }; ip: string }) {
+  const d = q.data;
+  return (
+    <div className="rounded-lg border border-sky-200 bg-sky-50/50 px-3 py-2 text-[11px] dark:border-sky-500/30 dark:bg-sky-500/5">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <Globe className="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-300" />
+        <span className="font-mono font-semibold text-neutral-900 dark:text-neutral-100">{ip}</span>
+        {q.isPending ? (
+          <span className="text-neutral-500">조회 중…</span>
+        ) : q.isError || !d ? (
+          <span className="text-neutral-500">부가 정보를 가져오지 못했습니다.</span>
+        ) : (
+          <>
+            {d.version && (
+              <span className="rounded-full bg-neutral-200 px-1.5 py-px font-medium text-neutral-700 dark:bg-surface-3 dark:text-neutral-300">IPv{d.version}</span>
+            )}
+            <span className="rounded-full bg-neutral-200 px-1.5 py-px font-medium text-neutral-700 dark:bg-surface-3 dark:text-neutral-300">{SCOPE_LABEL[d.scope] ?? d.scope}</span>
+            {d.isBot && (
+              <span className="rounded-full bg-amber-100 px-1.5 py-px font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">봇 추정</span>
+            )}
+            {d.reverseDns ? (
+              <span className="min-w-0 truncate font-mono text-neutral-600 dark:text-neutral-400" title="역방향 DNS(ISP/조직 힌트)">{d.reverseDns}</span>
+            ) : (
+              <span className="text-neutral-400">역방향 DNS 없음</span>
+            )}
+          </>
+        )}
+      </div>
+      {d && d.memberLabels.length > 0 && (
+        <div className="mt-1 flex flex-wrap items-center gap-1 text-neutral-600 dark:text-neutral-400">
+          <span className="text-neutral-500">이 IP 로 접속한 회원:</span>
+          {d.memberLabels.slice(0, 6).map((m, i) => (
+            <span key={i} className="rounded-full bg-white px-1.5 py-px font-medium text-neutral-700 dark:bg-surface-2 dark:text-neutral-300">{m}</span>
+          ))}
+          {d.memberLabels.length > 6 && <span className="text-neutral-400">+{d.memberLabels.length - 6}</span>}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function methodTone(m: string): string {

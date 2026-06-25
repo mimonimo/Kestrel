@@ -218,7 +218,9 @@ class _ActivityLogOut(_PydBaseModel):
     kind_label: str
     actor_label: str | None = None
     actor_user_id: str | None = None
+    actor_username: str | None = None  # 프로필 링크용(/users/{username})
     ref: str | None = None       # cveId / 제목 등
+    href: str | None = None      # 클릭 시 이동할 내부 경로(/cve/.. · /community/..)
     created_at: _dt
 
 
@@ -773,6 +775,118 @@ async def web_access_log(
     return _WebAccessLogsList(items=items, total=len(items))
 
 
+_REVDNS_CACHE: dict[str, str | None] = {}
+
+
+async def _reverse_dns(ip: str) -> str | None:
+    """역방향 DNS(PTR) — ISP/조직 힌트. best-effort + 캐시 + 짧은 타임아웃(블로킹 회피)."""
+    if ip in _REVDNS_CACHE:
+        return _REVDNS_CACHE[ip]
+    import asyncio
+    import socket as _socket
+
+    def _lookup() -> str | None:
+        try:
+            _socket.setdefaulttimeout(2.0)
+            host, _aliases, _addrs = _socket.gethostbyaddr(ip)
+            return host
+        except Exception:  # noqa: BLE001 — 미상은 None
+            return None
+
+    try:
+        host = await asyncio.get_event_loop().run_in_executor(None, _lookup)
+    except Exception:  # noqa: BLE001
+        host = None
+    _REVDNS_CACHE[ip] = host
+    return host
+
+
+def _ip_scope(ip: str) -> tuple[int | None, str]:
+    """(버전, 범위라벨) — 공인/사설/루프백/링크로컬/미상."""
+    import ipaddress
+
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return None, "unknown"
+    ver = addr.version
+    if addr.is_loopback:
+        return ver, "loopback"
+    if addr.is_private:
+        return ver, "private"
+    if addr.is_link_local:
+        return ver, "link-local"
+    return ver, "public"
+
+
+class _IpInfoOut(_PydBaseModel):
+    model_config = _PydConfigDict(populate_by_name=True, alias_generator=lambda s: "".join(
+        [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
+    ))
+    ip: str
+    version: int | None = None
+    scope: str = "unknown"
+    reverse_dns: str | None = None
+    request_count: int = 0
+    distinct_paths: int = 0
+    member_labels: list[str] = []
+    top_path: str | None = None
+    is_bot: bool = False
+    first_at: float = 0
+    last_at: float = 0
+
+
+@router.get("/ip-info", response_model=_IpInfoOut, response_model_by_alias=True)
+async def ip_info(
+    ip: str = Query(..., max_length=64),
+    db: AsyncSession = Depends(get_db),
+) -> _IpInfoOut:
+    """단건 IP 의 부가 정보 — 역방향 DNS·범위 분류 + 그 IP 의 접속 요약(온디맨드).
+
+    접속 로그에서 IP 를 눌렀을 때만 호출(단건)하므로 역방향 DNS 의 블로킹 비용이
+    화면 전체에 퍼지지 않는다. 공개/내부 데이터만 사용(추가 PII 수집 없음)."""
+    import uuid as _uuid
+    from collections import Counter
+
+    from app.core.access_log import read_recent
+
+    version, scope = _ip_scope(ip)
+    rev = await _reverse_dns(ip)
+
+    recs = [r for r in await read_recent(5000) if (r.get("ip") or "") == ip]
+    paths = Counter((r.get("path") or "") for r in recs)
+    uids: set[_uuid.UUID] = set()
+    is_bot = False
+    for r in recs:
+        raw = r.get("uid")
+        if raw:
+            try:
+                uids.add(_uuid.UUID(raw))
+            except (ValueError, TypeError):
+                pass
+        ua = (r.get("ua") or "").lower()
+        if "bot" in ua or "crawler" in ua or "spider" in ua:
+            is_bot = True
+    member_labels: list[str] = []
+    if uids:
+        rows = (await db.execute(select(_User).where(_User.id.in_(uids)))).scalars().all()
+        member_labels = [u.nickname or u.username or u.email for u in rows]
+    ts = [float(r.get("ts") or 0) for r in recs if r.get("ts")]
+    return _IpInfoOut(
+        ip=ip,
+        version=version,
+        scope=scope,
+        reverse_dns=rev,
+        request_count=len(recs),
+        distinct_paths=len(paths),
+        member_labels=member_labels,
+        top_path=(paths.most_common(1)[0][0] if paths else None),
+        is_bot=is_bot,
+        first_at=min(ts) if ts else 0,
+        last_at=max(ts) if ts else 0,
+    )
+
+
 class _AccessSummaryOut(_PydBaseModel):
     model_config = _PydConfigDict(populate_by_name=True, alias_generator=lambda s: "".join(
         [s.split("_")[0]] + [w.capitalize() for w in s.split("_")[1:]]
@@ -949,9 +1063,11 @@ async def list_activity_logs(
     """
     from sqlalchemy import desc as _desc
 
+    from app.models import Vulnerability as _Vuln
+
     merged: list[_ActivityLogOut] = []
 
-    async def _collect(stmt, kind_code: str, ref_fn) -> None:
+    async def _collect(stmt, kind_code: str, ref_fn, href_fn) -> None:
         rows = (await db.execute(stmt)).all()
         for entity, user_row in rows:
             merged.append(
@@ -960,7 +1076,9 @@ async def list_activity_logs(
                     kind_label=_ACTIVITY_LABELS[kind_code],
                     actor_label=_user_label(user_row),
                     actor_user_id=str(entity.user_id) if entity.user_id else None,
+                    actor_username=getattr(user_row, "username", None) if user_row else None,
                     ref=ref_fn(entity),
+                    href=href_fn(entity),
                     created_at=entity.created_at,
                 )
             )
@@ -973,22 +1091,38 @@ async def list_activity_logs(
             .join(_User, _User.id == _Post.user_id, isouter=True)
             .where(_Post.user_id.isnot(None))
             .order_by(_desc(_Post.created_at)).limit(limit),
-            "post", lambda e: e.title,
+            "post", lambda e: e.title, lambda e: f"/community/{e.id}",
         )
     if "comment" in wanted:
-        await _collect(
-            select(_Comment, _User)
-            .join(_User, _User.id == _Comment.user_id, isouter=True)
-            .where(_Comment.user_id.isnot(None))
-            .order_by(_desc(_Comment.created_at)).limit(limit),
-            "comment", lambda e: (e.content or "")[:60],
-        )
+        # 댓글은 연결된 CVE(vulnerability_id)를 함께 가져와 /cve/{cveId} 로 링크.
+        crows = (
+            await db.execute(
+                select(_Comment, _User, _Vuln.cve_id)
+                .join(_User, _User.id == _Comment.user_id, isouter=True)
+                .join(_Vuln, _Comment.vulnerability_id == _Vuln.id, isouter=True)
+                .where(_Comment.user_id.isnot(None))
+                .order_by(_desc(_Comment.created_at)).limit(limit)
+            )
+        ).all()
+        for c, u, cve in crows:
+            merged.append(
+                _ActivityLogOut(
+                    kind="comment",
+                    kind_label=_ACTIVITY_LABELS["comment"],
+                    actor_label=_user_label(u),
+                    actor_user_id=str(c.user_id) if c.user_id else None,
+                    actor_username=getattr(u, "username", None) if u else None,
+                    ref=(c.content or "")[:60],
+                    href=f"/cve/{cve}" if cve else None,
+                    created_at=c.created_at,
+                )
+            )
     if "analysis" in wanted:
         await _collect(
             select(_AnalysisResult, _User)
             .join(_User, _User.id == _AnalysisResult.user_id, isouter=True)
             .order_by(_desc(_AnalysisResult.created_at)).limit(limit),
-            "analysis", lambda e: e.cve_id,
+            "analysis", lambda e: e.cve_id, lambda e: f"/cve/{e.cve_id}",
         )
     if "bookmark" in wanted:
         await _collect(
@@ -996,7 +1130,7 @@ async def list_activity_logs(
             .join(_User, _User.id == _Bookmark.user_id, isouter=True)
             .where(_Bookmark.user_id.isnot(None))
             .order_by(_desc(_Bookmark.created_at)).limit(limit),
-            "bookmark", lambda e: e.cve_id,
+            "bookmark", lambda e: e.cve_id, lambda e: f"/cve/{e.cve_id}",
         )
 
     merged.sort(key=lambda x: x.created_at, reverse=True)
