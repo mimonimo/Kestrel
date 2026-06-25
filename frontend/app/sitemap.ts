@@ -2,15 +2,17 @@ import type { MetadataRoute } from "next";
 
 const BASE = "https://www.kestrel.forum";
 
-export const revalidate = 86400; // 하루 1회 재생성
+// 런타임 생성 — 빌드 시점엔 backend(compose 네트워크)가 닿지 않아 CVE 목록을 못 받지만,
+// 운영 런타임에선 닿는다. 빌드 프리렌더를 끄고(요청 시 생성) 데이터는 fetch 캐시로 24h 보존.
+// (build 가 sitemap 생성을 시도하다 멈추는 문제도 원천 차단.)
+export const dynamic = "force-dynamic";
+const REVALIDATE = 86400; // fetch 데이터 캐시 TTL — 하루 1회 백엔드 재조회
 
-// 빌드 시점엔 backend(compose 네트워크)가 닿지 않아 fetch 가 멈출 수 있다.
-// 짧은 타임아웃으로 빠르게 실패시켜 빌드가 멈추지 않게 하고, 정적 라우트로 폴백한다.
-// 운영 런타임(revalidate 재생성) 때는 backend 가 닿으므로 CVE·분석이 채워진다.
+// backend 가 일시적으로 안 닿아도 sitemap 생성이 멈추지 않게 짧은 타임아웃으로 폴백.
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
     const res = await fetch(url, {
-      next: { revalidate },
+      next: { revalidate: REVALIDATE },
       signal: AbortSignal.timeout(4000),
     });
     if (!res.ok) return null;
