@@ -58,6 +58,50 @@ async def batch_cves(
     return rows
 
 
+_SITEMAP_MAX = 10_000  # 사이트맵에 노출할 최근 CVE 상한 — 쿼리/응답 크기 상한(과부하 방지).
+
+
+class SitemapId(CamelModel):
+    cve_id: str
+    modified_at: datetime | None = None
+    published_at: datetime | None = None
+
+
+@router.get("/sitemap-ids", response_model=list[SitemapId], response_model_by_alias=True)
+async def sitemap_ids(
+    limit: int = Query(5000, ge=1, le=_SITEMAP_MAX),
+    offset: int = Query(0, ge=0, le=_SITEMAP_MAX),
+    db: AsyncSession = Depends(get_db),
+) -> list[SitemapId]:
+    """공개 CVE 상세 페이지용 경량 ID 목록 — 검색/AI 크롤러 발견성용 사이트맵 생성에서만 사용.
+
+    보안/과부하 검토:
+    - 공개 데이터(이미 누구나 GET /cves/{id} 로 열람)만, 가벼운 컬럼(cve_id·날짜)만 반환.
+    - 인증·관리·에이전트 토큰 등 어떤 비공개 정보도 노출하지 않음.
+    - offset+limit 를 _SITEMAP_MAX(1만)로 강제 상한 → 깊은 페이징/대량 스캔으로 인한
+      부하·DoS 방지. published_at 인덱스(ix_vuln_published_desc)로 정렬해 비용 한정.
+    """
+    capped = min(limit, max(0, _SITEMAP_MAX - offset))
+    if capped <= 0:
+        return []
+    rows = (
+        await db.execute(
+            select(
+                Vulnerability.cve_id,
+                Vulnerability.modified_at,
+                Vulnerability.published_at,
+            )
+            .order_by(Vulnerability.published_at.desc().nulls_last())
+            .limit(capped)
+            .offset(offset)
+        )
+    ).all()
+    return [
+        SitemapId(cve_id=cid, modified_at=mod, published_at=pub)
+        for cid, mod, pub in rows
+    ]
+
+
 @router.get("/{cve_id}", response_model=VulnerabilityDetail, response_model_by_alias=True)
 async def get_cve(cve_id: str, db: AsyncSession = Depends(get_db)) -> Vulnerability:
     vuln = await db.scalar(select(Vulnerability).where(Vulnerability.cve_id == cve_id))
