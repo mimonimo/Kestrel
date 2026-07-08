@@ -96,6 +96,43 @@ resource "aws_cloudwatch_metric_alarm" "app_errors" {
   alarm_actions       = [aws_sns_topic.alerts.arn]
 }
 
+# ── SES 평판 알람 (반송률 / 불만율) ─────────────────────────
+# 운영 중 콘솔로 추가한 것을 IaC 로 역코드화(라이브 기준). SES 는 반송률·불만율이
+# 임계치를 넘으면 발송을 정지시키므로, 그 전에 조기 통지한다.
+#   - 반송률(BounceRate) ≥ 5%  → 정지 위험 구간.
+#   - 불만율(ComplaintRate) ≥ 0.1% → 정지 위험 구간.
+# AWS/SES 계정 평판 지표는 시간당 갱신되므로 1시간 구간·1회 위반으로 즉시 통지.
+# 도메인(메일 발송)이 켜진 경우에만 생성.
+resource "aws_cloudwatch_metric_alarm" "ses_bounce_rate" {
+  count               = var.domain_name == "" ? 0 : 1
+  alarm_name          = "kestrel-ses-bounce-rate"
+  alarm_description   = "SES 반송률(Reputation.BounceRate)이 5% 이상. 방치 시 SES 발송정지 위험."
+  namespace           = "AWS/SES"
+  metric_name         = "Reputation.BounceRate"
+  statistic           = "Maximum"
+  period              = 3600
+  evaluation_periods  = 1
+  threshold           = 0.05
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "ses_complaint_rate" {
+  count               = var.domain_name == "" ? 0 : 1
+  alarm_name          = "kestrel-ses-complaint-rate"
+  alarm_description   = "SES 불만율(Reputation.ComplaintRate)이 0.1% 이상. 방치 시 SES 발송정지 위험."
+  namespace           = "AWS/SES"
+  metric_name         = "Reputation.ComplaintRate"
+  statistic           = "Maximum"
+  period              = 3600
+  evaluation_periods  = 1
+  threshold           = 0.001
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+}
+
 # 백엔드(신고 기능)가 알림 토픽으로 직접 발행할 수 있게 권한 부여.
 resource "aws_iam_role_policy" "sns_publish" {
   name = "${local.name_prefix}-sns-publish"

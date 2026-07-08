@@ -2449,6 +2449,8 @@ bad vote → 422, 헤더 누락 → 400
 
 ## 운영 점검 로그
 
+- **2026-07-08 — 실서비스 아키텍처 기술문서 + SES 전달성 IaC 역코드화**: 논문용으로 실 운영(`www.kestrel.forum`) 아키텍처를 IaC·컨테이너 정의·라이브 AWS 조회·엔드포인트 응답 3중 대조해 `KESTREL_아키텍처_기술문서.md` 작성. 이 과정에서 라이브에는 있으나 Terraform(`infra/ec2/`)엔 없던 **SES 전달성 구성**을 라이브 기준으로 역코드화: ① 커스텀 MAIL FROM(`mail.kestrel.forum`)·피드백 MX·SPF TXT·DMARC(`p=none`) → 신규 `ses_deliverability.tf`, ② SES 평판 알람(`ses-bounce-rate` 5% / `ses-complaint-rate` 0.1%) → `cloudwatch.tf` 추가. **라이브 무변경 원칙**: 기존 리소스 6개를 `terraform import`로 state 흡수 후 `apply`는 알람 표준태그(`ManagedBy=terraform` 등) 추가 2건만 → 최종 `terraform plan` = `No changes`(코드-라이브 정합 확인). SES 프로덕션 액세스 승격·계정 억제목록(BOUNCE/COMPLAINT)은 계정 레벨이라 스택 리소스로 표현 불가 → 문서에 명시. tfstate는 gitignore(로컬).
+
 - **2026-06-12 — EPSS 일일 갱신 장애 수정 (TEMP 테이블 소멸)**: 프로덕션 EPSS job 이 시작 ~17초 만에 `priority_signals.refresh_failed` 로 간헐 실패(마지막 성공 06-11 08:00 UTC). **실제 원인**(structlog `format_exc_info` 추가 후 트레이스백으로 확정): `CREATE TEMP TABLE _epss_staging ... ON COMMIT PRESERVE ROWS` 적재 후 중간 `commit()` 시점에, uvicorn 의 **풀링된 asyncpg 커넥션**에선 TEMP 테이블이 사라져 다음 UPDATE 가 `asyncpg.UndefinedTableError: relation "_epss_staging" does not exist` 로 죽음(간헐성=커넥션 상태 의존). 처음엔 OOM 으로 오진했으나(메모리도 빠듯하긴 함) 로깅 수정 후 진짜 원인 판명. 수정: ① 스테이징을 **TEMP → UNLOGGED 일반 테이블**로 변경(커밋·커넥션과 무관하게 유지), ② 겸사겸사 `refresh_epss` 를 스트리밍 청크 적재 + `cve_id` keyset 배치 UPDATE(배치당 커밋)로 재작성해 메모리/WAL/락 상한, ③ `EPSS_URL` 정식 호스트 `epss.empiricalsecurity.com` 갱신, ④ structlog `format_exc_info` 추가(그동안 `"exc_info": true` 불린만 찍혀 원인 불가시 — 이게 결정적이었음), ⑤ `priority-epss-boot` +180s→+600s. `backend/app/services/priority_signals.py`·`core/logging.py`·`scheduler/jobs.py`. **운영 메모**: `dmesg` 상 ~2일 전 host 에서 `git`(899MB)·`meilisearch` OOM-kill 흔적 — EC2 호스트 빌드 금지 규칙 재확인 필요.
 
 ## UX 폴리시 로그
