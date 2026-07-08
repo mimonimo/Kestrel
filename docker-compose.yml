@@ -48,8 +48,11 @@ services:
       - REDIS_URL=${REDIS_URL}
       - MEILI_HOST=${MEILI_HOST}
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
-      - NVD_API_KEY=${NVD_API_KEY}
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      # NVD/GitHub 키는 관리자 설정 화면(DB AppSettings)이 1차 소스 — env 는
+      # 폴백일 뿐이라 비어 있는 게 정상. 기본값 없이 두면 compose 가 매 실행마다
+      # "variable is not set" 경고를 찍어 :- 로 침묵시킨다.
+      - NVD_API_KEY=${NVD_API_KEY:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       # .env 의 CORS_ORIGINS 를 그대로 전달(운영 도메인). 하드코딩하면 .env 갱신이
       # 무시돼 운영에서도 localhost 로 떠 알림 웹훅의 CVE 링크가 깨진다(PR 10-EW 의
       # ENV/DEBUG 와 같은 부류). 로컬은 기본값(localhost:3000)으로 떨어진다.
