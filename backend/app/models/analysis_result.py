@@ -12,8 +12,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -39,6 +39,19 @@ class AnalysisResult(Base):
     # public: 모든 사용자가 본문까지 조회 가능
     # private: 본인만 조회 가능 (커뮤니티 탭에 노출되지 않음)
     visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="public")
+    # ─── 파이프라인 구조화 메타데이터 (agent_api 게시 시 선택 제공) ─────────
+    # 전부 nullable — 값이 있으면 파이프라인産, 전부 NULL 이면 기존/자유 게시.
+    # vulnerabilities.epss_score/kev_listed 는 CVE 의 현재 신호이고, 여기는
+    # *분석 시점*에 파이프라인이 본 값의 스냅샷이라 별도 저장한다.
+    epss_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    epss_percentile: Mapped[float | None] = mapped_column(Float, nullable=True)
+    priority_action: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    priority_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    kev_listed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    validation_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exploitability_grade: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    quality_flags: Mapped[dict | list | None] = mapped_column(JSONB, nullable=True)
+    pipeline_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

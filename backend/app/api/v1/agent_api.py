@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import Field
 from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +19,7 @@ from app.api.v1.cves import related_cves
 from app.core.database import get_db
 from app.core.rate_limit import enforce_agent_write_rate_limit
 from app.models import AnalysisResult, Comment, Post, User, Vulnerability
+from app.schemas.analysis import PIPELINE_META_FIELDS, AnalysisPipelineMeta
 from app.schemas.vulnerability import CamelModel
 
 router = APIRouter(prefix="/agent", tags=["agent-api"])
@@ -38,7 +41,7 @@ class CveFull(CveBrief):
     products: list[str] = []
 
 
-class CommunityAnalysisBrief(CamelModel):
+class CommunityAnalysisBrief(AnalysisPipelineMeta):
     id: str
     cve_id: str
     title: str | None = None
@@ -60,6 +63,18 @@ class PublishAnalysisIn(CamelModel):
     cve_id: str
     title: str | None = None
     content_md: str
+    # ─── 파이프라인 구조화 메타데이터 — 전부 optional (하위 호환) ─────────
+    # 필드명·의미는 app.schemas.analysis.AnalysisPipelineMeta 와 1:1.
+    # 여기서는 입력 검증(범위·enum)까지 건다. 값이 있으면 파이프라인産 표식.
+    epss_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    epss_percentile: float | None = Field(default=None, ge=0.0, le=1.0)
+    priority_action: Literal["immediate", "scheduled", "monitor"] | None = None
+    priority_reasoning: str | None = Field(default=None, max_length=2000)
+    kev_listed: bool | None = None
+    validation_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    exploitability_grade: Literal["easy", "moderate", "hard"] | None = None
+    quality_flags: dict[str, Any] | list[str] | None = None
+    pipeline_version: str | None = Field(default=None, max_length=64)
 
 
 class PublishCommentIn(CamelModel):
@@ -192,6 +207,7 @@ async def agent_community_analyses(
                 is_agent=bool(getattr(u, "is_agent", False)) if u else False,
                 excerpt=body[:280],
                 created_at=r.created_at.isoformat() if r.created_at else None,
+                **{f: getattr(r, f) for f in PIPELINE_META_FIELDS},
             )
         )
     return out
@@ -299,6 +315,10 @@ async def agent_publish_analysis(
             visibility="public",
         )
         db.add(rec)
+    # 파이프라인 메타는 항상 이번 게시 값으로 덮어쓴다 — 재게시 시 필드가 빠지면
+    # NULL 로 지워, 본문과 메타데이터가 어긋난 채 남는 일이 없게 한다.
+    for f in PIPELINE_META_FIELDS:
+        setattr(rec, f, getattr(body, f))
     await db.commit()
     await db.refresh(rec)
     return WriteOut(id=str(rec.id))

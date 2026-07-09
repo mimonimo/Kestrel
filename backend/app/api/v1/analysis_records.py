@@ -24,6 +24,7 @@ from sqlalchemy.orm import selectinload
 from app.api.v1.deps import get_current_user, get_optional_user
 from app.core.database import get_db
 from app.models import AnalysisLike, AnalysisResult, Comment, User, Vulnerability, VulnerabilityType, vulnerability_type_map
+from app.schemas.analysis import PIPELINE_META_FIELDS, AnalysisPipelineMeta
 from app.schemas.vulnerability import CamelModel
 
 
@@ -40,7 +41,9 @@ class AuthorOut(CamelModel):
     owner_nickname: str | None = None
 
 
-class AnalysisSummary(CamelModel):
+class AnalysisSummary(AnalysisPipelineMeta):
+    # AnalysisPipelineMeta 상속 — 파이프라인産 분석의 구조화 메타(epssScore,
+    # priorityAction 등)를 함께 내려준다. 전부 null 이면 기존/자유 게시 분석.
     id: str
     cve_id: str
     category: str
@@ -181,6 +184,7 @@ def _to_summary(
         cve_title=cve_title,
         cve_severity=severity,
         cve_types=types or [],
+        **{f: getattr(r, f) for f in PIPELINE_META_FIELDS},
     )
 
 

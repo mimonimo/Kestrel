@@ -1309,6 +1309,38 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-FC — 에이전트 분석 구조화 메타데이터 (백엔드: 게시 API + DB + 조회) ✅
+
+**완료일:** 2026-07-10
+
+> 외부 AI 에이전트의 7단계 파이프라인(CVSS+EPSS+KEV 융합·교차검증·우선순위 산출) 산출값이
+> `POST /agent/analyses` 에서 전부 `contentMd` 마크다운에 뭉개짐 — 컬럼으로 받아 UI 가
+> 뱃지·정렬에 쓸 수 있게 한다. 이번 단계는 백엔드만(프론트 UI·에이전트 송신은 후속).
+
+- **스키마 9필드** (`app/schemas/analysis.py` 신규 — 출력 공용 `AnalysisPipelineMeta` 믹스인):
+  `epss_score`/`epss_percentile`(0~1), `priority_action`(immediate/scheduled/monitor),
+  `priority_reasoning`, `kev_listed`, `validation_confidence`(0~1),
+  `exploitability_grade`(easy/moderate/hard), `quality_flags`(JSONB), `pipeline_version`.
+  전부 optional/nullable — **값이 있으면 파이프라인産, 전부 NULL 이면 기존 분석** 구분자 겸용.
+- **게시** (`agent_api.py PublishAnalysisIn`): 입력 검증은 Pydantic `Field(ge/le)` + `Literal`
+  (범위 밖·오타 enum 은 422). upsert 양쪽 경로에서 메타를 **항상 이번 게시 값으로 덮어씀** —
+  필드 없이 재게시하면 NULL 로 지워 본문·메타 불일치 잔존 방지. 기존 호출(필드 없음) 무변경.
+- **DB**: `analysis_results` 에 9컬럼 추가(전부 nullable, 마이그레이션 `0038`).
+  `vulnerabilities.epss_score/kev_listed` 는 CVE 의 *현재* 신호, 여기는 *분석 시점* 스냅샷이라 별도.
+- **조회**: `analysis_records.py` 의 `AnalysisSummary` 가 믹스인 상속 — `_to_summary()` 한 곳
+  수정으로 `/community/analyses`·`/cves/{id}/analyses`·`/me/analyses`·`/analyses/{id}` 4개 모두 반영.
+  에이전트용 `GET /agent/community/analyses`(`CommunityAnalysisBrief`)도 동일 노출(동료 분석 참조용).
+- **검증(TDD, `tests/test_agent_analysis_metadata.py` 신규 7케이스)**: 일회성 postgres 에
+  `alembic upgrade head` 후 실행 — 필드 없음/있음 게시 왕복, 목록·에이전트 읽기 노출, 재게시
+  클리어, 422 두 종 모두 green. **배포 시나리오 재현**: 0037 로 downgrade → 기존 19행 존재
+  상태에서 0038 upgrade → 행 무손상 + 신규 필드 전부 NULL 확인. 운영 적용은 기존 경로 그대로
+  (백엔드 컨테이너 기동 시 `alembic upgrade head` 자동).
+- **테스트 인프라 부수**: `tests/conftest.py` 신규 — app import 전 `DATABASE_URL` 고정(55432
+  일회성 pg), Redis 는 없는 포트(레이트리밋 fail-open 이라 불필요), 테스트마다 `engine.dispose()`
+  (pytest-asyncio 루프 교체로 풀 커넥션이 이전 루프에 묶이는 문제 차단).
+
+---
+
 ### PR 10-FB — 자산 매칭 알림(서버 자산 영속화 + 인앱/Slack·Discord 웹훅) ✅
 
 > 사용자: 개선 우선순위 논의 → "자산 매칭 알림(웹훅/인앱)" 선택 + "로그인 사용자 자산 서버 저장(하이브리드)".
