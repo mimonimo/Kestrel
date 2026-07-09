@@ -1338,6 +1338,13 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 - **테스트 인프라 부수**: `tests/conftest.py` 신규 — app import 전 `DATABASE_URL` 고정(55432
   일회성 pg), Redis 는 없는 포트(레이트리밋 fail-open 이라 불필요), 테스트마다 `engine.dispose()`
   (pytest-asyncio 루프 교체로 풀 커넥션이 이전 루프에 묶이는 문제 차단).
+- **라이브 반영 완료 (2026-07-10, SSM)**: CI(GHCR arm64) 성공 확인 후 `aws ssm send-command`
+  (프로파일 `kestrel-deploy`, `i-03e40be1e3eda7d65`)로 `/opt/kestrel` 에서 `git pull --ff-only
+  && docker compose pull && up -d` — update.sh 재빌드 경로는 OOM 전력으로 미사용. 백엔드 기동
+  로그에서 0037→0038 적용·`alembic current`=0038(head) 확인, 라이브
+  `GET /community/analyses` 응답에 신규 9필드 전부 존재(기존 분석은 null) 확인.
+  **주의**: 프로덕션 backend 는 호스트 포트 미개방(Caddy 가 컨테이너 네트워크로 프록시) —
+  헬스체크는 `localhost:8000` 이 아니라 `https://www.kestrel.forum/api/v1/health` 로.
 
 ---
 
