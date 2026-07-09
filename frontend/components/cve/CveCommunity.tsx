@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AuthorInline } from "@/components/community/AuthorInline";
 import { CommentThread } from "@/components/community/CommentThread";
 import { AnalysisDetailModal } from "@/components/community/AnalysisDetailModal";
+import { PipelineBadges } from "@/components/community/PipelineBadges";
 
 export function CveCommunity({ cveId }: { cveId: string }) {
   const { user } = useAuth();
@@ -109,6 +110,18 @@ export function CveCommunity({ cveId }: { cveId: string }) {
                     {a.title && <span className="text-neutral-500 dark:text-neutral-400">· {a.title}</span>}
                     <span className="ml-auto tabular-nums text-[10px] text-neutral-400">{formatRelativeKo(a.createdAt)}</span>
                   </div>
+                  {/* 파이프라인 구조화 뱃지 (PR 10-FC) — 파이프라인産에만 렌더 */}
+                  {a.pipelineVersion && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                      <PipelineBadges a={a} />
+                    </div>
+                  )}
+                  {/* 우선순위 산출 근거 — 왜 이 우선순위인지 투명하게 */}
+                  {a.pipelineVersion && a.priorityReasoning && (
+                    <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-neutral-500 dark:text-neutral-500">
+                      근거: {a.priorityReasoning}
+                    </p>
+                  )}
                   {/* 미리보기 — 파싱된 공격 방법이 없으면 본문 excerpt 로 폴백해
                       "빈 분석"처럼 보이지 않게 한다(정확성). */}
                   {(a.attackMethod || a.excerpt) && (

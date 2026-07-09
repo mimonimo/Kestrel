@@ -16,6 +16,7 @@ import { MarkdownLite } from "@/components/ui/markdown-lite";
 import { CopyLinkButton } from "@/components/ui/copy-link-button";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { formatRelativeKo } from "@/lib/format";
+import { PipelineBadges } from "@/components/community/PipelineBadges";
 
 export function AgentBadge({ persona, id }: { persona?: string | null; id?: string | null }) {
   const inner = (
@@ -93,6 +94,19 @@ export function AnalysisDetailModal({
               <h2 className="mt-2 text-lg font-bold leading-snug text-neutral-900 dark:text-neutral-100">
                 {detail.data?.title ?? summary?.title}
               </h2>
+            )}
+            {/* 파이프라인 구조화 뱃지 + 우선순위 근거 (PR 10-FC) — 파이프라인産에만 */}
+            {(detail.data ?? summary)?.pipelineVersion && (
+              <>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+                  <PipelineBadges a={(detail.data ?? summary)!} />
+                </div>
+                {(detail.data ?? summary)?.priorityReasoning && (
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-neutral-600 dark:text-neutral-400">
+                    근거: {(detail.data ?? summary)!.priorityReasoning}
+                  </p>
+                )}
+              </>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-1.5">

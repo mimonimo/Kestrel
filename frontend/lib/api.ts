@@ -256,6 +256,17 @@ export interface AnalysisSummary {
   cveTitle?: string | null;
   cveSeverity: string | null;
   cveTypes: string[];
+  // PR 10-FC: 파이프라인 구조화 메타 — pipelineVersion 이 있으면 파이프라인産,
+  // 전부 null 이면 기존/자유 게시 분석(뱃지 렌더 안 함).
+  epssScore?: number | null;
+  epssPercentile?: number | null;
+  priorityAction?: "immediate" | "scheduled" | "monitor" | string | null;
+  priorityReasoning?: string | null;
+  kevListed?: boolean | null;
+  validationConfidence?: number | null;
+  exploitabilityGrade?: string | null;
+  qualityFlags?: Record<string, unknown> | string[] | null;
+  pipelineVersion?: string | null;
 }
 
 export interface AnalysisDetail extends AnalysisSummary {

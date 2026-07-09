@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Clock,
   Folder,
+  Gauge,
   Globe,
   Heart,
   Loader2,
@@ -24,6 +25,7 @@ import {
   Sparkles,
   Users,
   X,
+  Zap,
 } from "lucide-react";
 
 import { api, type AnalysisList, type AnalysisSummary } from "@/lib/api";
@@ -37,11 +39,14 @@ import {
 } from "@/components/community/AnalysisDetailModal";
 import { formatRelativeKo, avatarInitial } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { PipelineBadges, PRIORITY_RANK } from "@/components/community/PipelineBadges";
 
-type ViewMode = "latest" | "category" | "author";
+type ViewMode = "latest" | "priority" | "epss" | "category" | "author";
 
 const VIEW_LABELS: Record<ViewMode, { label: string; icon: typeof Clock }> = {
   latest: { label: "최신순", icon: Clock },
+  priority: { label: "우선순위순", icon: Zap },
+  epss: { label: "EPSS순", icon: Gauge },
   category: { label: "유형·위험도별", icon: Folder },
   author: { label: "작성자별", icon: Users },
 };
@@ -70,6 +75,8 @@ export function AnalysisFeed() {
   const [expandedAuthors, setExpandedAuthors] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [agentFilter, setAgentFilter] = useState<"all" | "agent" | "human">("all");
+  // 파이프라인 검증 분석만 보기(pipelineVersion 있는 것) — PR 10-FC.
+  const [pipelineOnly, setPipelineOnly] = useState(false);
   // 범위: 전체(남 공개 + 내 분석) / 내 분석만.
   const [scope, setScope] = useState<"all" | "mine">("all");
   // 카드별 인라인 댓글 펼침.
@@ -165,6 +172,7 @@ export function AnalysisFeed() {
     return allItems.filter((a) => {
       if (agentFilter === "agent" && !a.author.isAgent) return false;
       if (agentFilter === "human" && a.author.isAgent) return false;
+      if (pipelineOnly && !a.pipelineVersion) return false;
       if (q) {
         const hay =
           `${a.cveId} ${a.title ?? ""} ${a.excerpt} ${a.author.nickname ?? ""} ${a.author.username} ${a.cveTypes.join(" ")} ${a.cveSeverity ?? ""}`.toLowerCase();
@@ -172,7 +180,28 @@ export function AnalysisFeed() {
       }
       return true;
     });
-  }, [allItems, search, agentFilter]);
+  }, [allItems, search, agentFilter, pipelineOnly]);
+
+  // 우선순위순/EPSS순 — 파이프라인 필드가 없는(기존) 분석은 뒤로, 동순위는
+  // EPSS 높은 순 → 최신순 타이브레이크.
+  const sortedFlat = useMemo(() => {
+    if (view !== "priority" && view !== "epss") return visibleItems;
+    const byDate = (x: AnalysisSummary, y: AnalysisSummary) =>
+      +new Date(y.createdAt) - +new Date(x.createdAt);
+    const epssOf = (x: AnalysisSummary) =>
+      typeof x.epssScore === "number" && Number.isFinite(x.epssScore) ? x.epssScore : -1;
+    const arr = [...visibleItems];
+    if (view === "priority") {
+      const rankOf = (x: AnalysisSummary) =>
+        x.priorityAction != null ? (PRIORITY_RANK[x.priorityAction] ?? 8) : 9;
+      arr.sort(
+        (x, y) => rankOf(x) - rankOf(y) || epssOf(y) - epssOf(x) || byDate(x, y),
+      );
+    } else {
+      arr.sort((x, y) => epssOf(y) - epssOf(x) || byDate(x, y));
+    }
+    return arr;
+  }, [visibleItems, view]);
 
   const grouped = useMemo(() => {
     const buckets = new Map<string, { label: string; items: AnalysisSummary[] }>();
@@ -230,6 +259,10 @@ export function AnalysisFeed() {
       <span>
         {view === "latest"
           ? "다른 사용자가 공개한 분석을 시간 역순으로 보여줍니다."
+          : view === "priority"
+            ? "파이프라인 우선순위(즉시 대응 → 예정 대응 → 모니터링) 순 — 우선순위 없는 분석은 뒤에."
+          : view === "epss"
+            ? "EPSS(30일 내 익스플로잇 확률) 높은 순 — EPSS 없는 분석은 뒤에."
           : view === "category"
             ? categoryAxis === "severity"
               ? "위험도별 그룹 — Critical / High / Medium / Low / 미분류 순."
@@ -300,8 +333,23 @@ export function AnalysisFeed() {
             {l}
           </button>
         ))}
+        <span className="mx-1 h-3 w-px bg-neutral-300 dark:bg-neutral-700" />
+        <button
+          type="button"
+          onClick={() => setPipelineOnly((v) => !v)}
+          className={cn(
+            "rounded-full border px-2.5 py-1 font-medium transition-colors",
+            pipelineOnly
+              ? "border-emerald-400 bg-emerald-100 text-emerald-800 dark:border-emerald-500/50 dark:bg-emerald-500/20 dark:text-emerald-200"
+              : "border-neutral-300 text-neutral-600 hover:border-emerald-300 dark:border-neutral-700 dark:text-neutral-400",
+          )}
+          aria-pressed={pipelineOnly}
+          title="구조화 검증 파이프라인이 생성한 분석만 보기"
+        >
+          ⚙ 파이프라인 검증
+        </button>
       </div>
-      <div className="inline-flex w-full items-center gap-1 rounded-full border border-neutral-200 bg-neutral-50 p-1 text-xs dark:border-neutral-800 dark:bg-surface-1 sm:w-auto">
+      <div className="inline-flex w-full flex-wrap items-center gap-1 rounded-2xl border border-neutral-200 bg-neutral-50 p-1 text-xs dark:border-neutral-800 dark:bg-surface-1 sm:w-auto sm:rounded-full">
         {(Object.keys(VIEW_LABELS) as ViewMode[]).map((m) => {
           const { label, icon: Icon } = VIEW_LABELS[m];
           const active = view === m;
@@ -493,6 +541,7 @@ export function AnalysisFeed() {
                 {t}
               </span>
             ))}
+            <PipelineBadges a={a} />
           </div>
           {a.title && (
             <h3 className="mt-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
@@ -572,8 +621,8 @@ export function AnalysisFeed() {
         <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 px-6 py-10 text-center text-xs text-neutral-700 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-400">
           {search ? `"${search}" 와 일치하는 분석이 없어요.` : "공유된 분석이 없어요."}
         </div>
-      ) : view === "latest" ? (
-        <ul className="space-y-3">{visibleItems.map(renderCard)}</ul>
+      ) : view === "latest" || view === "priority" || view === "epss" ? (
+        <ul className="space-y-3">{sortedFlat.map(renderCard)}</ul>
       ) : view === "category" ? (
         <div className="space-y-6">
           {filteredGroups.map((g) => (

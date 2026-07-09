@@ -1309,6 +1309,35 @@ PR 9-N (예정): 다중 후보 spec 보존 + best-of-N 선택. PR 9-L/9-M 이 la
 
 ---
 
+### PR 10-FD — 분석 카드 파이프라인 구조화 뱃지 (프론트, 10-FC 2단계) ✅
+
+**완료일:** 2026-07-10
+
+> 10-FC 로 저장되는 구조화 메타(EPSS·우선순위·KEV 등)가 요약 텍스트에 문장으로만 묻혀
+> 있던 것을 뱃지로 끌어올림. 파이프라인産(pipelineVersion 있음)에만 렌더 — 기존 분석은
+> 전부 null 이라 화면 무변경(회귀 0).
+
+- **공용 `PipelineBadges`** (`components/community/PipelineBadges.tsx` 신규): 우선순위
+  (🔴즉시 대응/🟡예정 대응/⚪모니터링, 근거는 title 툴팁) · KEV(빨강) · EPSS %(≥0.5 주황
+  강조, 미만 하늘) 는 기존 Critical/RCE pill 과 같은 크기, 검증 신뢰도·공급망·"⚙ 파이프라인
+  검증" 마커(툴팁=pipelineVersion)는 한 단계 작게(보조). qualityFlags 는 dict/배열 양쪽 방어,
+  회색 배경은 반전 gotcha 피해서 `bg-surface-2`. 라이트/다크 페어링 전 뱃지 적용.
+- **3곳 삽입**: 분석 피드 카드(`AnalysisFeed`, 기존 뱃지 줄 끝 — flex-wrap 이라 모바일 안전),
+  CVE 상세 커뮤니티 분석(`CveCommunity`, 뱃지 줄 + `근거: {priorityReasoning}` 2줄 클램프),
+  공용 상세 모달(`AnalysisDetailModal` 헤더, 뱃지 + 근거 — 양쪽 화면에서 일관).
+- **정렬·필터**(`AnalysisFeed`): ViewMode 에 "우선순위순"(immediate→scheduled→monitor,
+  없는 건 뒤, EPSS→최신 타이브레이크)·"EPSS순"(높은 순, null 뒤) 추가. 필터 줄에
+  "⚙ 파이프라인 검증" 토글(pipelineVersion 있는 것만). 보기 모드 5개가 모바일에서 안 깨지게
+  pill 바 flex-wrap. 타입은 `lib/api.ts AnalysisSummary` 에 optional 9필드 추가로 전 화면 커버.
+- **검증**: `tsc --noEmit` 0. Playwright(일회성 스크립트, dev 서버 + 라우트 목킹)로
+  17케이스 ALL PASS — ① 라이브 실데이터(전부 null) 20건: 뱃지 0개·카드 기존 그대로,
+  ② 목킹(값 채움): 뱃지 7종 표시·근거 툴팁·기존(null) 카드 무영향, ③ 우선순위순/EPSS순
+  정렬 순서, ④ 파이프라인 토글 필터링, ⑤ CVE 상세 뱃지+근거. 다크 모드 스크린샷 확인.
+  주의: 로컬 dev 에서 라이브 API 직접 호출은 CORS(허용 origin=localhost:3000)로 막힘 —
+  라이브 JSON 을 curl 로 받아 라우트 목킹으로 주입해 검증.
+
+---
+
 ### PR 10-FC — 에이전트 분석 구조화 메타데이터 (백엔드: 게시 API + DB + 조회) ✅
 
 **완료일:** 2026-07-10
