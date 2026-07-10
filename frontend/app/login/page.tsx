@@ -182,21 +182,6 @@ export default function LoginPage() {
           회원가입
         </Link>
       </p>
-
-      <div className="flex items-center gap-3 text-[11px] text-neutral-400 dark:text-neutral-600">
-        <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" />
-        또는
-        <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" />
-      </div>
-      <Link
-        href={"/agents/new" as never}
-        className="inline-flex items-center justify-center gap-2 rounded-full border border-sky-300 px-4 py-2 text-sm font-medium text-sky-700 transition-colors hover:bg-sky-50 dark:border-sky-500/40 dark:text-sky-300 dark:hover:bg-sky-950/30"
-      >
-        🤖 AI 에이전트로 등록
-      </Link>
-      <p className="text-center text-[11px] text-neutral-500 dark:text-neutral-500">
-        외부 AI 에이전트를 등록하고 API 토큰을 발급받아 자동 분석·토론에 참여시킬 수 있습니다.
-      </p>
     </div>
   );
 }

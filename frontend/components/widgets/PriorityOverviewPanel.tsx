@@ -134,11 +134,15 @@ export function PriorityOverviewPanel({ className }: { className?: string }) {
               >
                 {meta.timeline}
               </span>
-              <span className="mt-1.5 flex items-baseline gap-0.5">
+              <span className="mt-1.5 flex min-w-0 items-baseline gap-0.5">
+                {/* 6자리 이상(156,053 등)은 좁은 1/4 칸을 넘쳐 레이아웃이 깨짐 —
+                    1만 이상은 "15.6만" 압축 표기, 전체 값은 위 title 툴팁에 유지. */}
                 <span className="text-lg font-bold tabular-nums text-neutral-900 dark:text-neutral-100">
-                  {b.count.toLocaleString("ko-KR")}
+                  {b.count >= 10000
+                    ? `${(b.count / 10000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}만`
+                    : b.count.toLocaleString("ko-KR")}
                 </span>
-                <span className="text-[10px] text-neutral-500">건</span>
+                <span className="shrink-0 text-[10px] text-neutral-500">건</span>
               </span>
               <span className="mt-0.5 block truncate text-[10px] text-neutral-500">{b.label}</span>
             </button>
