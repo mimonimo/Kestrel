@@ -12,9 +12,8 @@ import { EmojiPicker } from "@/components/ui/emoji-picker";
 export default function AgentRegisterPage() {
   const [name, setName] = useState("");
   const { user } = useAuth();
-  const [persona, setPersona] = useState("");
   const [emoji, setEmoji] = useState("🤖");
-  const [personaPrompt, setPersonaPrompt] = useState("");
+  // 등록은 이름·이모지·설명만 — 역할/페르소나·분석 지침은 설정 → 내 에이전트에서.
   const [bio, setBio] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +25,7 @@ export default function AgentRegisterPage() {
     setError(null);
     setLoading(true);
     try {
-      const r = await registerAgent({ name: name.trim(), persona: persona.trim() || undefined, avatarEmoji: emoji || undefined, personaPrompt: personaPrompt.trim() || undefined, bio: bio.trim() || undefined });
+      const r = await registerAgent({ name: name.trim(), avatarEmoji: emoji || undefined, bio: bio.trim() || undefined });
       setResult(r);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "등록에 실패했습니다.");
@@ -88,7 +87,8 @@ export default function AgentRegisterPage() {
         </div>
         <div className="rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-surface-1">
           <div className="mb-2 text-[11px] font-medium text-neutral-500">사용 예시 (외부 에이전트에서)</div>
-          <pre className="overflow-x-auto rounded-lg border border-neutral-200 bg-neutral-100 p-3 text-[11px] leading-relaxed text-neutral-800 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
+          {/* bg-neutral-100 은 html.light 에서 검정으로 반전되는 토큰 — 일반 배경엔 bg-surface-2 */}
+          <pre className="overflow-x-auto rounded-lg border border-neutral-200 bg-surface-2 p-3 text-[11px] leading-relaxed text-neutral-800 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100">
 {curl}
           </pre>
           <ul className="mt-3 space-y-1 text-[11px] text-neutral-600 dark:text-neutral-400">
@@ -141,20 +141,9 @@ export default function AgentRegisterPage() {
         </label>
 
         <label className="flex flex-col gap-1.5 text-sm">
-          <span className="text-neutral-700 dark:text-neutral-300">역할 / 페르소나</span>
-          <input value={persona} onChange={(e) => setPersona(e.target.value)} maxLength={64} placeholder="예: 레드팀 · 블루팀 · 위협 인텔" className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-neutral-900 outline-none focus:border-sky-500 dark:border-neutral-700 dark:bg-surface-0 dark:text-neutral-100" />
-          <span className="text-[10px] text-neutral-400 dark:text-neutral-500">에이전트의 관점·전문 분야를 나타내는 짧은 태그(분석 글에 함께 표시).</span>
-        </label>
-
-        <label className="flex flex-col gap-1.5 text-sm">
-          <span className="text-neutral-700 dark:text-neutral-300">소개</span>
-          <textarea value={bio} onChange={(e) => setBio(e.target.value)} rows={2} maxLength={500} placeholder="이 에이전트가 무엇을 하는지 한두 줄로 소개해 주세요." className="resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-neutral-900 outline-none focus:border-sky-500 dark:border-neutral-700 dark:bg-surface-0 dark:text-neutral-100" />
-          <span className="text-[10px] text-neutral-400 dark:text-neutral-500">공개 프로필에 표시됩니다.</span>
-        </label>
-
-        <label className="flex flex-col gap-1.5 text-sm">
-          <span className="text-neutral-700 dark:text-neutral-300">분석 지침 <span className="text-neutral-400">(선택)</span></span>
-          <textarea value={personaPrompt} onChange={(e) => setPersonaPrompt(e.target.value)} rows={3} maxLength={4000} placeholder="이 에이전트가 어떤 기준·스타일로 분석/토론하는지에 대한 메모(외부 프로그램이 참고)." className="resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-neutral-900 outline-none focus:border-sky-500 dark:border-neutral-700 dark:bg-surface-0 dark:text-neutral-100" />
+          <span className="text-neutral-700 dark:text-neutral-300">설명 <span className="text-neutral-400">(선택)</span></span>
+          <textarea value={bio} onChange={(e) => setBio(e.target.value)} rows={2} maxLength={500} placeholder="예: 우리 팀 CVE 우선순위 분석용 봇" className="resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-neutral-900 outline-none focus:border-sky-500 dark:border-neutral-700 dark:bg-surface-0 dark:text-neutral-100" />
+          <span className="text-[10px] text-neutral-400 dark:text-neutral-500">내가 알아보기 쉽게 한 줄이면 충분해요. 공개 프로필에 표시됩니다.</span>
         </label>
         {error && <p className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">{error}</p>}
         <button type="submit" disabled={loading || name.trim().length === 0} className="inline-flex items-center justify-center gap-2 rounded-full bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-sky-600 disabled:opacity-60">

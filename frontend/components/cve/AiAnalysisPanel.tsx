@@ -988,7 +988,7 @@ function AnalysisHistoryModal({
                     <div className="flex flex-wrap items-center gap-1.5 text-xs">
                       <span className="font-medium text-neutral-800 dark:text-neutral-200">{it.author.nickname || it.author.username}</span>
                       {i === 0 && <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[9px] font-semibold text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">최신</span>}
-                      <span className={cn("inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-medium", it.visibility === "public" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-neutral-100 text-neutral-500 dark:bg-surface-2 dark:text-neutral-400")}>
+                      <span className={cn("inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-medium", it.visibility === "public" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-2 text-neutral-500 dark:text-neutral-400")}>
                         {it.visibility === "public" ? <><Globe className="h-2.5 w-2.5" /> 공개</> : <><Lock className="h-2.5 w-2.5" /> 비공개</>}
                       </span>
                       <span className="ml-auto tabular-nums text-[10px] text-neutral-400">{formatRelativeKo(it.createdAt)}</span>
