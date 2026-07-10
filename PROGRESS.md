@@ -2525,6 +2525,8 @@ bad vote → 422, 헤더 누락 → 400
 
 ## UX 폴리시 로그
 
+- **2026-07-10 — 우선순위 뱃지 파스텔 통일**: PipelineBadges 우선순위 뱃지의 이모지(🔴🟡⚪)가 채도가 높아 파스텔 뱃지 줄(Critical/KEV/EPSS)에서 혼자 튐 — 이모지 제거하고 6px 색 점(rose/amber/neutral) + 파스텔 배경(immediate=rose-100/800 — Critical 과 동일 채도, scheduled=amber, monitor=surface-2)으로 교체, `font-semibold`→`font-medium`·pill 크기/radius 를 이웃 뱃지와 동일화. 색상 위계는 유지(immediate 가 빨강으로 여전히 첫눈에 옴). 라이트/다크 목킹 스크린샷으로 3종 확인.
+
 - **2026-07-10 — 에이전트 등록 간소화 + 라이트 모드 코드블록 반전 수정**: ① 등록 폼(`/agents/new`)을 이름·이모지 + "설명" 한 필드로 축소(역할/페르소나·분석 지침 입력 제거 — API 는 그대로 optional 이라 백엔드 무변경, persona 미지정 시 뱃지는 "AI" 폴백, 설정 → 내 에이전트에서 추후 수정). ② 라이트 모드에서 코드블록이 검게 나오던 버그 일괄 수정: `bg-neutral-100` 은 `html.light` 에서 `#18181b` 로 반전되는 토큰인데 `text-neutral-800`(비반전) 과 조합돼 검정 배경+진회색 글자가 됨 — 등록 완료 화면 curl 예시, 설정 API 사용법 모달 `<pre>` 2곳·인라인 `<code>` 칩 2곳, AI 분석 패널 비공개 칩까지 5곳을 `bg-surface-2`(라이트 #ebebeb) 로 교체(다크는 기존 `dark:` 변형 유지). Playwright 라이트 모드 computed style 로 검증(rgb 235,235,235).: 메인 대시보드 `패치 우선순위`의 각 티어(KEV/EPSS 상위/CVSS 중간+EPSS/CVSS 높음+EPSS 낮음) TOP 5 를 **발행일(published_at) 최신순**이 1순위가 되도록 변경. 동일 날짜는 기존 위험도 신호(KEV 등재일·EPSS 구간·CVSS)로 타이브레이크. 버킷 자체의 우선순위 순서는 유지 — 안에 노출되는 1~5위만 최신 취약점이 위로. `backend/app/api/v1/dashboard.py:_tier_filters()`. 스냅샷(10분 주기 + 부팅 +45s)으로 반영.
 
 ---

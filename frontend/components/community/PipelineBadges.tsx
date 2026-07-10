@@ -17,20 +17,23 @@ export const PRIORITY_RANK: Record<string, number> = {
   monitor: 2,
 };
 
+// 이모지(🔴🟡⚪) 대신 6px 색 점 — 이모지는 채도가 높아 파스텔 뱃지 줄에서 혼자 튄다.
+// pill 크기·radius·폰트는 Critical/KEV/EPSS 뱃지와 동일, 색상 위계만 유지
+// (immediate 가 여전히 빨강으로 가장 눈에 띄되 같은 파스텔 채도).
 const PRIORITY_META: Record<string, { label: string; dot: string; tone: string }> = {
   immediate: {
     label: "즉시 대응",
-    dot: "🔴",
+    dot: "bg-rose-500 dark:bg-rose-400",
     tone: "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200",
   },
   scheduled: {
     label: "예정 대응",
-    dot: "🟡",
+    dot: "bg-amber-500 dark:bg-amber-400",
     tone: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200",
   },
   monitor: {
     label: "모니터링",
-    dot: "⚪",
+    dot: "bg-neutral-400 dark:bg-neutral-500",
     tone: "bg-surface-2 text-neutral-700 dark:text-neutral-300",
   },
 };
@@ -61,10 +64,11 @@ export function PipelineBadges({ a }: { a: AnalysisSummary }) {
     <>
       {priority && (
         <span
-          className={cn("rounded-full px-2 py-0.5 font-semibold", priority.tone)}
+          className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium", priority.tone)}
           title={a.priorityReasoning || undefined}
         >
-          {priority.dot} {priority.label}
+          <span aria-hidden className={cn("h-1.5 w-1.5 shrink-0 rounded-full", priority.dot)} />
+          {priority.label}
         </span>
       )}
       {a.kevListed === true && (
