@@ -48,6 +48,14 @@ function hasFlag(flags: AnalysisSummary["qualityFlags"], name: string): boolean 
 
 const pct = (v: number, digits = 1) => `${(v * 100).toFixed(digits).replace(/\.0$/, "")}%`;
 
+/** EPSS 는 정의상 1.0 이 될 수 없음 — 반올림으로 "100%" 가 되면 오류로 보인다.
+ *  99.95 이상은 소수 2자리로 살리고 99.99 로 캡: 0.99959 → "99.96%", 0.5 → "50%". */
+const pctEpss = (v: number): string => {
+  const p = Math.min(v * 100, 99.99);
+  if (p >= 99.95) return `${p.toFixed(2)}%`;
+  return `${p.toFixed(1).replace(/\.0$/, "")}%`;
+};
+
 export function PipelineBadges({ a }: { a: AnalysisSummary }) {
   // 파이프라인産이 아니면 전체 미렌더 — 기존 분석(전부 null) 무영향.
   if (!a?.pipelineVersion) return null;
@@ -89,15 +97,15 @@ export function PipelineBadges({ a }: { a: AnalysisSummary }) {
           )}
           title="EPSS — 30일 내 익스플로잇 관측 확률"
         >
-          EPSS {pct(epss)}
+          EPSS {pctEpss(epss)}
         </span>
       )}
       {conf !== null && (
         <span
           className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[10px] text-neutral-600 dark:text-neutral-400"
-          title="파이프라인 교차검증 신뢰도"
+          title="소스 데이터(CVSS·심각도·벡터)의 상호 일관성 검증 결과 — 분석 서술의 정확성 보장이 아님"
         >
-          검증 {pct(conf, 0)}
+          일관성 {pct(conf, 0)}
         </span>
       )}
       {supplyChain && (
