@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarClock, Check, ExternalLink, Flame, Gauge, Minus, ShieldCheck, TrendingUp, X } from "lucide-react";
+import { CalendarClock, Check, ExternalLink, Flame, Gauge, ShieldCheck, TrendingUp, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AiAnalysisPanel } from "./AiAnalysisPanel";
@@ -490,20 +490,20 @@ function RemediationBanner({ vuln }: { vuln: Vulnerability }) {
         <span className="ml-auto text-[10px] font-medium opacity-70">CISA SSVC 기준</span>
       </div>
       <p className="mt-1.5 text-xs text-neutral-700 dark:text-neutral-300">{r.action}</p>
+      {/* 해당되는 SSVC 팩터만 노출 — 미해당 항목을 빗금으로 보여주면 노이즈라
+          제외하고, 전체 판정 근거는 아래 rationale 텍스트에서 확인한다. */}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        {signals.map(([label, on]) => (
-          <span
-            key={label}
-            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
-              on
-                ? "border-neutral-300 bg-white/60 text-neutral-700 dark:border-neutral-600 dark:bg-white/5 dark:text-neutral-200"
-                : "border-neutral-200 text-neutral-400 line-through dark:border-neutral-800 dark:text-neutral-600"
-            }`}
-          >
-            {on ? <Check className="h-2.5 w-2.5" /> : <Minus className="h-2.5 w-2.5" />}
-            {label}
-          </span>
-        ))}
+        {signals
+          .filter(([, on]) => on)
+          .map(([label]) => (
+            <span
+              key={label}
+              className="inline-flex items-center gap-1 rounded-full border border-neutral-300 bg-white/60 px-2 py-0.5 text-[10px] font-medium text-neutral-700 dark:border-neutral-600 dark:bg-white/5 dark:text-neutral-200"
+            >
+              <Check className="h-2.5 w-2.5" />
+              {label}
+            </span>
+          ))}
         <span className="text-[10px] text-neutral-500 dark:text-neutral-500">· {r.rationale}</span>
       </div>
     </div>
