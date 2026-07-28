@@ -638,6 +638,24 @@ async def _call_claude_cli_text(
     failed_exit = proc.returncode != 0
     failed_empty = (not failed_exit) and not stdout_text
 
+    # Anthropic 의 사이버보안 세이프가드 분류기가 프롬프트를 차단한 케이스.
+    # exit=1 로 실패하지만 원인은 버전 drift/인증이 아니라 *프롬프트 내용* 이라
+    # self-upgrade 재시도는 무의미하다(수 초 낭비 + node<22 EBADENGINE 로 어차피
+    # 실패). 바로 감지해 명확한 안내로 끊는다. opus-4-7 에서는 CVE 내용에 따라
+    # 확률적으로 발생하므로 재시도가 유효할 수 있음을 함께 안내.
+    if failed_exit and _looks_like_cyber_safeguard(stdout_text + "\n" + stderr_text):
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Claude 사이버보안 세이프가드가 이 분석 요청을 차단했습니다. "
+                "공격 코드 생성으로 분류된 것으로, 인증·설정 문제가 아닙니다. "
+                "같은 CVE라도 재시도하면 통과하는 경우가 있고, 반복 차단되면 "
+                "방어 목적 사용에 대한 예외를 신청하세요: "
+                "https://claude.com/form/cyber-use-case "
+                "(현재 모델보다 최신 모델일수록 세이프가드가 더 강해 차단이 늘 수 있습니다.)"
+            ),
+        )
+
     if (failed_exit or failed_empty) and not _retried_after_upgrade:
         prev_version = await _claude_cli_version()
         ok, msg = await _try_self_upgrade_claude_cli()
@@ -679,6 +697,19 @@ async def _call_claude_cli_text(
     # callers and broke for connectivity-test callers passing
     # force_json=False with plain-text reply ("ok").
     return stdout_text
+
+
+def _looks_like_cyber_safeguard(diag: str) -> bool:
+    """Claude CLI 가 Anthropic 사이버보안 세이프가드로 프롬프트를 거부한 케이스 감지.
+
+    메시지 예: ``API Error: <model>'s safeguards flagged this message for a
+    cybersecurity topic. ... apply for an exemption:
+    https://claude.com/form/cyber-use-case``
+    버전 drift/인증이 아니라 프롬프트 내용 문제라, self-upgrade 재시도 대상에서
+    제외해야 한다.
+    """
+    lower = (diag or "").lower()
+    return "safeguards flagged" in lower or "cyber-use-case" in lower
 
 
 def _claude_cli_auth_hint(diag: str) -> str:
@@ -833,6 +864,8 @@ def _classify_error(detail: str) -> str:
     expired vs. rate-limited vs. config-not-found etc.
     """
     lower = (detail or "").lower()
+    if "세이프가드" in lower or "safeguards flagged" in lower or "cyber-use-case" in lower:
+        return "cyber_safeguard"
     if "401" in lower or "invalid authentication" in lower or "expired" in lower:
         return "auth_expired"
     if "rate limit" in lower or "hit your limit" in lower or "usage limit" in lower:
