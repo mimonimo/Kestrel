@@ -362,6 +362,23 @@ def _normalize_item(value) -> str:
     return text
 
 
+def _is_parse_failure(exc: HTTPException) -> bool:
+    """``_parse_payload`` 가 낸 502 중 *JSON 문법/형식* 실패인지 판별.
+
+    재요청으로 회복 가능한 케이스(파싱 실패·JSON 아닌 텍스트·객체 아님)만
+    True. 빈 응답("응답이 비어 있습니다")은 인증 만료 신호라 재요청해도
+    소용없으므로 제외한다.
+    """
+    detail = str(getattr(exc, "detail", "") or "")
+    if "비어 있습니다" in detail:
+        return False
+    return (
+        "파싱 실패" in detail
+        or "JSON 대신 텍스트" in detail
+        or "JSON 객체가 아닙니다" in detail
+    )
+
+
 def _parse_payload(raw: str) -> AiAnalysis:
     """Accept JSON in many shapes: raw object, fenced markdown, or with
     trailing prose. Strict schema check after extraction."""
@@ -989,7 +1006,32 @@ async def analyze_vulnerability(
         )
         raw = await call_llm(db, system, forced, force_json=True, user_id=user_id)
 
-    return _parse_payload(raw)
+    # 파싱 실패 시 1회 재요청 — 모델이 정상 분석을 만들었는데 페이로드(exploit
+    # 코드) 안의 escape 안 된 따옴표/개행 때문에 JSON 이 깨지는 케이스. 내용
+    # 자체는 유효하므로 "엄격한 유효 JSON" 만 다시 강조해 한 번 더 시도한다.
+    # (refusal 재시도와 같은 패턴 — 실패 경로에서만 모델 호출 1회 추가.)
+    try:
+        return _parse_payload(raw)
+    except HTTPException as e:
+        if not _is_parse_failure(e):
+            raise
+        log.warning(
+            "ai_analyzer.parse_failed_retrying",
+            cve_id=vuln.cve_id,
+            detail=str(e.detail)[:200],
+        )
+        strict = (
+            "이전 응답의 JSON 이 문법 오류로 파싱에 실패했습니다. 분석 내용은 "
+            "그대로 유지하되, 이번에는 *반드시* 엄격하게 유효한 JSON 만 반환하세요.\n"
+            "  · 모든 문자열 안의 큰따옴표(\") 는 \\\" 로, 개행은 \\n 으로 escape\n"
+            "  · 백슬래시(\\) 자체는 \\\\ 로 escape\n"
+            "  · JSON 앞뒤에 어떤 텍스트·코드펜스(```)·주석도 붙이지 말 것\n"
+            "  · payload_examples/mitigations 각 항목은 dict 가 아니라 문자열\n\n"
+            + user_prompt
+        )
+        raw = await call_llm(db, system, strict, force_json=True, user_id=user_id)
+        # 두 번째 파싱 실패는 그대로 표면화 (무한 재시도 방지).
+        return _parse_payload(raw)
 
 
 # ─────────────── Follow-up question (free-form) ──────────────────────
