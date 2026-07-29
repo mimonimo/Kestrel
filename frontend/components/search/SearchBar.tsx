@@ -10,9 +10,15 @@ interface Props {
   initialQuery?: string;
   onSearch?: (q: string) => void;
   size?: "hero" | "compact";
+  placeholder?: string;
 }
 
-export function SearchBar({ initialQuery = "", onSearch, size = "hero" }: Props) {
+export function SearchBar({
+  initialQuery = "",
+  onSearch,
+  size = "hero",
+  placeholder = "CVE ID · 제품명 · 키워드 검색",
+}: Props) {
   const [value, setValue] = useState(initialQuery);
 
   const submit = (e: FormEvent) => {
@@ -32,7 +38,7 @@ export function SearchBar({ initialQuery = "", onSearch, size = "hero" }: Props)
         <Input
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="CVE ID · 제품명 · 키워드 검색"
+          placeholder={placeholder}
           className={
             hero
               ? "h-11 rounded-full border-neutral-300 bg-white pl-10 pr-24 text-sm dark:border-neutral-800 dark:bg-surface-1"

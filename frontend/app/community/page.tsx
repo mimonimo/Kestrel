@@ -4,12 +4,13 @@ import { useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Hash, Heart, Loader2, LogIn, Megaphone, MessageSquare, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Eye, Hash, Heart, Loader2, LogIn, Megaphone, MessageSquare, Plus, RefreshCw, Search, Sparkles, Trash2 } from "lucide-react";
 
 import { api, type CommunityPost, type PostListResponse } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { ErrorBox, FeedbackBoxButton } from "@/components/ui/feedback-box";
+import { SearchBar } from "@/components/search/SearchBar";
 import { NewPostModal } from "@/components/community/NewPostModal";
 import { PostModal } from "@/components/community/PostModal";
 import { CommunityNotices } from "@/components/community/CommunityNotices";
@@ -35,7 +36,19 @@ export default function CommunityPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
+  // 확정된 검색어(제목·본문 부분일치). 빈 문자열 = 전체 피드.
+  const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"feed" | "notice">("feed");
+
+  // 검색 실행 — 새 검색어면 1페이지로 리셋. 같은 결과 재조회 방지를 위해
+  // 값이 실제로 바뀔 때만 page 를 건드린다.
+  const runSearch = (q: string) => {
+    const next = q.trim();
+    setQuery((prev) => {
+      if (prev !== next) setPage(1);
+      return next;
+    });
+  };
   const [open, setOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   // null = no post open. Set to post.id when user clicks a feed row.
@@ -56,8 +69,8 @@ export default function CommunityPage() {
   };
 
   const { data, isPending, isError, refetch } = useQuery({
-    queryKey: ["community-posts", page],
-    queryFn: () => api.listPosts(page, 20),
+    queryKey: ["community-posts", page, query],
+    queryFn: () => api.listPosts(page, 20, undefined, query || undefined),
     staleTime: 10_000,
   });
 
@@ -74,10 +87,10 @@ export default function CommunityPage() {
     mutationFn: ({ id, next }: { id: number; next: boolean }) =>
       next ? api.likePost(id) : api.unlikePost(id),
     onMutate: async ({ id, next }) => {
-      await qc.cancelQueries({ queryKey: ["community-posts", page] });
-      const prev = qc.getQueryData<PostListResponse>(["community-posts", page]);
+      await qc.cancelQueries({ queryKey: ["community-posts", page, query] });
+      const prev = qc.getQueryData<PostListResponse>(["community-posts", page, query]);
       if (prev) {
-        qc.setQueryData<PostListResponse>(["community-posts", page], {
+        qc.setQueryData<PostListResponse>(["community-posts", page, query], {
           ...prev,
           items: prev.items.map((p) =>
             p.id === id
@@ -95,7 +108,7 @@ export default function CommunityPage() {
       return { prev };
     },
     onError: (_e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(["community-posts", page], ctx.prev);
+      if (ctx?.prev) qc.setQueryData(["community-posts", page, query], ctx.prev);
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["community-posts"] }),
   });
@@ -160,6 +173,30 @@ export default function CommunityPage() {
 
       {tab === "feed" && (
       <>
+      {/* 제목·본문 검색 — 대시보드 CVE 검색과 동일한 SearchBar 재사용(Enter 제출) */}
+      <div className="mb-5">
+        <SearchBar
+          size="compact"
+          initialQuery={query}
+          onSearch={runSearch}
+          placeholder="제목·본문 검색"
+        />
+        {query && (
+          <div className="mt-2 flex items-center justify-between px-1 text-xs text-neutral-500 dark:text-neutral-500">
+            <span>
+              &lsquo;<span className="font-medium text-neutral-700 dark:text-neutral-300">{query}</span>&rsquo; 검색
+              {data ? ` — ${data.total}건` : ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => runSearch("")}
+              className="font-medium text-neutral-600 transition-colors hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
+            >
+              검색 지우기
+            </button>
+          </div>
+        )}
+      </div>
       {isPending ? (
         <ul className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -187,6 +224,23 @@ export default function CommunityPage() {
             </FeedbackBoxButton>
           }
         />
+      ) : data && data.items.length === 0 && query ? (
+        // 검색 결과 없음 — 온보딩 빈 상태와 구분해 검색어를 명시하고 초기화 제공.
+        <div className="rounded-xl border border-neutral-200 bg-white px-6 py-12 text-center dark:border-neutral-800 dark:bg-surface-1">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-500/10 ring-1 ring-neutral-400/30">
+            <Search className="h-6 w-6 text-neutral-600 dark:text-neutral-300" />
+          </div>
+          <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+            검색 결과가 없습니다
+          </h3>
+          <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
+            &lsquo;{query}&rsquo; 에 해당하는 글을 찾지 못했어요. 다른 키워드로 검색해 보세요.
+          </p>
+          <Button onClick={() => runSearch("")} variant="outline" className="mt-5 gap-2">
+            <RefreshCw className="h-4 w-4" />
+            전체 글 보기
+          </Button>
+        </div>
       ) : data && data.items.length === 0 ? (
         <div className="rounded-xl border border-neutral-200 bg-white px-6 py-12 text-center dark:border-neutral-800 dark:bg-surface-1">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-sky-500/15 ring-1 ring-sky-400/30">

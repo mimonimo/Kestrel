@@ -15,7 +15,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import Field
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user, get_optional_user
@@ -177,6 +177,7 @@ async def list_posts(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     vulnerability_id: UUID | None = Query(default=None, alias="vulnerabilityId"),
+    q: str | None = Query(default=None, max_length=100),
     x_client_id: str | None = Header(default=None, alias="X-Client-Id"),
     me: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
@@ -186,6 +187,17 @@ async def list_posts(
     if vulnerability_id is not None:
         base = base.where(Post.vulnerability_id == vulnerability_id)
         count_base = count_base.where(Post.vulnerability_id == vulnerability_id)
+    # 제목·본문 부분일치 검색 (q). ILIKE 와일드카드(% _ \)는 리터럴로 이스케이프
+    # 해서 사용자가 '%' 를 쳐도 그 문자 자체를 찾도록 한다. 공백만/빈 값은 무시.
+    if q and q.strip():
+        needle = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{needle}%"
+        search_cond = or_(
+            Post.title.ilike(pattern, escape="\\"),
+            Post.content.ilike(pattern, escape="\\"),
+        )
+        base = base.where(search_cond)
+        count_base = count_base.where(search_cond)
 
     total = (await db.execute(count_base)).scalar_one()
     rows = (

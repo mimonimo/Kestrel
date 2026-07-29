@@ -486,9 +486,10 @@ export const api = {
       headers: clientHeaders(),
     }),
 
-  listPosts: (page = 1, pageSize = 20, vulnerabilityId?: string) => {
+  listPosts: (page = 1, pageSize = 20, vulnerabilityId?: string, q?: string) => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (vulnerabilityId) params.set("vulnerabilityId", vulnerabilityId);
+    if (q && q.trim()) params.set("q", q.trim());
     return request<PostListResponse>(`/community/posts?${params.toString()}`, {
       headers: clientHeaders(),
     });
