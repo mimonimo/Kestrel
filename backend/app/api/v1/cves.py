@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from datetime import datetime
-from sqlalchemy import or_, select, tuple_
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
@@ -17,6 +17,17 @@ from app.schemas.vulnerability import CamelModel, VulnerabilityDetail, Vulnerabi
 from app.services.ai_analyzer import analyze_vulnerability
 
 router = APIRouter(prefix="/cves", tags=["cves"])
+
+# 연관 CVE 후보 id 집합 상한(브랜치별). 흔한 벤더/제품 pair 가 수만 건을
+# 매칭해도 후보를 이 수로 제한해 2단계 조회의 IN 리스트·정렬 비용을 유계로
+# 만든다. 최종적으로 상위 8건만 노출하므로 랭킹 품질에 실질 영향 없음.
+_RELATED_CANDIDATE_CAP = 3000
+
+# 일부 CVE 는 영향 제품 (vendor,product) pair 를 수천 개 나열한다(데이터 품질
+# 이슈; 예: 5,400개). `tuple_(...).in_(pairs)` 의 IN 절이 그만큼 커져 무거워지고
+# 복합 인덱스도 pair 당 개별 프로브로 되레 악화된다. pair 를 이 수로 제한해
+# IN 절을 유계로 유지 — 연관 추천은 상위 8건만 노출하므로 실질 영향 없음.
+_RELATED_PAIR_CAP = 300
 
 
 @router.get("", response_model=list[VulnerabilityListItem], response_model_by_alias=True)
@@ -152,39 +163,55 @@ async def related_cves(cve_id: str, db: AsyncSession = Depends(get_db)) -> list[
     vuln = await db.scalar(select(Vulnerability).where(Vulnerability.cve_id == cve_id))
     if vuln is None:
         return []
-    prod_pairs = list({(p.vendor, p.product) for p in vuln.affected_products})
+    # self_prods 는 스코어링용(전체 제품), query_pairs 는 IN 절 크기를 유계로
+    # 만들기 위해 상한을 씌운 부분집합 — 캡을 넘는 제품도 벤더 매칭으로는 여전히
+    # 후보에 잡히므로 연관 품질 손실은 미미하다.
+    self_prods = {(p.vendor, p.product) for p in vuln.affected_products}
+    query_pairs = list(self_prods)[:_RELATED_PAIR_CAP]
     type_ids = [t.id for t in vuln.types]
-    self_prods = set(prod_pairs)
     self_vendors = {p.vendor for p in vuln.affected_products if p.vendor}
     self_types = {t.name for t in vuln.types}
     self_score = float(vuln.cvss_score) if vuln.cvss_score is not None else None
 
-    conds = []
-    if prod_pairs:
-        conds.append(
-            Vulnerability.id.in_(
-                select(AffectedProduct.vulnerability_id).where(
-                    tuple_(AffectedProduct.vendor, AffectedProduct.product).in_(prod_pairs)
+    # 후보 vuln-id 집합을 먼저 구한 뒤(정렬·LIMIT 없이) 그 작은 집합만 최신순
+    # 정렬한다. 예전엔 `id IN (semi-join) ORDER BY published_at LIMIT 120` 이
+    # 플래너에서 "published_at 인덱스를 최신순으로 훑으며 매 행 affected_products
+    # 프로브" 계획으로 풀려, cisco 처럼 흔한 벤더에선 7만+ 행을 스캔해 20초
+    # statement timeout 을 넘겼다(→ QueryCanceledError → AppErrors 알람). 후보
+    # 집합을 먼저 만들면(예: cisco ≈ 1,254건) 정렬 대상이 작아 <1s 로 떨어진다.
+    # 병적으로 흔한 pair(수만 건 매칭)는 CAP 으로 상한 — 어차피 상위 8건만 노출.
+    cand_ids: set = set()
+    if query_pairs:
+        cand_ids.update(
+            (
+                await db.execute(
+                    select(AffectedProduct.vulnerability_id)
+                    .where(tuple_(AffectedProduct.vendor, AffectedProduct.product).in_(query_pairs))
+                    .distinct()
+                    .limit(_RELATED_CANDIDATE_CAP)
                 )
-            )
+            ).scalars().all()
         )
     if type_ids:
-        conds.append(
-            Vulnerability.id.in_(
-                select(vulnerability_type_map.c.vulnerability_id).where(
-                    vulnerability_type_map.c.type_id.in_(type_ids)
+        cand_ids.update(
+            (
+                await db.execute(
+                    select(vulnerability_type_map.c.vulnerability_id)
+                    .where(vulnerability_type_map.c.type_id.in_(type_ids))
+                    .distinct()
+                    .limit(_RELATED_CANDIDATE_CAP)
                 )
-            )
+            ).scalars().all()
         )
-    if not conds:
+    cand_ids.discard(vuln.id)
+    if not cand_ids:
         return []
 
-    # 후보를 넉넉히(최신순) 모은 뒤 Python 에서 다중 신호로 가중 랭킹한다.
-    # 단순 "같은 유형(예: Auth)" 폴백은 너무 느슨해 — 제품 > 같은 벤더 >
-    # 유형 겹침 수 > KEV > CVSS 근접 > 최신 순으로 점수화해 상위 8건만 노출.
+    # 후보만 최신순으로 정렬해 상위 120건 → Python 에서 다중 신호로 가중 랭킹.
+    # (제품 > 같은 벤더 > 유형 겹침 수 > KEV > CVSS 근접 > 최신 순, 상위 8건 노출.)
     stmt = (
         select(Vulnerability)
-        .where(Vulnerability.id != vuln.id, or_(*conds))
+        .where(Vulnerability.id.in_(list(cand_ids)))
         .order_by(Vulnerability.published_at.desc().nulls_last())
         .limit(120)
     )
