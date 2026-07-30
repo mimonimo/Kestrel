@@ -32,7 +32,8 @@ Kestrel 은 취약점(CVE) 인텔리전스 플랫폼입니다. 여러 공개 소
 
 > 이 README 는 **현재 운영 중인 서비스**(`www.kestrel.forum`) 기준입니다. 전체 API 엔드포인트의
 > 단일 진실 공급원은 라이브 OpenAPI 스키마입니다 — [`/openapi.json`](https://www.kestrel.forum/openapi.json)
-> (Swagger UI: [`/docs`](https://www.kestrel.forum/docs)).
+> (Swagger UI: [`/docs`](https://www.kestrel.forum/docs)). 아키텍처 다이어그램 + 엔드포인트
+> 상세표는 [`docs/architecture.md`](./docs/architecture.md) 참고.
 
 <br/>
 
