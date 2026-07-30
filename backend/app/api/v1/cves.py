@@ -1,10 +1,12 @@
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query
 from datetime import datetime
 from sqlalchemy import func, select, text, tuple_
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
 from app.core.database import get_db
+from app.core.logging import get_logger
 from app.models import (
     AffectedProduct,
     AnalysisResult,
@@ -18,6 +20,7 @@ from app.services.ai_analyzer import analyze_vulnerability
 from app.services.notifications import notify_author_subscribers
 
 router = APIRouter(prefix="/cves", tags=["cves"])
+log = get_logger(__name__)
 
 # 연관 CVE 후보 id 집합 상한(브랜치별). 흔한 벤더/제품 pair 가 수만 건을
 # 매칭해도 후보를 이 수로 제한해 2단계 조회의 IN 리스트·정렬 비용을 유계로
@@ -160,7 +163,27 @@ def _prod_label(vendor: str | None, product: str | None) -> str:
     response_model_by_alias=True,
 )
 async def related_cves(cve_id: str, db: AsyncSession = Depends(get_db)) -> list[RelatedItem]:
-    """같은 제품 또는 같은 약점(CWE 유형)을 공유하는 다른 CVE 추천 — 분석 맥락용."""
+    """같은 제품 또는 같은 약점(CWE 유형)을 공유하는 다른 CVE 추천 — 분석 맥락용.
+
+    연관 CVE 패널은 분석 부가 맥락이라 코어 흐름이 아니다. 배포 직후 콜드 윈도우
+    (asyncpg 커넥션·PG 버퍼 콜드 + 스케줄러 부팅잡 동시 부하)처럼 일시적으로
+    ``get_db`` 의 20s ``statement_timeout`` 을 넘겨 ``QueryCanceledError`` 로 잘리면,
+    500(→ AppErrors 알람) 대신 빈 목록으로 degrade 한다. 중단된 트랜잭션은 직접
+    롤백해 커넥션을 깨끗이 풀로 반환한다(안 하면 finally 의 RESET 이 실패한다)."""
+    try:
+        return await _related_cves_impl(cve_id, db)
+    except DBAPIError as e:
+        # SQLSTATE 57014 = query_canceled (statement_timeout 초과). asyncpg 예외는
+        # SQLAlchemy 어댑터 shim(orig) 으로 감싸여 isinstance 가 안 먹으므로 안정적인
+        # sqlstate 코드로 판별한다(실측: orig.sqlstate == "57014").
+        if getattr(e.orig, "sqlstate", None) == "57014":
+            await db.rollback()
+            log.warning("related_cves.statement_timeout", cve_id=cve_id)
+            return []
+        raise
+
+
+async def _related_cves_impl(cve_id: str, db: AsyncSession) -> list[RelatedItem]:
     vuln = await db.scalar(select(Vulnerability).where(Vulnerability.cve_id == cve_id))
     if vuln is None:
         return []
