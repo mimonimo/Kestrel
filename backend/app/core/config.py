@@ -83,24 +83,6 @@ class Settings(BaseSettings):
     http_max_retries: int = 5
     http_base_backoff: float = 2.0
 
-    # Sandbox (in-app vulnerability lab containers)
-    sandbox_network: str = "kestrel_sandbox_net"
-    sandbox_ttl_seconds: int = 1800  # 30 minutes; auto-reaped past this
-    sandbox_memory_mb: int = 256
-    sandbox_cpus: float = 0.5
-    sandbox_pids_limit: int = 128
-    sandbox_max_concurrent: int = 8
-    # ``compose`` lab mode launches sibling stacks via the host docker daemon
-    # (docker-out-of-docker). The compose file the daemon reads must live at
-    # a path the *host* can see, which is rarely the same as the path inside
-    # the backend container. ``vulhub_repo_path`` is where we git clone /
-    # update the vulhub tree (inside the backend container), and
-    # ``vulhub_host_path`` is the equivalent absolute path on the host that
-    # we pass to ``docker compose -f``. Set them to the same value and bind
-    # mount accordingly in docker-compose.yml.
-    vulhub_repo_path: str = "/data/vulhub"
-    vulhub_host_path: str = "/data/vulhub"
-    vulhub_repo_remote: str = "https://github.com/vulhub/vulhub.git"
     # ---- MITRE cvelistV5 bulk source (PR 10-AF) ---------------------
     # The official CVE Program canonical store — every published CVE as
     # one JSON file under cves/{year}/{thousand}xxx/. Cloned once,
@@ -109,48 +91,6 @@ class Settings(BaseSettings):
     mitre_repo_path: str = "/data/mitre_cvelist"
     mitre_repo_remote: str = "https://github.com/CVEProject/cvelistV5.git"
     mitre_interval_seconds: int = 1800  # 30분 — git pull delta 라 가벼움
-    sandbox_compose_project_prefix: str = "kestrel-sandbox"
-    # ---- Sandbox isolation hardening (PR9-C, opt-in) -----------------
-    # When ``sandbox_harden`` is true, image-mode containers run with
-    # ``read_only=True`` and compose stacks are launched through an
-    # auto-generated override file that adds the same posture to every
-    # service. Both modes also pass ``runtime`` and seccomp through when
-    # set. All defaults below preserve the pre-9-C behavior.
-    sandbox_harden: bool = False
-    # e.g. "runsc" when gVisor is installed daemon-side. ``None`` falls
-    # through to the daemon's default runtime (runc).
-    sandbox_runtime: str | None = None
-    # Absolute path to a docker seccomp profile JSON readable by both the
-    # backend container *and* the host docker daemon. Empty/None means
-    # use the daemon's default profile.
-    sandbox_seccomp_path: str | None = None
-    # Where the per-session compose override files are written. Defaults
-    # to a subdirectory of the vulhub repo so the existing bind mount makes
-    # the file visible to both the backend container and the host docker
-    # daemon at the same path. Override only if you know what you're doing.
-    sandbox_override_dir: str = ""  # empty → resolved to <vulhub_repo_path>/.kestrel-overrides
-
-    # ---- AI lab synthesizer (PR9-D) ----------------------------------
-    # The synthesizer asks the configured LLM to produce a CVE-specific
-    # reproducer (Dockerfile + app code + injection point + success
-    # indicator), builds it into a docker image, runs it once to verify
-    # the synthesized payload actually triggers, and only on success
-    # caches the mapping. All defaults below keep the feature opt-in.
-    sandbox_syn_image_prefix: str = "kestrel-syn"
-    sandbox_syn_build_dir: str = ""  # empty → /tmp/kestrel-syn-builds
-    sandbox_syn_build_timeout_seconds: int = 240
-    sandbox_syn_verify_timeout_seconds: int = 60
-    sandbox_syn_max_attempts: int = 1
-    # ---- Synthesized image GC (PR9-F) --------------------------------
-    # Each AI-synthesized image is ~150-400MB (slim base + python/node
-    # runtime). On a multi-week deployment the cache grows unbounded
-    # otherwise. The GC runs opportunistically at every synthesize() call
-    # and is also exposed via POST /sandbox/synthesize/gc for manual
-    # cleanup. Eviction is LRU on (last_used_at NULLS FIRST, created_at)
-    # and skips images currently referenced by running containers.
-    sandbox_syn_image_max_total_mb: int = 4096  # ~4GB ceiling
-    sandbox_syn_image_max_count: int = 50
-    sandbox_syn_image_max_age_days: int = 30
 
     # Observability (모두 옵셔널 — 미설정 시 코드 경로 자체를 건너뜀)
     sentry_dsn: str | None = None

@@ -6,7 +6,7 @@ import { AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Shared "boxed message" component used by every error/notice surface
-// across the app — sandbox panel, AI analysis panel, list-states, etc.
+// across the app — AI analysis panel, list-states, etc.
 // Keeping the shape in one place lets all panels render the same
 // border/icon/title/body/actions layout, so users see consistent
 // hierarchy regardless of which feature failed.

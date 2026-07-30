@@ -32,8 +32,7 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
-    // FastAPI 422 detail can be an object — sandbox uses
-    // `{ code, canSynthesize, message }` to drive the consent flow.
+    // FastAPI 오류 detail — 라우트에 따라 문자열 또는 객체.
     public detail?: unknown,
   ) {
     super(message);
@@ -79,70 +78,6 @@ function clientHeaders(): Record<string, string> {
 // `event:` + `data:` line pairs, dispatches each frame as it arrives. Throws
 // on HTTP error before the stream opens; once we're in the stream, errors are
 // surfaced as an `error` event from the server (then the stream closes).
-async function streamSse<E>(
-  path: string,
-  body: unknown,
-  onEvent: (ev: E) => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-    body: JSON.stringify(body),
-    signal,
-    cache: "no-store",
-  });
-  if (!res.ok || !res.body) {
-    let message = `SSE ${path} failed: ${res.status}`;
-    try {
-      const text = await res.text();
-      if (text) message = text.slice(0, 400);
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(res.status, message);
-  }
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    // SSE frames are separated by a blank line. Process all complete frames
-    // in the buffer, leave the trailing partial for the next read.
-    let sep = buf.indexOf("\n\n");
-    while (sep !== -1) {
-      const frame = buf.slice(0, sep);
-      buf = buf.slice(sep + 2);
-      const ev = parseSseFrame(frame);
-      if (ev) onEvent(ev as E);
-      sep = buf.indexOf("\n\n");
-    }
-  }
-}
-
-function parseSseFrame(frame: string): { event: string; data: unknown } | null {
-  let event = "message";
-  const dataLines: string[] = [];
-  for (const raw of frame.split("\n")) {
-    const line = raw.replace(/\r$/, "");
-    if (!line || line.startsWith(":")) continue;
-    const idx = line.indexOf(":");
-    const field = idx === -1 ? line : line.slice(0, idx);
-    const value = idx === -1 ? "" : line.slice(idx + 1).replace(/^ /, "");
-    if (field === "event") event = value;
-    else if (field === "data") dataLines.push(value);
-  }
-  if (dataLines.length === 0) return null;
-  const dataStr = dataLines.join("\n");
-  try {
-    return { event, data: JSON.parse(dataStr) };
-  } catch {
-    return { event, data: dataStr };
-  }
-}
 
 export interface BookmarkListResponse {
   items: { cveId: string }[];
@@ -720,31 +655,6 @@ export const api = {
       body: JSON.stringify({ cveIds }),
     }),
 
-  startSandbox: (body: {
-    cveId: string;
-    labKind?: string;
-    attemptSynthesis?: boolean;
-    mappingId?: number;
-  }) =>
-    request<SandboxSession>(`/sandbox/sessions`, {
-      method: "POST",
-      headers: clientHeaders(),
-      body: JSON.stringify(body),
-    }),
-  synthesizeSandbox: (body: { cveId: string; forceRegenerate?: boolean }) =>
-    request<SynthesizeResponse>(`/sandbox/synthesize`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  streamSynthesizeSandbox: (
-    body: { cveId: string; forceRegenerate?: boolean },
-    onEvent: (ev: SynthesizeStreamEvent) => void,
-    signal?: AbortSignal,
-  ) => streamSse(`/sandbox/synthesize/stream`, body, onEvent, signal),
-  getSynthesizerCache: () =>
-    request<SynthesizeCacheReport>(`/sandbox/synthesize/cache`),
-  getLabKindStats: () =>
-    request<LabKindStatsReport>(`/sandbox/lab-kind-stats`),
   getDashboardInsights: (opts?: {
     days?: number;
     vendorLimit?: number;
@@ -807,66 +717,6 @@ export const api = {
         limit,
       }),
     }),
-  getSynthCandidates: (cveId: string) =>
-    request<SynthCandidatesResponse>(
-      `/sandbox/cves/${encodeURIComponent(cveId)}/synth-candidates`,
-    ),
-  resetSynthCooldown: (cveId: string) =>
-    request<void>(
-      `/sandbox/cves/${encodeURIComponent(cveId)}/synth-cooldown/reset`,
-      { method: "POST" },
-    ),
-  resumeSynthVerify: (cveId: string) =>
-    request<SynthesizeResponse>(
-      `/sandbox/cves/${encodeURIComponent(cveId)}/synth-resume-verify`,
-      { method: "POST" },
-    ),
-  triggerSynthesizerGc: (
-    body?: {
-      targetTotalMb?: number;
-      targetMaxCount?: number;
-      targetMaxAgeDays?: number;
-    },
-  ) =>
-    request<SynthesizeGcResponse>(`/sandbox/synthesize/gc`, {
-      method: "POST",
-      body: JSON.stringify(body ?? {}),
-    }),
-  getSandbox: (sessionId: string) =>
-    request<SandboxSession>(`/sandbox/sessions/${encodeURIComponent(sessionId)}`, {
-      headers: clientHeaders(),
-    }),
-  stopSandbox: (sessionId: string) =>
-    request<void>(`/sandbox/sessions/${encodeURIComponent(sessionId)}`, {
-      method: "DELETE",
-    }),
-  listSandboxSessions: (opts?: { includeStopped?: boolean; limit?: number }) => {
-    const qs = new URLSearchParams();
-    if (opts?.includeStopped) qs.set("include_stopped", "true");
-    if (opts?.limit) qs.set("limit", String(opts.limit));
-    const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    return request<SandboxSessionListResponse>(`/sandbox/sessions${suffix}`);
-  },
-  reapSandboxSessions: () =>
-    request<{ reaped: number }>(`/sandbox/sessions/reap`, { method: "POST" }),
-  syncVulhub: () =>
-    request<VulhubSyncResponse>(`/sandbox/vulhub/sync`, { method: "POST" }),
-  execSandbox: (
-    sessionId: string,
-    body: { genericPayload?: string; forceRegenerate?: boolean },
-  ) =>
-    request<SandboxExecResponse>(
-      `/sandbox/sessions/${encodeURIComponent(sessionId)}/exec`,
-      { method: "POST", headers: clientHeaders(), body: JSON.stringify(body) },
-    ),
-  submitLabFeedback: (
-    sessionId: string,
-    body: { vote: "up" | "down"; note?: string | null },
-  ) =>
-    request<LabFeedbackResponse>(
-      `/sandbox/sessions/${encodeURIComponent(sessionId)}/feedback`,
-      { method: "POST", headers: clientHeaders(), body: JSON.stringify(body) },
-    ),
 };
 
 export interface AiCredential {
@@ -954,107 +804,6 @@ export interface CompareResponse {
   perCveNotes: ComparePerCveNote[];
 }
 
-export type SandboxStatus =
-  | "pending"
-  | "running"
-  | "stopped"
-  | "expired"
-  | "failed";
-
-export type LabSourceKind = "vulhub" | "generic" | "synthesized";
-
-export interface InjectionPoint {
-  name: string;
-  method: string;
-  path: string;
-  parameter: string;
-  location: string;
-  responseKind: string;
-  notes: string;
-}
-
-export interface LabInfo {
-  kind: string;
-  description: string;
-  targetPath: string;
-  injectionPoints: InjectionPoint[];
-  // Empty for vulhub / generic labs; populated by the synthesizer with
-  // a one-line summary (base image + injection shape).
-  digest: string;
-  // Per-mapping vote tally — only meaningful for synthesized labs.
-  feedbackUp: number;
-  feedbackDown: number;
-  // The current client's previous vote on this mapping. null when
-  // never voted or when no client header was sent.
-  myVote: "up" | "down" | null;
-  // True when feedback ratio would currently cause the resolver to
-  // refuse this mapping. UI uses this to flag a session whose lab was
-  // voted down after starting.
-  degraded: boolean;
-  // Best-of-N (PR 9-S/9-T): how many synthesized candidates exist for
-  // this CVE and which rank the running mapping holds. Both 0 for
-  // vulhub / generic labs (no candidate axis).
-  candidateCount: number;
-  candidateRank: number;
-}
-
-export interface SandboxLastRun {
-  adapted: AdaptedPayload;
-  exchange: SandboxExchange;
-  verdict: SandboxVerdict;
-  ranAt: string;
-}
-
-export interface SandboxSession {
-  id: string;
-  vulnerabilityId: string | null;
-  labKind: string;
-  labSource: LabSourceKind;
-  verified: boolean;
-  containerName: string | null;
-  targetUrl: string | null;
-  status: SandboxStatus;
-  error: string | null;
-  lastRun: SandboxLastRun | null;
-  createdAt: string;
-  expiresAt: string | null;
-  lab: LabInfo | null;
-  // PR 9-U manual pivot — id of the cve_lab_mappings row currently
-  // backing this session. UI marks the matching candidate as "사용중"
-  // in the pivot list. null when the resolver couldn't map at GET time.
-  mappingId: number | null;
-}
-
-// Settings-page lightweight session view (no LabInfo) — see backend
-// ``SandboxSessionSummary``. cve_id is pre-resolved so the UI can
-// deep-link without an extra fetch.
-export interface SandboxSessionSummary {
-  id: string;
-  cveId: string | null;
-  labKind: string;
-  labSource: LabSourceKind;
-  status: SandboxStatus;
-  containerName: string | null;
-  targetUrl: string | null;
-  createdAt: string;
-  expiresAt: string | null;
-  error: string | null;
-}
-
-export interface SandboxSessionListResponse {
-  items: SandboxSessionSummary[];
-  runningCount: number;
-  total: number;
-}
-
-export interface VulhubSyncResponse {
-  foldersScanned: number;
-  candidates: number;
-  upserted: number;
-  skipped: number;
-  errors: string[];
-}
-
 export interface VersionReport {
   gitCommit: string;
   gitCommitShort: string;
@@ -1136,144 +885,6 @@ export interface MitreBackfillResponse {
   queued: boolean;
   mode: string;
   detail: string;
-}
-
-export interface AdaptedPayload {
-  method: string;
-  path: string;
-  parameter: string;
-  location: string;
-  payload: string;
-  successIndicator: string;
-  rationale: string;
-  notes: string;
-  fromCache: boolean;
-}
-
-export interface SandboxExchange {
-  url: string;
-  method: string;
-  statusCode: number;
-  responseHeaders: Record<string, string>;
-  body: string;
-  bodyTruncated: boolean;
-}
-
-export interface SandboxVerdict {
-  success: boolean;
-  confidence: string;
-  summary: string;
-  evidence: string;
-  nextStep: string;
-  heuristicSignal: string;
-}
-
-export interface SandboxExecResponse {
-  session: SandboxSession;
-  adapted: AdaptedPayload;
-  exchange: SandboxExchange;
-  verdict: SandboxVerdict;
-}
-
-export interface SynthesizeResponse {
-  cveId: string;
-  imageTag: string;
-  verified: boolean;
-  mappingId: number | null;
-  attempts: number;
-  error: string | null;
-  spec: Record<string, unknown> | null;
-  payload: Record<string, unknown> | null;
-  buildLogTail: string[];
-  responseStatus: number | null;
-  responseBodyPreview: string | null;
-}
-
-// Phases emitted by /sandbox/synthesize/stream — UI maps to friendly labels.
-// Keep in sync with synthesizer.synthesize emit() call sites.
-export type SynthesizePhase =
-  | "start"
-  | "cached_hit"
-  | "cooldown"
-  | "call_llm"
-  | "parsed"
-  | "build_started"
-  | "build_done"
-  | "lab_started"
-  | "verifying"
-  | "verify_failed"
-  | "verify_ok"
-  | "cached"
-  | "failed";
-
-export interface SynthesizeStepEvent {
-  event: "step";
-  data: {
-    phase: SynthesizePhase;
-    message: string;
-    payload: Record<string, unknown> | null;
-  };
-}
-
-export interface SynthesizeDoneEvent {
-  event: "done";
-  data: SynthesizeResponse;
-}
-
-export interface SynthesizeErrorEvent {
-  event: "error";
-  data: { message: string };
-}
-
-export type SynthesizeStreamEvent =
-  | SynthesizeStepEvent
-  | SynthesizeDoneEvent
-  | SynthesizeErrorEvent;
-
-export interface SynthesizeCacheEntry {
-  cveId: string;
-  imageTag: string;
-  labKind: string;
-  sizeMb: number;
-  inUse: boolean;
-  imagePresent: boolean;
-  lastUsedAt: string | null;
-  lastVerifiedAt: string | null;
-  createdAt: string;
-  ageDays: number;
-}
-
-export interface SynthesizeCacheReport {
-  count: number;
-  totalMb: number;
-  inUseCount: number;
-  missingImageCount: number;
-  oldestLastUsedAt: string | null;
-  maxTotalMb: number;
-  maxCount: number;
-  maxAgeDays: number;
-  entries: SynthesizeCacheEntry[];
-}
-
-export interface EvictedImage {
-  cveId: string;
-  imageTag: string;
-  sizeMb: number;
-  reason: "age" | "count" | "total_size" | "image_missing" | string;
-}
-
-export interface LabKindStatsBucket {
-  source: string;
-  labKind: string;
-  count: number;
-  verifiedCount: number;
-}
-
-export interface LabKindStatsReport {
-  total: number;
-  verified: number;
-  bySource: LabKindStatsBucket[];
-  byKind: LabKindStatsBucket[];
 }
 
 export interface FacetBucket {
@@ -1381,56 +992,6 @@ export interface SearchFacetsResponse {
   domains: FacetBucket[];
   earliestPublishedAt: string | null;
   latestPublishedAt: string | null;
-}
-
-export interface SynthCandidate {
-  mappingId: number;
-  rank: number;
-  labKind: string;
-  digest: string;
-  verified: boolean;
-  feedbackUp: number;
-  feedbackDown: number;
-  degraded: boolean;
-  lastVerifiedAt: string | null;
-  createdAt: string | null;
-  isPlaceholder: boolean;
-}
-
-export interface SynthCandidatesResponse {
-  cveId: string;
-  candidates: SynthCandidate[];
-}
-
-export interface SynthesizeGcResponse {
-  scanned: number;
-  evicted: EvictedImage[];
-  freedMb: number;
-  retainedCount: number;
-  retainedTotalMb: number;
-  skippedInUse: string[];
-}
-
-export interface NoLabDetail {
-  code: "no_lab" | "synthesis_failed" | "lab_degraded";
-  canSynthesize?: boolean;
-  feedbackUp?: number;
-  feedbackDown?: number;
-  message: string;
-}
-
-export function isNoLabDetail(detail: unknown): detail is NoLabDetail {
-  if (!detail || typeof detail !== "object") return false;
-  const code = (detail as { code?: unknown }).code;
-  return code === "no_lab" || code === "synthesis_failed" || code === "lab_degraded";
-}
-
-export interface LabFeedbackResponse {
-  mappingId: number;
-  feedbackUp: number;
-  feedbackDown: number;
-  myVote: "up" | "down" | null;
-  degraded: boolean;
 }
 
 export interface CommunityPost {
@@ -1684,7 +1245,6 @@ export async function getAgentActivityFacets(
 ): Promise<ActivityFacets> {
   return request(`/agents/${encodeURIComponent(id)}/activity-facets?kind=${kind}`);
 }
-
 
 export interface UserProfile {
   username: string;

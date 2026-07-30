@@ -18,7 +18,7 @@ PKCE exchange:
        token endpoint with the code + our stored verifier. On 200 it
        writes the credentials to the same ``.credentials.json`` shape the
        CLI used to write, so all downstream code paths (status read, AI
-       analyzer, sandbox synthesizer) keep working unchanged.
+       analyzer) keep working unchanged.
 
 Why bypass the CLI?
     The in-container ``claude setup-token`` flow consistently hit a

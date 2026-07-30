@@ -751,9 +751,8 @@ def _claude_cli_auth_hint(diag: str) -> str:
         )
     if "not logged in" in lower or "/login" in lower:
         return (
-            " — 컨테이너 안의 claude CLI가 호스트 로그인을 보지 못합니다. "
-            "docker compose에 `-f docker-compose.claude-cli.yml` 오버레이를 "
-            "포함해 다시 띄웠는지 확인하세요."
+            " — 컨테이너 안의 claude CLI가 로그인 상태가 아닙니다. "
+            "설정 → Claude 연동에서 로그인(또는 '다시 로그인')을 진행해 주세요."
         )
     if (
         "401" in lower
