@@ -11,6 +11,7 @@ import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { ErrorBox, FeedbackBoxButton } from "@/components/ui/feedback-box";
 import { SearchBar } from "@/components/search/SearchBar";
+import { SubscribeButton } from "@/components/subscriptions/SubscribeButton";
 import { NewPostModal } from "@/components/community/NewPostModal";
 import { PostModal } from "@/components/community/PostModal";
 import { CommunityNotices } from "@/components/community/CommunityNotices";
@@ -276,23 +277,27 @@ export default function CommunityPage() {
                 </span>
 
                 <div className="min-w-0 flex-1">
+                  {/* 작성자 행 — 글-열기 버튼과 분리(버튼 중첩 방지)해 구독 버튼을 얹는다 */}
+                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
+                    <span className="font-semibold text-neutral-900 dark:text-neutral-100">
+                      {p.authorName}
+                    </span>
+                    <span className="text-neutral-400 dark:text-neutral-600">·</span>
+                    <span className="tabular-nums text-xs text-neutral-500 dark:text-neutral-500">
+                      {formatRelativeKo(p.createdAt)}
+                    </span>
+                    {!p.isOwner && (
+                      <SubscribeButton username={p.authorUsername} className="ml-1" />
+                    )}
+                  </div>
                   {/* 본문 — 클릭 시 상세 모달 */}
                   <button
                     type="button"
                     onClick={() => setOpenPostId(p.id)}
-                    className="block w-full text-left"
+                    className="mt-1 block w-full text-left"
                   >
-                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
-                      <span className="font-semibold text-neutral-900 dark:text-neutral-100">
-                        {p.authorName}
-                      </span>
-                      <span className="text-neutral-400 dark:text-neutral-600">·</span>
-                      <span className="tabular-nums text-xs text-neutral-500 dark:text-neutral-500">
-                        {formatRelativeKo(p.createdAt)}
-                      </span>
-                    </div>
                     {p.title && (
-                      <h3 className="mt-1 text-[15px] font-semibold leading-snug text-neutral-900 dark:text-neutral-100">
+                      <h3 className="text-[15px] font-semibold leading-snug text-neutral-900 dark:text-neutral-100">
                         {p.title}
                       </h3>
                     )}

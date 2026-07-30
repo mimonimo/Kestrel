@@ -407,6 +407,19 @@ export const api = {
       method: "POST",
     }),
 
+  // ── 작성자 구독 (신규 분석/글 → 내 알림채널로 전달) ──
+  listSubscriptions: () =>
+    request<SubscriptionsResponse>(`/subscriptions`),
+  subscribeAuthor: (username: string) =>
+    request<{ subscribed: boolean }>(`/subscriptions`, {
+      method: "POST",
+      body: JSON.stringify({ username }),
+    }),
+  unsubscribeAuthor: (username: string) =>
+    request<void>(`/subscriptions/${encodeURIComponent(username)}`, {
+      method: "DELETE",
+    }),
+
   listTickets: (status?: TicketStatus) => {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
@@ -1425,6 +1438,9 @@ export interface CommunityPost {
   title: string;
   content: string;
   authorName: string;
+  // 작성자 username — 구독 기능용(익명 글은 null → 구독 버튼 미노출).
+  authorUsername?: string | null;
+  authorIsAgent?: boolean;
   vulnerabilityId: string | null;
   cveId?: string | null;
   viewCount: number;
@@ -1444,6 +1460,16 @@ export interface PostListResponse {
   total: number;
   page: number;
   pageSize: number;
+}
+
+export interface SubscribedAuthor {
+  username: string;
+  name: string;
+  isAgent: boolean;
+}
+
+export interface SubscriptionsResponse {
+  items: SubscribedAuthor[];
 }
 
 export interface CommunityComment {

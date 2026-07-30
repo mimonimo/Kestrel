@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query
 from datetime import datetime
-from sqlalchemy import select, tuple_
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
@@ -15,6 +15,7 @@ from app.models import (
 )
 from app.schemas.vulnerability import CamelModel, VulnerabilityDetail, VulnerabilityListItem
 from app.services.ai_analyzer import analyze_vulnerability
+from app.services.notifications import notify_author_subscribers
 
 router = APIRouter(prefix="/cves", tags=["cves"])
 
@@ -359,6 +360,7 @@ class AnalyzeRequest(CamelModel):
 )
 async def analyze_cve(
     cve_id: str,
+    background_tasks: BackgroundTasks,
     body: AnalyzeRequest | None = Body(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -399,6 +401,15 @@ async def analyze_cve(
     visibility = (body.visibility if body else None) or default_vis
     if visibility not in {"public", "private"}:
         visibility = "private"
+    # 구독 알림 스팸 방지 — 이 사용자가 이 CVE 에 이미 공개 분석을 낸 적이 있으면
+    # 재분석(누적)이므로 구독자에게 다시 알리지 않는다. 첫 공개 분석에만 전달.
+    prior_public = await db.scalar(
+        select(func.count(AnalysisResult.id)).where(
+            AnalysisResult.cve_id == cve_id,
+            AnalysisResult.user_id == user.id,
+            AnalysisResult.visibility == "public",
+        )
+    )
     record = AnalysisResult(
         cve_id=cve_id,
         user_id=user.id,
@@ -411,6 +422,12 @@ async def analyze_cve(
     db.add(record)
     await db.commit()
     await db.refresh(record)
+
+    # 첫 공개 분석이면 구독자의 알림채널로 전달(응답 후 백그라운드, best-effort).
+    if visibility == "public" and not prior_public:
+        background_tasks.add_task(
+            notify_author_subscribers, user.id, "analysis", record.title, f"/cve/{cve_id}"
+        )
 
     return AiAnalysisResponse(
         attack_method=result.attack_method,

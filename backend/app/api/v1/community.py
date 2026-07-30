@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, status
 from pydantic import Field
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import get_current_user, get_optional_user
 from app.core.database import get_db
 from app.models import Comment, Notice, Post, PostLike, User, UserRole, Vulnerability
+from app.services.notifications import notify_author_subscribers
 from app.schemas.vulnerability import CamelModel
 
 router = APIRouter(prefix="/community", tags=["community"])
@@ -86,6 +87,9 @@ class PostOut(CamelModel):
     title: str
     content: str
     author_name: str
+    # 작성자 username — 구독 기능용(익명 글은 None → 구독 버튼 미노출).
+    author_username: str | None = None
+    author_is_agent: bool = False
     vulnerability_id: UUID | None
     cve_id: str | None = None  # 연결된 CVE 표시·링크용(vulnerability_id 의 사람용 ID)
     view_count: int
@@ -228,12 +232,26 @@ async def list_posts(
                 select(Vulnerability.id, Vulnerability.cve_id).where(Vulnerability.id.in_(vuln_ids))
             )).all()
         )
+    # 작성자 username·에이전트 여부 — 구독 버튼용. 익명(user_id None) 글은 제외.
+    user_ids = [r.user_id for r in rows if r.user_id]
+    umap: dict = {}
+    if user_ids:
+        umap = {
+            uid: (uname, is_agent)
+            for uid, uname, is_agent in (
+                await db.execute(
+                    select(User.id, User.username, User.is_agent).where(User.id.in_(user_ids))
+                )
+            ).all()
+        }
     items = [
         PostOut(
             id=r.id,
             title=r.title,
             content=r.content,
             author_name=r.author_name,
+            author_username=umap.get(r.user_id, (None, False))[0] if r.user_id else None,
+            author_is_agent=bool(umap.get(r.user_id, (None, False))[1]) if r.user_id else False,
             vulnerability_id=r.vulnerability_id,
             cve_id=cve_map.get(r.vulnerability_id) if r.vulnerability_id else None,
             view_count=r.view_count,
@@ -258,6 +276,7 @@ async def list_posts(
 )
 async def create_post(
     body: PostCreate,
+    background_tasks: BackgroundTasks,
     x_client_id: Annotated[str | None, Header(alias="X-Client-Id")] = None,
     me: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -273,6 +292,10 @@ async def create_post(
     db.add(post)
     await db.commit()
     await db.refresh(post)
+    # 구독자의 알림채널로 전달(응답 후 백그라운드, best-effort). 글은 항상 공개.
+    background_tasks.add_task(
+        notify_author_subscribers, me.id, "post", post.title, f"/community/{post.id}"
+    )
     cve_id = None
     if post.vulnerability_id:
         cve_id = await db.scalar(
@@ -283,6 +306,8 @@ async def create_post(
         title=post.title,
         content=post.content,
         author_name=post.author_name,
+        author_username=me.username,
+        author_is_agent=bool(me.is_agent),
         vulnerability_id=post.vulnerability_id,
         cve_id=cve_id,
         view_count=post.view_count,
@@ -321,11 +346,22 @@ async def get_post(
         cve_id = await db.scalar(
             select(Vulnerability.cve_id).where(Vulnerability.id == post.vulnerability_id)
         )
+    author_username = author_is_agent = None
+    if post.user_id:
+        au = (
+            await db.execute(
+                select(User.username, User.is_agent).where(User.id == post.user_id)
+            )
+        ).first()
+        if au:
+            author_username, author_is_agent = au[0], bool(au[1])
     out = PostOut(
         id=post.id,
         title=post.title,
         content=post.content,
         author_name=post.author_name,
+        author_username=author_username,
+        author_is_agent=bool(author_is_agent),
         vulnerability_id=post.vulnerability_id,
         cve_id=cve_id,
         view_count=post_view_count,

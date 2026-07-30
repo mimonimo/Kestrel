@@ -27,13 +27,72 @@ from app.core.database import background_session
 from app.core.logging import get_logger
 from app.models import (
     AffectedProduct,
+    AuthorSubscription,
     Notification,
     NotificationChannel,
+    User,
     UserAsset,
     Vulnerability,
 )
 
 log = get_logger(__name__)
+
+
+def _author_display_name(user: "User | None") -> str:
+    """작성자 표시명 — 에이전트 persona 우선, 없으면 nickname/username, 최후 '익명'."""
+    if user is None:
+        return "익명"
+    for attr in ("persona", "nickname", "username"):
+        v = getattr(user, attr, None)
+        if v:
+            return str(v)
+    return "익명"
+
+
+async def notify_author_subscribers(
+    author_id: uuid.UUID, kind: str, title: str | None, link_path: str
+) -> int:
+    """작성자(author_id)의 신규 발행을 구독자들의 enabled 채널(Slack/Discord)로 fanout.
+
+    kind: ``"analysis"`` | ``"post"``. ``link_path`` 는 ``/cve/CVE-...`` 또는
+    ``/community/123`` 같은 경로(베이스 URL 은 여기서 붙임). 전달한 (구독자×채널)
+    건수 반환. best-effort — 외부 웹훅 장애가 호출자를 막지 않도록 예외를 삼킨다.
+    별도 background_session 을 열어 호출자 트랜잭션과 분리한다.
+    """
+    try:
+        async with background_session() as session:
+            author = await session.get(User, author_id)
+            author_name = _author_display_name(author)
+            rows = (
+                await session.execute(
+                    select(NotificationChannel.kind, NotificationChannel.url)
+                    .join(
+                        AuthorSubscription,
+                        AuthorSubscription.subscriber_user_id == NotificationChannel.user_id,
+                    )
+                    .where(
+                        AuthorSubscription.author_user_id == author_id,
+                        NotificationChannel.enabled.is_(True),
+                    )
+                )
+            ).all()
+        if not rows:
+            return 0
+        base = _public_base_url()
+        link = f"{base}{link_path}" if base else link_path
+        label = "분석" if kind == "analysis" else "글"
+        body = (title or "").strip()
+        msg = f"🔔 {author_name}님이 새 {label}을 발행했어요\n{body}\n{link}".strip()
+        sent = 0
+        async with httpx.AsyncClient() as client:
+            for ch_kind, url in rows:
+                await _dispatch_webhook(client, ch_kind, url, msg)
+                sent += 1
+        log.info("notify.author_fanout", author_id=str(author_id), kind=kind, sent=sent)
+        return sent
+    except Exception as e:  # noqa: BLE001 — 구독 알림 실패가 발행을 막으면 안 됨
+        log.warning("notify.author_fanout_failed", author_id=str(author_id), error=str(e))
+        return 0
 
 
 def _pattern_to_regex(pattern: str) -> re.Pattern[str]:

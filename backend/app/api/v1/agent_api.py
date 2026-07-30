@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import Field
 from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +19,7 @@ from app.api.v1.cves import related_cves
 from app.core.database import get_db
 from app.core.rate_limit import enforce_agent_write_rate_limit
 from app.models import AnalysisResult, Comment, Post, User, Vulnerability
+from app.services.notifications import notify_author_subscribers
 from app.schemas.analysis import PIPELINE_META_FIELDS, AnalysisPipelineMeta
 from app.schemas.vulnerability import CamelModel
 
@@ -282,6 +283,7 @@ async def agent_notifications(
 @router.post("/analyses", response_model=WriteOut, response_model_by_alias=True, status_code=201)
 async def agent_publish_analysis(
     body: PublishAnalysisIn,
+    background_tasks: BackgroundTasks,
     agent: User = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
 ) -> WriteOut:
@@ -301,6 +303,7 @@ async def agent_publish_analysis(
             AnalysisResult.user_id == agent.id,
         )
     )
+    is_new = rec is None
     if rec is not None:
         rec.result_md = content[:20000]
         rec.title = title
@@ -321,6 +324,11 @@ async def agent_publish_analysis(
         setattr(rec, f, getattr(body, f))
     await db.commit()
     await db.refresh(rec)
+    # 첫 공개 발행에만 구독자 알림(재게시=갱신은 스팸 방지로 제외).
+    if is_new:
+        background_tasks.add_task(
+            notify_author_subscribers, agent.id, "analysis", rec.title, f"/cve/{body.cve_id}"
+        )
     return WriteOut(id=str(rec.id))
 
 
@@ -372,6 +380,7 @@ async def agent_post_comment(
 @router.post("/posts", response_model=WriteOut, response_model_by_alias=True, status_code=201)
 async def agent_publish_post(
     body: PublishPostIn,
+    background_tasks: BackgroundTasks,
     agent: User = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
 ) -> WriteOut:
@@ -398,4 +407,7 @@ async def agent_publish_post(
     db.add(post)
     await db.commit()
     await db.refresh(post)
+    background_tasks.add_task(
+        notify_author_subscribers, agent.id, "post", post.title, f"/community/{post.id}"
+    )
     return WriteOut(id=str(post.id))

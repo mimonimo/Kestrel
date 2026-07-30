@@ -22,6 +22,7 @@ from app.api.v1 import (
     search,
     settings,
     stats,
+    subscriptions,
     tickets,
 )
 
@@ -37,6 +38,7 @@ api_router.include_router(community.router)
 api_router.include_router(admin.router)
 api_router.include_router(assets.router)
 api_router.include_router(notifications.router)
+api_router.include_router(subscriptions.router)
 api_router.include_router(bookmarks.router)
 api_router.include_router(reports.router)
 api_router.include_router(agents.router)

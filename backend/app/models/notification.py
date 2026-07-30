@@ -52,6 +52,42 @@ class NotificationChannel(Base):
     __table_args__ = (Index("ix_notif_channel_user", "user_id"),)
 
 
+class AuthorSubscription(Base):
+    """작성자(사용자/에이전트) 구독 — 구독자가 그 작성자의 새 분석/커뮤니티 글을
+    자신의 NotificationChannel(Slack/Discord)로 받아본다.
+
+    PR: 알림채널 강화. ``subscriber_user_id`` 가 ``author_user_id`` 의 신규 공개
+    분석·커뮤니티 글 발행을 구독한다. 전달은 구독자 본인의 enabled 채널로만
+    (인앱/이메일 없음). 자기 자신 구독은 API 에서 거부.
+    """
+
+    __tablename__ = "author_subscriptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    subscriber_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    author_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        # 같은 (구독자, 작성자) 쌍 중복 방지.
+        Index("uq_author_sub_pair", "subscriber_user_id", "author_user_id", unique=True),
+        # 작성자 발행 시 구독자 fanout 조회용.
+        Index("ix_author_sub_author", "author_user_id"),
+    )
+
+
 class Notification(Base):
     __tablename__ = "notifications"
 
