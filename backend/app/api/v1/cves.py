@@ -1,6 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query
 from datetime import datetime
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.deps import get_current_user
@@ -210,13 +210,31 @@ async def related_cves(cve_id: str, db: AsyncSession = Depends(get_db)) -> list[
 
     # 후보만 최신순으로 정렬해 상위 120건 → Python 에서 다중 신호로 가중 랭킹.
     # (제품 > 같은 벤더 > 유형 겹침 수 > KEV > CVSS 근접 > 최신 순, 상위 8건 노출.)
-    stmt = (
-        select(Vulnerability)
-        .where(Vulnerability.id.in_(list(cand_ids)))
-        .order_by(Vulnerability.published_at.desc().nulls_last())
-        .limit(120)
-    )
-    rows = (await db.execute(stmt)).scalars().unique().all()
+    #
+    # `id IN (...) ORDER BY published_at LIMIT 120` 을 그대로 두면, 후보 집합을
+    # 미리 좁혀놨어도 플래너가 여전히 "published_at 인덱스를 최신순으로 역주행하며
+    # 매 행 id 필터" 계획을 택한다. cisco(1,254건)·log4shell(5,942건)처럼 후보가
+    # 오래된 CVE 면 120건을 채우기까지 37만 행 대부분을 스캔 → 25초, statement
+    # timeout(20s)을 넘겨 500(QueryCanceledError)→AppErrors 알람. CTE 를
+    # MATERIALIZED 로 강제하면 후보 집합(≤6000)을 PK 로 먼저 구체화한 뒤 그 작은
+    # 집합만 정렬 → 실측 23~73ms. id = ANY(array) 로 거대 IN 리스트 전개도 회피.
+    top_ids = (
+        await db.execute(
+            text(
+                "WITH c AS MATERIALIZED ("
+                "  SELECT id, published_at FROM vulnerabilities WHERE id = ANY(:ids)"
+                ") SELECT id FROM c ORDER BY published_at DESC NULLS LAST LIMIT 120"
+            ),
+            {"ids": list(cand_ids)},
+        )
+    ).scalars().all()
+    if not top_ids:
+        return []
+    # 상위 120건만 ORM 로 적재(관계는 selectin) — 정렬은 아래 스코어링이 다시
+    # 하므로 여기선 순서 무관, 작은 IN(120) 이라 병리 없음.
+    rows = (
+        await db.execute(select(Vulnerability).where(Vulnerability.id.in_(top_ids)))
+    ).scalars().unique().all()
 
     scored: list[tuple[float, float, RelatedItem]] = []
     for r in rows:
