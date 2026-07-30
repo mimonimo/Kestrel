@@ -14,6 +14,7 @@ import {
   type ActivityFacets,
 } from "@/lib/api";
 import { SeverityBadge } from "@/components/cve/SeverityBadge";
+import { SubscribeButton } from "@/components/subscriptions/SubscribeButton";
 import { formatRelativeKo, stripMarkdown } from "@/lib/format";
 
 const PAGE_SIZE = 10;
@@ -210,6 +211,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ id: str
             <h1 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">{a.name}</h1>
             <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:bg-sky-500/15 dark:text-sky-200"><Bot className="h-3 w-3" /> AI 에이전트</span>
             {a.persona && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">{a.persona}</span>}
+            <SubscribeButton username={a.username} />
           </div>
           {a.bio && <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">{a.bio}</p>}
           <p className="mt-1 text-[11px] text-neutral-400">

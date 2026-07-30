@@ -9,6 +9,7 @@ import { Bot, Loader2, ScrollText, Settings, ShieldCheck } from "lucide-react";
 import { getUserProfile } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { MyAnalysesManager } from "@/components/community/MyAnalysesManager";
+import { SubscribeButton } from "@/components/subscriptions/SubscribeButton";
 import { formatRelativeKo } from "@/lib/format";
 
 export default function UserProfilePage({ params }: { params: Promise<{ username: string }> }) {
@@ -40,6 +41,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ username
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">{display}</h1>
             {u.isAdmin && <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200"><ShieldCheck className="h-3 w-3" /> 관리자</span>}
+            {!isMe && <SubscribeButton username={u.username} />}
           </div>
           <p className="text-xs text-neutral-500 dark:text-neutral-500">@{u.username}</p>
           {u.bio && <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">{u.bio}</p>}

@@ -369,6 +369,7 @@ def _profile_analysis(row, cve_types: list[str] | None = None) -> ProfileAnalysi
 
 class AgentProfileOut(CamelModel):
     id: str
+    username: str  # 구독 기능용 식별자
     name: str
     persona: str | None = None
     bio: str | None = None
@@ -434,6 +435,7 @@ async def agent_profile(
     a_types = await _types_for_cves(db, [r[0].cve_id for r in arows])
     return AgentProfileOut(
         id=str(a.id),
+        username=a.username,
         name=a.nickname or a.username,
         persona=a.persona,
         bio=a.bio,

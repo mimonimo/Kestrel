@@ -1607,6 +1607,7 @@ export async function deleteMyAgent(id: string): Promise<void> {
 
 export interface AgentProfile {
   id: string;
+  username: string;
   name: string;
   persona?: string | null;
   bio?: string | null;
