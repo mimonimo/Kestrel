@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 
-import { api, type CompareResponse, type Ticket, type TicketStatus } from "@/lib/api";
+import { api, type AnalysisSummary, type CompareResponse, type Ticket, type TicketStatus } from "@/lib/api";
 import {
   clearCompareHistory,
   deleteCompareHistory,
@@ -530,7 +530,6 @@ function RunningCard({ cveId, startedAt }: { cveId: string; startedAt: number })
 
 function CompareTab() {
   const { user } = useAuth();
-  const [entries, setEntries] = useState<AnalysisHistoryEntry[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [result, setResult] = useState<CompareResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -541,17 +540,43 @@ function CompareTab() {
   const bookmarks = useBookmarks();
   const compareHistory = useCompareHistory();
 
-  useEffect(() => {
-    // 비로그인 상태에서는 분석 기록 노출 안 함 (PR 10-DJ).
-    const sync = () => setEntries(user ? readAnalysisHistory() : []);
-    sync();
-    window.addEventListener("kestrel:analysis-history-changed", sync);
-    window.addEventListener("storage", sync);
-    return () => {
-      window.removeEventListener("kestrel:analysis-history-changed", sync);
-      window.removeEventListener("storage", sync);
-    };
-  }, [user]);
+  // 비교 대상 CVE 목록은 **서버(/me/analyses)** 에서 — localStorage(기기별·50건
+  // 캡) 가 아니라 서버가 소스라 모든 환경에서 동일하게, 내가 분석한 모든 CVE 를
+  // 빠짐없이 고를 수 있다. 같은 CVE 를 여러 번 분석했으면 최신 1건으로 dedupe.
+  const myAnalysesQuery = useQuery({
+    queryKey: ["compare-my-analyses", user?.username],
+    enabled: !!user,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const acc: AnalysisSummary[] = [];
+      for (let offset = 0; offset < 5000; offset += 200) {
+        const page = await api.listMyAnalyses({ limit: 200, offset });
+        acc.push(...page.items);
+        if (page.items.length < 200 || acc.length >= page.total) break;
+      }
+      return acc;
+    },
+  });
+
+  const entries = useMemo<AnalysisHistoryEntry[]>(() => {
+    if (!user) return [];
+    const seen = new Set<string>();
+    const out: AnalysisHistoryEntry[] = [];
+    // created_at 내림차순으로 오므로 첫 등장이 최신.
+    for (const a of myAnalysesQuery.data ?? []) {
+      if (seen.has(a.cveId)) continue;
+      seen.add(a.cveId);
+      out.push({
+        cveId: a.cveId,
+        timestamp: +new Date(a.createdAt),
+        attackMethod: a.attackMethod || a.excerpt || "",
+        payloadCount: a.payloadCount ?? 0,
+        mitigationCount: a.mitigationCount ?? 0,
+        status: "success",
+      });
+    }
+    return out;
+  }, [myAnalysesQuery.data, user]);
 
   // Pull vuln types for every history-listed CVE so the user can filter
   // the picker by type. One batch call cached for 5 min — the panel

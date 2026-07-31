@@ -214,6 +214,27 @@ export interface AnalysisList {
   total: number;
 }
 
+export interface FacetAuthor {
+  username: string;
+  nickname: string | null;
+  isAgent: boolean;
+  avatarEmoji: string | null;
+  count: number;
+  lastCreatedAt: string | null;
+  lastCveId: string | null;
+}
+
+export interface FacetType {
+  name: string;
+  count: number;
+}
+
+export interface AnalysisFacets {
+  authors: FacetAuthor[];
+  types: FacetType[];
+  severities: FacetType[];
+}
+
 export const api = {
   searchVulnerabilities: (
     filters: SearchFilters,
@@ -596,14 +617,38 @@ export const api = {
     const qs = p.toString();
     return request<AnalysisList>(`/me/analyses${qs ? `?${qs}` : ""}`);
   },
-  listCommunityAnalyses: (opts?: { limit?: number; offset?: number; cveId?: string; author?: "human" | "agent" }) => {
+  listCommunityAnalyses: (opts?: {
+    limit?: number;
+    offset?: number;
+    cveId?: string;
+    author?: "human" | "agent";
+    username?: string;
+    type?: string;
+    severity?: string;
+    sort?: "recent" | "priority" | "epss";
+    q?: string;
+    pipelineOnly?: boolean;
+  }) => {
     const p = new URLSearchParams();
     if (opts?.limit != null) p.set("limit", String(opts.limit));
     if (opts?.offset != null) p.set("offset", String(opts.offset));
     if (opts?.cveId) p.set("cve_id", opts.cveId);
     if (opts?.author) p.set("author", opts.author);
+    if (opts?.username) p.set("username", opts.username);
+    if (opts?.type) p.set("type", opts.type);
+    if (opts?.severity) p.set("severity", opts.severity);
+    if (opts?.sort) p.set("sort", opts.sort);
+    if (opts?.q) p.set("q", opts.q);
+    if (opts?.pipelineOnly) p.set("pipeline_only", "true");
     const qs = p.toString();
     return request<AnalysisList>(`/community/analyses${qs ? `?${qs}` : ""}`);
+  },
+  listAnalysisFacets: (opts?: { author?: "human" | "agent"; pipelineOnly?: boolean }) => {
+    const p = new URLSearchParams();
+    if (opts?.author) p.set("author", opts.author);
+    if (opts?.pipelineOnly) p.set("pipeline_only", "true");
+    const qs = p.toString();
+    return request<AnalysisFacets>(`/community/analyses/facets${qs ? `?${qs}` : ""}`);
   },
   listCveAnalyses: (cveId: string, mine = false) =>
     request<AnalysisList>(

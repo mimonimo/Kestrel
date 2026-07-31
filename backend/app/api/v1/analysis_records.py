@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, func, select
+from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -80,6 +80,54 @@ class AnalysisList(CamelModel):
 class AnalysisPatch(CamelModel):
     visibility: str | None = None
     title: str | None = None
+
+
+class FacetAuthor(CamelModel):
+    """작성자별 그룹 헤더 — 전체(윈도우 아님) 기준 집계."""
+    username: str
+    nickname: str | None = None
+    is_agent: bool = False
+    avatar_emoji: str | None = None
+    count: int
+    last_created_at: datetime | None = None
+    last_cve_id: str | None = None
+
+
+class FacetType(CamelModel):
+    name: str
+    count: int
+
+
+class AnalysisFacets(CamelModel):
+    authors: list[FacetAuthor]
+    types: list[FacetType]
+    severities: list[FacetType]  # name = critical|high|medium|low|unscored
+
+
+# 정렬 모드 → ORDER BY. 프론트 ViewMode(latest/priority/epss) 와 1:1 로 맞춰,
+# 서버가 전체를 정렬한 뒤 페이지네이션한다(예전엔 최근 50건만 받아 클라에서
+# 정렬 → 그 창 밖 오래된 분석이 어떤 정렬에서도 안 보였다).
+_PRIORITY_ORDER = case(
+    (AnalysisResult.priority_action == "immediate", 0),
+    (AnalysisResult.priority_action == "scheduled", 1),
+    (AnalysisResult.priority_action == "monitor", 2),
+    else_=8,
+)
+
+
+def _apply_analysis_sort(q, sort: str):
+    if sort == "priority":
+        return q.order_by(
+            _PRIORITY_ORDER.asc(),
+            AnalysisResult.epss_score.desc().nulls_last(),
+            desc(AnalysisResult.created_at),
+        )
+    if sort == "epss":
+        return q.order_by(
+            AnalysisResult.epss_score.desc().nulls_last(),
+            desc(AnalysisResult.created_at),
+        )
+    return q.order_by(desc(AnalysisResult.created_at))
 
 
 def _strip_md(md: str) -> str:
@@ -302,6 +350,11 @@ async def list_my_analyses(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> AnalysisList:
+    total = (
+        await db.scalar(
+            select(func.count(AnalysisResult.id)).where(AnalysisResult.user_id == user.id)
+        )
+    ) or 0
     q = (
         select(AnalysisResult)
         .where(AnalysisResult.user_id == user.id)
@@ -328,12 +381,114 @@ async def list_my_analyses(
                         )
             for r in rows
         ],
-        total=len(rows),
+        total=total,
     )
 
 
 # ─── 공개 분석 (커뮤니티) ───────────────────────────────
 community_router = APIRouter(prefix="/community", tags=["analysis-records"])
+
+
+@community_router.get(
+    "/analyses/facets", response_model=AnalysisFacets, response_model_by_alias=True
+)
+async def community_analyses_facets(
+    db: AsyncSession = Depends(get_db),
+    author: str | None = Query(default=None, description="작성자 유형: human | agent (미지정=전체)"),
+    pipeline_only: bool = Query(default=False, description="구조화 검증 파이프라인 분석만"),
+) -> AnalysisFacets:
+    """작성자별·유형별·위험도별 그룹 헤더 집계 — **전체 public 분석 기준**(페이지 창 아님).
+
+    작성자별 뷰가 최근 N건만 클라에서 묶던 탓에 오래된 작성자(예: 며칠 전
+    분석한 에이전트)가 통째로 누락됐다. 서버에서 GROUP BY 로 전체 집계해
+    총건수·최근시각·최근 CVE 를 정확히 내려준다. 실제 항목은 목록 API 를
+    ``username=`` / ``type=`` / ``severity=`` 로 확장 조회한다.
+    """
+    def _pipe(stmt):
+        return stmt.where(AnalysisResult.pipeline_version.isnot(None)) if pipeline_only else stmt
+
+    # 작성자별 총건수 + 최근시각.
+    a_q = (
+        select(
+            User.username,
+            User.nickname,
+            User.is_agent,
+            User.avatar_emoji,
+            func.count(AnalysisResult.id).label("cnt"),
+            func.max(AnalysisResult.created_at).label("last_at"),
+        )
+        .join(User, User.id == AnalysisResult.user_id)
+        .where(AnalysisResult.visibility == "public")
+        .group_by(User.id, User.username, User.nickname, User.is_agent, User.avatar_emoji)
+        .order_by(func.count(AnalysisResult.id).desc())
+    )
+    a_q = _pipe(a_q)
+    if author in ("human", "agent"):
+        a_q = a_q.where(User.is_agent.is_(author == "agent"))
+    a_rows = (await db.execute(a_q)).all()
+
+    # 작성자별 '가장 최근 CVE' — DISTINCT ON (user) 최신 1건.
+    r_q = (
+        select(User.username, AnalysisResult.cve_id)
+        .join(User, User.id == AnalysisResult.user_id)
+        .where(AnalysisResult.visibility == "public")
+        .distinct(User.id)
+        .order_by(User.id, AnalysisResult.created_at.desc())
+    )
+    r_q = _pipe(r_q)
+    if author in ("human", "agent"):
+        r_q = r_q.where(User.is_agent.is_(author == "agent"))
+    last_cve = {uname: cid for uname, cid in (await db.execute(r_q)).all()}
+
+    authors = [
+        FacetAuthor(
+            username=uname,
+            nickname=nick,
+            is_agent=is_agent,
+            avatar_emoji=emoji,
+            count=cnt,
+            last_created_at=last_at,
+            last_cve_id=last_cve.get(uname),
+        )
+        for uname, nick, is_agent, emoji, cnt, last_at in a_rows
+    ]
+
+    # 유형별 총건수 — analysis → vulnerability → types.
+    t_q = (
+        select(VulnerabilityType.name, func.count(AnalysisResult.id))
+        .select_from(AnalysisResult)
+        .join(Vulnerability, Vulnerability.cve_id == AnalysisResult.cve_id)
+        .join(vulnerability_type_map, vulnerability_type_map.c.vulnerability_id == Vulnerability.id)
+        .join(VulnerabilityType, VulnerabilityType.id == vulnerability_type_map.c.type_id)
+        .where(AnalysisResult.visibility == "public")
+        .group_by(VulnerabilityType.name)
+        .order_by(func.count(AnalysisResult.id).desc())
+    )
+    t_q = _pipe(t_q)
+    if author in ("human", "agent"):
+        t_q = t_q.join(User, User.id == AnalysisResult.user_id).where(
+            User.is_agent.is_(author == "agent")
+        )
+    types = [FacetType(name=n, count=c) for n, c in (await db.execute(t_q)).all()]
+
+    # 위험도별 총건수 — analysis LEFT JOIN vulnerability(cve_id 1:1), 없으면 unscored.
+    sev_expr = func.coalesce(func.lower(Vulnerability.severity), "unscored")
+    s_q = (
+        select(sev_expr.label("sev"), func.count(AnalysisResult.id))
+        .select_from(AnalysisResult)
+        .join(Vulnerability, Vulnerability.cve_id == AnalysisResult.cve_id, isouter=True)
+        .where(AnalysisResult.visibility == "public")
+        .group_by(sev_expr)
+        .order_by(func.count(AnalysisResult.id).desc())
+    )
+    s_q = _pipe(s_q)
+    if author in ("human", "agent"):
+        s_q = s_q.join(User, User.id == AnalysisResult.user_id).where(
+            User.is_agent.is_(author == "agent")
+        )
+    severities = [FacetType(name=n, count=c) for n, c in (await db.execute(s_q)).all()]
+
+    return AnalysisFacets(authors=authors, types=types, severities=severities)
 
 
 @community_router.get(
@@ -346,6 +501,12 @@ async def list_community_analyses(
     offset: int = Query(0, ge=0),
     cve_id: str | None = Query(default=None),
     author: str | None = Query(default=None, description="작성자 유형: human | agent (미지정=전체)"),
+    username: str | None = Query(default=None, description="특정 작성자(username) 만 — 작성자별 확장용"),
+    type: str | None = Query(default=None, description="취약점 유형(name) 필터 — 유형별 확장용"),
+    sort: str = Query("recent", description="정렬: recent | priority | epss"),
+    q: str | None = Query(default=None, description="검색어 — CVE·제목·본문·작성자 부분일치"),
+    severity: str | None = Query(default=None, description="CVE 심각도 필터 — critical|high|medium|low|unscored (위험도별 확장용)"),
+    pipeline_only: bool = Query(default=False, description="구조화 검증 파이프라인 분석만"),
 ) -> AnalysisList:
     """모든 사용자의 ``public`` 분석 — 본인 분석도 포함.
 
@@ -353,23 +514,76 @@ async def list_community_analyses(
     커뮤니티에 공유되지 않는다" 고 보고 — 분석 자체가 공유의 단위이므로
     본인 글도 그대로 노출 (자기 글이 자기 피드에 보이는 것과 같은 UX).
 
-    ``author=human|agent`` 로 작성자 유형 서버측 필터 — 에이전트 분석이 많아도
-    사람이 공유한 공개 분석이 최신성에 밀려 안 보이는 일이 없게 한다.
+    ``author=human|agent`` 로 작성자 유형 서버측 필터. ``username`` 은 특정
+    작성자만(작성자별 그룹 확장), ``type`` 은 취약점 유형만(유형별 그룹 확장).
+    ``sort`` 로 서버측 정렬(recent/priority/epss) 후 ``offset``/``limit`` 페이지네이션 —
+    이렇게 해야 전체 분석을 정렬 기준대로 빠짐없이 넘겨볼 수 있다. ``total`` 은
+    현재 필터의 **전체 건수**(페이지 크기가 아님).
     """
-    q = (
-        select(AnalysisResult)
-        .where(AnalysisResult.visibility == "public")
-        .options(selectinload(AnalysisResult.user).selectinload(User.owner))
-        .order_by(desc(AnalysisResult.created_at))
-    )
     _ = me  # 본인 자동 제외하지 않음 — 의도적으로 사용하지 않음.
-    if author in ("human", "agent"):
-        q = q.join(User, User.id == AnalysisResult.user_id).where(
-            User.is_agent.is_(author == "agent")
+
+    # 검색어 — ILIKE 와일드카드(% _ \) 는 리터럴로 이스케이프해 사용자가 '%' 를
+    # 쳐도 그 문자 자체로 검색되게 한다(커뮤니티 글 검색과 동일 규칙).
+    q_norm = (q or "").strip()
+    q_like = "%" + q_norm.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" if q_norm else None
+    # author 이름 검색을 위해 q 가 있으면 User 조인 필요.
+    need_user_join = bool(author in ("human", "agent") or username or q_like)
+
+    # 공통 필터 — COUNT(전체) 와 페이지 조회에 동일 적용.
+    def _with_filters(stmt):
+        stmt = stmt.where(AnalysisResult.visibility == "public")
+        if need_user_join:
+            stmt = stmt.join(User, User.id == AnalysisResult.user_id)
+            if author in ("human", "agent"):
+                stmt = stmt.where(User.is_agent.is_(author == "agent"))
+            if username:
+                stmt = stmt.where(User.username == username)
+        if q_like:
+            stmt = stmt.where(
+                AnalysisResult.cve_id.ilike(q_like, escape="\\")
+                | AnalysisResult.title.ilike(q_like, escape="\\")
+                | AnalysisResult.result_md.ilike(q_like, escape="\\")
+                | User.nickname.ilike(q_like, escape="\\")
+                | User.username.ilike(q_like, escape="\\")
+            )
+        if cve_id:
+            stmt = stmt.where(AnalysisResult.cve_id == cve_id)
+        if type:
+            stmt = stmt.where(
+                AnalysisResult.cve_id.in_(
+                    select(Vulnerability.cve_id)
+                    .join(vulnerability_type_map, vulnerability_type_map.c.vulnerability_id == Vulnerability.id)
+                    .join(VulnerabilityType, VulnerabilityType.id == vulnerability_type_map.c.type_id)
+                    .where(VulnerabilityType.name == type)
+                )
+            )
+        if severity:
+            scored = select(Vulnerability.cve_id).where(Vulnerability.severity.isnot(None))
+            if severity == "unscored":
+                # 매칭 취약점이 없거나 심각도 미상 — 프론트 "미분류" 그룹과 동일.
+                stmt = stmt.where(AnalysisResult.cve_id.notin_(scored))
+            else:
+                stmt = stmt.where(
+                    AnalysisResult.cve_id.in_(
+                        select(Vulnerability.cve_id).where(
+                            func.lower(Vulnerability.severity) == severity.lower()
+                        )
+                    )
+                )
+        if pipeline_only:
+            stmt = stmt.where(AnalysisResult.pipeline_version.isnot(None))
+        return stmt
+
+    total = (
+        await db.scalar(_with_filters(select(func.count(AnalysisResult.id))))
+    ) or 0
+
+    q = _with_filters(
+        select(AnalysisResult).options(
+            selectinload(AnalysisResult.user).selectinload(User.owner)
         )
-    if cve_id:
-        q = q.where(AnalysisResult.cve_id == cve_id)
-    q = q.limit(limit).offset(offset)
+    )
+    q = _apply_analysis_sort(q, sort).limit(limit).offset(offset)
     rows = (await db.execute(q)).scalars().all()
     sev_map, types_map, title_map = await _build_cve_meta(db, [r.cve_id for r in rows])
     vid_map, cc_map = await _cve_extra(db, rows)
@@ -388,7 +602,7 @@ async def list_community_analyses(
                         )
             for r in rows
         ],
-        total=len(rows),
+        total=total,
     )
 
 

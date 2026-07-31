@@ -4,13 +4,27 @@
  * "남이 한 분석" 피드 — /analysis(AI 분석 기록) 탭에서 사용.
  *
  * /community/analyses 는 다른 사용자가 ``public`` 으로 공개한 분석 기록을
- * 반환한다(본인 분석 자동 제외). 최신순 / 유형·위험도별 / 작성자별 보기 +
- * 검색 + 작성자 유형 필터를 제공하고, 카드 클릭 시 공용 모달로 본문·댓글을 본다.
+ * 반환한다(본인 분석 포함). 최신순 / 우선순위순 / EPSS순 / 유형·위험도별 /
+ * 작성자별 보기 + 검색 + 작성자 유형 필터를 제공하고, 카드 클릭 시 공용 모달로
+ * 본문·댓글을 본다.
+ *
+ * 정렬·검색·그룹핑을 **모두 서버측**에서 처리하고 페이지네이션한다. 예전엔 최근
+ * 50건만 받아 클라에서 정렬/그룹핑 → 그 창 밖 오래된 분석(예: 며칠 전 에이전트
+ * 분석 수백 건)이 어떤 정렬에서도 로드되지 않아 "사라진 것처럼" 보였다. 이제
+ * 전체 분석을 정렬 기준대로 빠짐없이 넘겨볼 수 있고, 브라우저/기기와 무관하게
+ * 동일하게 표시된다. 작성자별·유형별·위험도별 그룹 헤더는 /facets 집계(전체
+ * 기준)로, 실제 항목은 username/type/severity 필터로 확장 조회한다.
  */
-import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Clock,
   Folder,
@@ -22,13 +36,18 @@ import {
   MessageSquare,
   Search,
   ShieldAlert,
-  Sparkles,
   Users,
   X,
   Zap,
 } from "lucide-react";
 
-import { api, type AnalysisList, type AnalysisSummary } from "@/lib/api";
+import {
+  api,
+  type AnalysisFacets,
+  type AnalysisList,
+  type AnalysisSummary,
+  type FacetAuthor,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { ErrorBox } from "@/components/ui/feedback-box";
 import { AuthorInline } from "@/components/community/AuthorInline";
@@ -56,8 +75,9 @@ const SEVERITY_LABEL: Record<string, string> = {
   high: "High",
   medium: "Medium",
   low: "Low",
+  unscored: "미분류",
 };
-const SEVERITY_ORDER = ["critical", "high", "medium", "low"];
+const SEVERITY_ORDER = ["critical", "high", "medium", "low", "unscored"];
 const SEVERITY_TONE: Record<string, string> = {
   critical: "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200",
   high: "bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-200",
@@ -65,22 +85,54 @@ const SEVERITY_TONE: Record<string, string> = {
   low: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200",
 };
 
+const PAGE = 30; // 페이지/그룹 당 렌더 건수
+
+type Group = {
+  key: string; // username | type name | severity name
+  label: string;
+  count: number;
+  kind: "author" | "type" | "severity";
+  author?: FacetAuthor;
+};
+
 export function AnalysisFeed() {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const myUsername = user?.username;
+
   const [openId, setOpenId] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>("latest");
-  const [filterKey, setFilterKey] = useState<string | null>(null);
   const [categoryAxis, setCategoryAxis] = useState<"types" | "severity">("types");
-  const [expandedAuthors, setExpandedAuthors] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
   const [agentFilter, setAgentFilter] = useState<"all" | "agent" | "human">("all");
-  // 파이프라인 검증 분석만 보기(pipelineVersion 있는 것) — PR 10-FC.
   const [pipelineOnly, setPipelineOnly] = useState(false);
-  // 범위: 전체(남 공개 + 내 분석) / 내 분석만.
   const [scope, setScope] = useState<"all" | "mine">("all");
-  // 카드별 인라인 댓글 펼침.
+  const [page, setPage] = useState(0); // flat 페이지
+  const [expandedKey, setExpandedKey] = useState<string | null>(null); // 그룹 확장(1개)
+  const [groupCount, setGroupCount] = useState(PAGE); // 확장 그룹 렌더 개수
   const [openComments, setOpenComments] = useState<Set<string>>(new Set());
+
+  // 검색 디바운스.
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // 필터/뷰가 바뀌면 페이지·확장 초기화.
+  useEffect(() => {
+    setPage(0);
+    setExpandedKey(null);
+    setGroupCount(PAGE);
+  }, [view, agentFilter, pipelineOnly, scope, categoryAxis, debounced]);
+
+  const authorParam = agentFilter === "all" ? undefined : agentFilter;
+  const sortParam: "recent" | "priority" | "epss" =
+    view === "priority" ? "priority" : view === "epss" ? "epss" : "recent";
+  const q = debounced || undefined;
+  // 검색 중에는 그룹핑 대신 평면 검색 결과를 보여준다(그룹+검색은 혼란).
+  const grouping = (view === "author" || view === "category") && !q;
+
   const toggleComments = (id: string) =>
     setOpenComments((prev) => {
       const next = new Set(prev);
@@ -89,49 +141,23 @@ export function AnalysisFeed() {
       return next;
     });
 
-  const community = useQuery({
-    queryKey: ["community-analyses", agentFilter],
-    queryFn: () =>
-      api.listCommunityAnalyses({
-        limit: 50,
-        ...(agentFilter === "agent" || agentFilter === "human" ? { author: agentFilter } : {}),
-      }),
-    staleTime: 30_000,
-  });
-  const mine = useQuery({
-    queryKey: ["my-analyses"],
-    queryFn: () => api.listMyAnalyses({ limit: 100 }),
-    staleTime: 30_000,
-    enabled: !!user,
-  });
+  // ─── mutations (좋아요 / 공유) ───────────────────────────
+  const afeedPredicate = (queryKey: readonly unknown[]) =>
+    typeof queryKey[0] === "string" && (queryKey[0] as string).startsWith("afeed");
 
-  // 내 분석(공개/비공개) + 남의 공개 분석을 합쳐 중복 제거.
-  const allItems = useMemo<AnalysisSummary[]>(() => {
-    const mineItems = mine.data?.items ?? [];
-    if (scope === "mine") return mineItems;
-    const seen = new Set(mineItems.map((a) => a.id));
-    const others = (community.data?.items ?? []).filter((a) => !seen.has(a.id));
-    return [...mineItems, ...others].sort(
-      (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
-    );
-  }, [community.data, mine.data, scope]);
-
-  const myUsername = user?.username;
   const share = useMutation({
     mutationFn: ({ id, visibility }: { id: string; visibility: "public" | "private" }) =>
       api.updateAnalysisRecord(id, { visibility }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["community-analyses"] });
-      qc.invalidateQueries({ queryKey: ["my-analyses"] });
-    },
+    onSuccess: () => qc.invalidateQueries({ predicate: (query) => afeedPredicate(query.queryKey) }),
   });
 
   const likeMut = useMutation({
     mutationFn: ({ id, next }: { id: string; next: boolean }) =>
       next ? api.likeAnalysis(id) : api.unlikeAnalysis(id),
     onMutate: ({ id, next }) => {
-      const patch = (key: string[]) =>
-        qc.setQueryData<AnalysisList>(key, (prev) =>
+      qc.setQueriesData<AnalysisList>(
+        { predicate: (query) => afeedPredicate(query.queryKey) },
+        (prev) =>
           prev
             ? {
                 ...prev,
@@ -146,14 +172,9 @@ export function AnalysisFeed() {
                 ),
               }
             : prev,
-        );
-      patch(["community-analyses"]);
-      patch(["my-analyses"]);
+      );
     },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ["community-analyses"] });
-      qc.invalidateQueries({ queryKey: ["my-analyses"] });
-    },
+    onSettled: () => qc.invalidateQueries({ predicate: (query) => afeedPredicate(query.queryKey) }),
   });
   const toggleLike = (a: AnalysisSummary) => {
     if (!user) {
@@ -165,109 +186,177 @@ export function AnalysisFeed() {
     likeMut.mutate({ id: a.id, next: !a.isLiked });
   };
 
-  const list = scope === "mine" ? mine : community;
+  // ─── 데이터 조회 ────────────────────────────────────────
+  // scope=all: 서버 페이지네이션 / scope=mine: 전량 로드(본인 것은 유계라 안전).
+  const flat = useQuery({
+    queryKey: [
+      "afeed-flat",
+      scope,
+      sortParam,
+      authorParam ?? "all",
+      pipelineOnly,
+      q ?? "",
+      page,
+    ],
+    queryFn: () =>
+      scope === "mine"
+        ? api.listMyAnalyses({ limit: 200, offset: 0 })
+        : api.listCommunityAnalyses({
+            sort: sortParam,
+            author: authorParam,
+            pipelineOnly,
+            q,
+            limit: PAGE,
+            offset: page * PAGE,
+          }),
+    enabled: scope === "mine" || !grouping,
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+  });
 
-  const visibleItems = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return allItems.filter((a) => {
+  const facets = useQuery<AnalysisFacets>({
+    queryKey: ["afeed-facets", authorParam ?? "all", pipelineOnly],
+    queryFn: () => api.listAnalysisFacets({ author: authorParam, pipelineOnly }),
+    enabled: scope === "all" && grouping,
+    staleTime: 30_000,
+  });
+
+  // 확장한 그룹의 실제 항목(서버 필터).
+  const expandedGroup: Group | null = useMemo(() => {
+    if (!expandedKey || !facets.data) return null;
+    if (view === "author") {
+      const a = facets.data.authors.find((x) => x.username === expandedKey);
+      return a
+        ? { key: a.username, label: a.nickname || a.username, count: a.count, kind: "author", author: a }
+        : null;
+    }
+    if (categoryAxis === "severity") {
+      const s = facets.data.severities.find((x) => x.name === expandedKey);
+      return s ? { key: s.name, label: SEVERITY_LABEL[s.name] || s.name, count: s.count, kind: "severity" } : null;
+    }
+    const t = facets.data.types.find((x) => x.name === expandedKey);
+    return t ? { key: t.name, label: t.name, count: t.count, kind: "type" } : null;
+  }, [expandedKey, facets.data, view, categoryAxis]);
+
+  const groupItems = useQuery({
+    queryKey: [
+      "afeed-group",
+      expandedGroup?.kind ?? "",
+      expandedKey ?? "",
+      authorParam ?? "all",
+      pipelineOnly,
+      groupCount,
+    ],
+    queryFn: () =>
+      api.listCommunityAnalyses({
+        ...(expandedGroup?.kind === "author" ? { username: expandedKey! } : {}),
+        ...(expandedGroup?.kind === "type" ? { type: expandedKey! } : {}),
+        ...(expandedGroup?.kind === "severity" ? { severity: expandedKey! } : {}),
+        author: expandedGroup?.kind === "author" ? undefined : authorParam,
+        pipelineOnly,
+        limit: groupCount,
+        offset: 0,
+      }),
+    enabled: scope === "all" && grouping && !!expandedGroup,
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+  });
+
+  // 그룹 헤더 목록(전체 집계 기준).
+  const groups: Group[] = useMemo(() => {
+    if (scope !== "all" || !grouping || !facets.data) return [];
+    if (view === "author") {
+      return facets.data.authors.map((a) => ({
+        key: a.username,
+        label: a.nickname || a.username,
+        count: a.count,
+        kind: "author" as const,
+        author: a,
+      }));
+    }
+    if (categoryAxis === "severity") {
+      return [...facets.data.severities]
+        .sort((a, b) => {
+          const ai = SEVERITY_ORDER.indexOf(a.name);
+          const bi = SEVERITY_ORDER.indexOf(b.name);
+          return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+        })
+        .map((s) => ({
+          key: s.name,
+          label: SEVERITY_LABEL[s.name] || s.name,
+          count: s.count,
+          kind: "severity" as const,
+        }));
+    }
+    return facets.data.types.map((t) => ({
+      key: t.name,
+      label: t.name,
+      count: t.count,
+      kind: "type" as const,
+    }));
+  }, [scope, grouping, facets.data, view, categoryAxis]);
+
+  // scope=mine 는 전량 로드 후 클라에서 정렬/검색.
+  const mineSorted = useMemo(() => {
+    if (scope !== "mine" || !flat.data) return [] as AnalysisSummary[];
+    const items = flat.data.items.filter((a) => {
       if (agentFilter === "agent" && !a.author.isAgent) return false;
       if (agentFilter === "human" && a.author.isAgent) return false;
       if (pipelineOnly && !a.pipelineVersion) return false;
       if (q) {
-        const hay =
-          `${a.cveId} ${a.title ?? ""} ${a.excerpt} ${a.author.nickname ?? ""} ${a.author.username} ${a.cveTypes.join(" ")} ${a.cveSeverity ?? ""}`.toLowerCase();
-        if (!hay.includes(q)) return false;
+        const hay = `${a.cveId} ${a.title ?? ""} ${a.excerpt} ${a.author.nickname ?? ""} ${a.author.username} ${a.cveTypes.join(" ")} ${a.cveSeverity ?? ""}`.toLowerCase();
+        if (!hay.includes(q.toLowerCase())) return false;
       }
       return true;
     });
-  }, [allItems, search, agentFilter, pipelineOnly]);
-
-  // 우선순위순/EPSS순 — 파이프라인 필드가 없는(기존) 분석은 뒤로, 동순위는
-  // EPSS 높은 순 → 최신순 타이브레이크.
-  const sortedFlat = useMemo(() => {
-    if (view !== "priority" && view !== "epss") return visibleItems;
     const byDate = (x: AnalysisSummary, y: AnalysisSummary) =>
       +new Date(y.createdAt) - +new Date(x.createdAt);
     const epssOf = (x: AnalysisSummary) =>
       typeof x.epssScore === "number" && Number.isFinite(x.epssScore) ? x.epssScore : -1;
-    const arr = [...visibleItems];
+    const arr = [...items];
     if (view === "priority") {
       const rankOf = (x: AnalysisSummary) =>
         x.priorityAction != null ? (PRIORITY_RANK[x.priorityAction] ?? 8) : 9;
-      arr.sort(
-        (x, y) => rankOf(x) - rankOf(y) || epssOf(y) - epssOf(x) || byDate(x, y),
-      );
-    } else {
+      arr.sort((x, y) => rankOf(x) - rankOf(y) || epssOf(y) - epssOf(x) || byDate(x, y));
+    } else if (view === "epss") {
       arr.sort((x, y) => epssOf(y) - epssOf(x) || byDate(x, y));
+    } else {
+      arr.sort(byDate);
     }
     return arr;
-  }, [visibleItems, view]);
+  }, [scope, flat.data, agentFilter, pipelineOnly, q, view]);
 
-  const grouped = useMemo(() => {
-    const buckets = new Map<string, { label: string; items: AnalysisSummary[] }>();
-    const push = (key: string, label: string, a: AnalysisSummary) => {
-      if (!buckets.has(key)) buckets.set(key, { label, items: [] });
-      buckets.get(key)!.items.push(a);
-    };
-    for (const a of visibleItems) {
-      if (view === "author") {
-        push(a.author.username, a.author.nickname || a.author.username, a);
-      } else if (categoryAxis === "severity") {
-        const sev = (a.cveSeverity || "unscored").toLowerCase();
-        push(sev, SEVERITY_LABEL[sev] || "미분류", a);
-      } else {
-        if (a.cveTypes && a.cveTypes.length > 0) {
-          for (const t of a.cveTypes) push(t, t, a);
-        } else {
-          push("(unclassified)", "분류 없음", a);
-        }
-      }
-    }
-    let entries = Array.from(buckets.entries()).map(([key, v]) => ({
-      key,
-      label: v.label,
-      items: v.items,
-    }));
-    if (view === "category" && categoryAxis === "severity") {
-      entries = entries.sort((a, b) => {
-        const ai = SEVERITY_ORDER.indexOf(a.key);
-        const bi = SEVERITY_ORDER.indexOf(b.key);
-        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
-      });
-    } else {
-      entries.sort((a, b) => b.items.length - a.items.length || a.label.localeCompare(b.label));
-    }
-    return entries;
-  }, [visibleItems, view, categoryAxis]);
+  // 현재 화면에 표시 중인 항목(모달 summary 조회용).
+  const displayed: AnalysisSummary[] =
+    scope === "mine"
+      ? mineSorted
+      : grouping
+        ? groupItems.data?.items ?? []
+        : flat.data?.items ?? [];
 
-  const filteredGroups = useMemo(
-    () => (filterKey ? grouped.filter((g) => g.key === filterKey) : grouped),
-    [grouped, filterKey],
-  );
+  const totalPages = Math.max(1, Math.ceil((flat.data?.total ?? 0) / PAGE));
+  const grandTotal = flat.data?.total ?? 0;
 
-  const toggleAuthor = (key: string) => {
-    setExpandedAuthors((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
+  const isPending = scope === "all" && grouping ? facets.isPending : flat.isPending;
+  const isError = scope === "all" && grouping ? facets.isError : flat.isError;
 
+  // ─── 렌더 조각 ─────────────────────────────────────────
   const header = (
     <div className="mb-3 text-xs text-neutral-600 dark:text-neutral-500">
       <span>
-        {view === "latest"
-          ? "다른 사용자가 공개한 분석을 시간 역순으로 보여줍니다."
-          : view === "priority"
-            ? "파이프라인 우선순위(즉시 대응 → 예정 대응 → 모니터링) 순 — 우선순위 없는 분석은 뒤에."
-          : view === "epss"
-            ? "EPSS(30일 내 익스플로잇 확률) 높은 순 — EPSS 없는 분석은 뒤에."
-          : view === "category"
-            ? categoryAxis === "severity"
-              ? "위험도별 그룹 — Critical / High / Medium / Low / 미분류 순."
-              : "취약점 유형별 그룹 — XSS · SQLi · RCE · 인증 등 한 분석이 여러 유형에 속할 수 있어요."
-            : "작성자별 그룹 — 행을 눌러 펼쳐 보세요."}
+        {q
+          ? `"${debounced}" 검색 결과 — 전체 분석에서 찾습니다.`
+          : view === "latest"
+            ? "공유된 분석을 시간 역순으로 — 페이지로 전체를 넘겨볼 수 있어요."
+            : view === "priority"
+              ? "파이프라인 우선순위(즉시 대응 → 예정 대응 → 모니터링) 순 — 우선순위 없는 분석은 뒤에."
+              : view === "epss"
+                ? "EPSS(30일 내 익스플로잇 확률) 높은 순 — EPSS 없는 분석은 뒤에."
+                : view === "category"
+                  ? categoryAxis === "severity"
+                    ? "위험도별 그룹 — 행을 눌러 펼쳐 보세요(전체 집계 기준)."
+                    : "취약점 유형별 그룹 — 행을 눌러 펼쳐 보세요(전체 집계 기준)."
+                  : "작성자별 그룹 — 행을 눌러 펼쳐 보세요(전체 집계 기준)."}
       </span>
     </div>
   );
@@ -280,7 +369,7 @@ export function AnalysisFeed() {
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="CVE ID · 제목 · 작성자 · 유형 · 본문 키워드"
+          placeholder="CVE ID · 제목 · 작성자 · 본문 키워드"
           className="block w-full rounded-full border border-neutral-300 bg-white py-2 pl-9 pr-9 text-xs text-neutral-900 placeholder:text-neutral-500 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-200 dark:border-neutral-700 dark:bg-surface-1 dark:text-neutral-100 dark:placeholder:text-neutral-500 dark:focus:ring-violet-500/30"
         />
         {search && (
@@ -300,10 +389,7 @@ export function AnalysisFeed() {
             key={v}
             type="button"
             disabled={v === "mine" && !user}
-            onClick={() => {
-              setScope(v);
-              setFilterKey(null);
-            }}
+            onClick={() => setScope(v)}
             className={cn(
               "rounded-full border px-2.5 py-1 font-medium transition-colors disabled:opacity-40",
               scope === v
@@ -357,10 +443,7 @@ export function AnalysisFeed() {
             <button
               key={m}
               type="button"
-              onClick={() => {
-                setView(m);
-                setFilterKey(null);
-              }}
+              onClick={() => setView(m)}
               className={cn(
                 "inline-flex flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-full px-2 py-1 font-medium transition-colors sm:flex-none sm:px-2.5",
                 active
@@ -389,10 +472,7 @@ export function AnalysisFeed() {
               <button
                 key={id}
                 type="button"
-                onClick={() => {
-                  setCategoryAxis(id);
-                  setFilterKey(null);
-                }}
+                onClick={() => setCategoryAxis(id)}
                 className={cn(
                   "inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium transition-colors",
                   active
@@ -407,88 +487,8 @@ export function AnalysisFeed() {
           })}
         </div>
       )}
-
-      {view === "category" && grouped.length > 1 && (
-        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-          <button
-            type="button"
-            onClick={() => setFilterKey(null)}
-            className={cn(
-              "rounded-full border px-2.5 py-0.5 transition-colors",
-              filterKey === null
-                ? "border-violet-400 bg-violet-50 text-violet-800 dark:border-violet-500/50 dark:bg-violet-500/15 dark:text-violet-200"
-                : "border-neutral-300 text-neutral-700 hover:border-violet-300 hover:text-violet-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-violet-500/40 dark:hover:text-violet-200",
-            )}
-          >
-            전체 <span className="tabular-nums opacity-70">({allItems.length})</span>
-          </button>
-          {grouped.map((g) => (
-            <button
-              key={g.key}
-              type="button"
-              onClick={() => setFilterKey(g.key === filterKey ? null : g.key)}
-              className={cn(
-                "rounded-full border px-2.5 py-0.5 transition-colors",
-                filterKey === g.key
-                  ? "border-violet-400 bg-violet-50 text-violet-800 dark:border-violet-500/50 dark:bg-violet-500/15 dark:text-violet-200"
-                  : categoryAxis === "severity" && SEVERITY_TONE[g.key]
-                    ? `border-transparent ${SEVERITY_TONE[g.key]} hover:opacity-90`
-                    : "border-neutral-300 text-neutral-700 hover:border-violet-300 hover:text-violet-700 dark:border-neutral-700 dark:text-neutral-400 dark:hover:border-violet-500/40 dark:hover:text-violet-200",
-              )}
-            >
-              {g.label}{" "}
-              <span className="tabular-nums opacity-70">({g.items.length})</span>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
-
-  if (list.isPending) {
-    return (
-      <>
-        {header}
-        {controls}
-        <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-24 animate-pulse rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-1/50"
-            />
-          ))}
-        </div>
-      </>
-    );
-  }
-  if (list.isError) {
-    return (
-      <>
-        {header}
-        {controls}
-        <ErrorBox title="분석 피드를 불러오지 못했습니다" message="잠시 후 다시 시도해 주세요." />
-      </>
-    );
-  }
-  if (!list.data || allItems.length === 0) {
-    return (
-      <>
-        {header}
-        {controls}
-        <div className="rounded-xl border border-neutral-200 bg-white px-6 py-12 text-center dark:border-neutral-800 dark:bg-surface-1">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/15 ring-1 ring-violet-400/30">
-            <Sparkles className="h-6 w-6 text-violet-700 dark:text-violet-300" />
-          </div>
-          <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-            {scope === "mine" ? "아직 내 분석이 없어요" : "아직 공유된 분석이 없어요"}
-          </h3>
-          <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
-            CVE 상세에서 AI 심층 분석을 실행하면 여기에 모이고, 공유 토글로 커뮤니티에 공개할 수 있어요.
-          </p>
-        </div>
-      </>
-    );
-  }
 
   const renderCard = (a: AnalysisSummary) => {
     const isMine = !!myUsername && a.author.username === myUsername;
@@ -554,29 +554,29 @@ export function AnalysisFeed() {
         </button>
         <div className="flex items-center justify-between gap-2 border-t border-neutral-100 px-4 py-2 dark:border-neutral-800/60">
           <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => toggleComments(a.id)}
-            className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] text-neutral-500 transition-colors hover:bg-sky-50 hover:text-sky-600 dark:text-neutral-400 dark:hover:bg-sky-500/10 dark:hover:text-sky-300"
-            title="댓글"
-          >
-            <MessageSquare className="h-3.5 w-3.5" />
-            <span className="tabular-nums">{a.commentCount ?? 0}</span>
-            <span>댓글</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => toggleLike(a)}
-            aria-pressed={a.isLiked}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-300",
-              a.isLiked ? "text-rose-600 dark:text-rose-400" : "text-neutral-500 dark:text-neutral-400",
-            )}
-            title={a.isLiked ? "좋아요 취소" : "좋아요"}
-          >
-            <Heart className={cn("h-3.5 w-3.5", a.isLiked && "fill-current")} />
-            <span className="tabular-nums">{a.likeCount ?? 0}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => toggleComments(a.id)}
+              className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] text-neutral-500 transition-colors hover:bg-sky-50 hover:text-sky-600 dark:text-neutral-400 dark:hover:bg-sky-500/10 dark:hover:text-sky-300"
+              title="댓글"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              <span className="tabular-nums">{a.commentCount ?? 0}</span>
+              <span>댓글</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleLike(a)}
+              aria-pressed={a.isLiked}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-300",
+                a.isLiked ? "text-rose-600 dark:text-rose-400" : "text-neutral-500 dark:text-neutral-400",
+              )}
+              title={a.isLiked ? "좋아요 취소" : "좋아요"}
+            >
+              <Heart className={cn("h-3.5 w-3.5", a.isLiked && "fill-current")} />
+              <span className="tabular-nums">{a.likeCount ?? 0}</span>
+            </button>
           </div>
           {isMine && (
             <button
@@ -613,70 +613,111 @@ export function AnalysisFeed() {
     );
   };
 
+  // ─── 상태별 조기 반환 ──────────────────────────────────
+  if (isPending) {
+    return (
+      <>
+        {header}
+        {controls}
+        <div className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-24 animate-pulse rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-1/50"
+            />
+          ))}
+        </div>
+      </>
+    );
+  }
+  if (isError) {
+    return (
+      <>
+        {header}
+        {controls}
+        <ErrorBox title="분석 피드를 불러오지 못했습니다" message="잠시 후 다시 시도해 주세요." />
+      </>
+    );
+  }
+
+  const emptyFlat = !grouping && displayed.length === 0;
+  const emptyGroups = grouping && groups.length === 0;
+  if (emptyFlat || emptyGroups) {
+    return (
+      <>
+        {header}
+        {controls}
+        <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 px-6 py-10 text-center text-xs text-neutral-700 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-400">
+          {q
+            ? `"${debounced}" 와 일치하는 분석이 없어요.`
+            : scope === "mine"
+              ? "아직 내 분석이 없어요."
+              : "아직 공유된 분석이 없어요."}
+        </div>
+        <AnalysisDetailModal
+          analysisId={openId}
+          summary={displayed.find((a) => a.id === openId) ?? null}
+          onClose={() => setOpenId(null)}
+        />
+      </>
+    );
+  }
+
+  // 평면 페이지네이션(최신/우선순위/EPSS, 또는 검색). scope=mine 은 클라 목록.
+  const flatList = scope === "mine" ? mineSorted : flat.data?.items ?? [];
+
   return (
     <>
       {header}
       {controls}
-      {visibleItems.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 px-6 py-10 text-center text-xs text-neutral-700 dark:border-neutral-700 dark:bg-surface-2 dark:text-neutral-400">
-          {search ? `"${search}" 와 일치하는 분석이 없어요.` : "공유된 분석이 없어요."}
-        </div>
-      ) : view === "latest" || view === "priority" || view === "epss" ? (
-        <ul className="space-y-3">{sortedFlat.map(renderCard)}</ul>
-      ) : view === "category" ? (
-        <div className="space-y-6">
-          {filteredGroups.map((g) => (
-            <section key={g.key}>
-              <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-400">
-                {categoryAxis === "severity" ? (
-                  <ShieldAlert className="h-3 w-3" />
-                ) : (
-                  <Folder className="h-3 w-3" />
-                )}
-                {g.label}
-                <span className="tabular-nums font-normal text-neutral-500 dark:text-neutral-500">
-                  · {g.items.length}건
-                </span>
-              </h3>
-              <ul className="space-y-3">{g.items.map(renderCard)}</ul>
-            </section>
-          ))}
-        </div>
-      ) : (
+
+      {grouping ? (
         <ul className="space-y-2">
-          {filteredGroups.map((g) => {
-            const expanded = expandedAuthors.has(g.key);
-            const sample = g.items[0];
-            const isAgent = !!sample?.author?.isAgent;
-            const avatar = isAgent
-              ? sample.author.avatarEmoji || "🤖"
-              : avatarInitial(g.label).toUpperCase();
+          {groups.map((g) => {
+            const expanded = expandedKey === g.key;
+            const isAgent = g.kind === "author" ? !!g.author?.isAgent : false;
+            const avatar =
+              g.kind === "author"
+                ? isAgent
+                  ? g.author?.avatarEmoji || "🤖"
+                  : avatarInitial(g.label).toUpperCase()
+                : g.kind === "severity"
+                  ? "◆"
+                  : "#";
             return (
               <li key={g.key}>
                 <button
                   type="button"
-                  onClick={() => toggleAuthor(g.key)}
+                  onClick={() => {
+                    setExpandedKey(expanded ? null : g.key);
+                    setGroupCount(PAGE);
+                  }}
                   aria-expanded={expanded}
                   className="flex w-full items-center gap-3 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-left transition-colors hover:border-violet-300 dark:border-neutral-800 dark:bg-surface-1 dark:hover:border-violet-500/40"
                 >
-                  <span className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
-                    isAgent
-                      ? "bg-sky-100 text-base dark:bg-sky-500/20"
-                      : "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200",
-                  )}>
+                  <span
+                    className={cn(
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                      g.kind === "severity" && SEVERITY_TONE[g.key]
+                        ? SEVERITY_TONE[g.key]
+                        : "bg-sky-100 text-base text-sky-800 dark:bg-sky-500/20 dark:text-sky-200",
+                    )}
+                  >
                     {avatar}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
                       {g.label}
                     </span>
-                    <span className="block truncate text-[11px] text-neutral-600 dark:text-neutral-400">
-                      가장 최근 · {sample.cveId} · {formatRelativeKo(sample.createdAt)}
-                    </span>
+                    {g.kind === "author" && g.author?.lastCveId && (
+                      <span className="block truncate text-[11px] text-neutral-600 dark:text-neutral-400">
+                        가장 최근 · {g.author.lastCveId}
+                        {g.author.lastCreatedAt ? ` · ${formatRelativeKo(g.author.lastCreatedAt)}` : ""}
+                      </span>
+                    )}
                   </span>
                   <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium tabular-nums text-violet-800 dark:bg-violet-500/15 dark:text-violet-200">
-                    {g.items.length}건
+                    {g.count}건
                   </span>
                   {expanded ? (
                     <ChevronDown className="h-4 w-4 text-neutral-500" />
@@ -685,18 +726,76 @@ export function AnalysisFeed() {
                   )}
                 </button>
                 {expanded && (
-                  <ul className="mt-2 ml-4 space-y-2 border-l-2 border-neutral-200 pl-4 dark:border-neutral-800">
-                    {g.items.map(renderCard)}
-                  </ul>
+                  <div className="mt-2 ml-4 border-l-2 border-neutral-200 pl-4 dark:border-neutral-800">
+                    {groupItems.isPending ? (
+                      <div className="space-y-2">
+                        {Array.from({ length: 3 }).map((_, i) => (
+                          <div
+                            key={i}
+                            className="h-20 animate-pulse rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-surface-1/50"
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <>
+                        <ul className="space-y-2">{(groupItems.data?.items ?? []).map(renderCard)}</ul>
+                        {(groupItems.data?.items.length ?? 0) < g.count && (
+                          <button
+                            type="button"
+                            onClick={() => setGroupCount((c) => c + PAGE)}
+                            className="mt-2 w-full rounded-lg border border-neutral-200 bg-white py-2 text-xs font-medium text-violet-700 transition-colors hover:border-violet-300 dark:border-neutral-800 dark:bg-surface-1 dark:text-violet-300"
+                          >
+                            더 보기 ({groupItems.data?.items.length ?? 0}/{g.count})
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
                 )}
               </li>
             );
           })}
         </ul>
+      ) : (
+        <>
+          {scope === "all" && (
+            <div className="mb-2 flex items-center justify-between text-[11px] text-neutral-600 dark:text-neutral-400">
+              <span className="tabular-nums">전체 {grandTotal.toLocaleString()}건</span>
+              <span className="tabular-nums">
+                {page + 1} / {totalPages} 페이지
+              </span>
+            </div>
+          )}
+          <ul className="space-y-3">{flatList.map(renderCard)}</ul>
+          {scope === "all" && totalPages > 1 && (
+            <div className="mt-4 flex items-center justify-center gap-2 text-xs">
+              <button
+                type="button"
+                disabled={page === 0 || flat.isFetching}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                className="inline-flex items-center gap-1 rounded-full border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 transition-colors hover:border-violet-300 disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-300"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" /> 이전
+              </button>
+              <span className="tabular-nums text-neutral-600 dark:text-neutral-400">
+                {page + 1} / {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={page + 1 >= totalPages || flat.isFetching}
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                className="inline-flex items-center gap-1 rounded-full border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 transition-colors hover:border-violet-300 disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-300"
+              >
+                다음 <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+        </>
       )}
+
       <AnalysisDetailModal
         analysisId={openId}
-        summary={allItems.find((a) => a.id === openId) ?? null}
+        summary={displayed.find((a) => a.id === openId) ?? null}
         onClose={() => setOpenId(null)}
       />
     </>
