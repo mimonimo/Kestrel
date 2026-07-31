@@ -27,6 +27,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Filter,
   Folder,
   Gauge,
   Globe,
@@ -108,6 +109,8 @@ export function AnalysisFeed() {
   const [agentFilter, setAgentFilter] = useState<"all" | "agent" | "human">("all");
   const [pipelineOnly, setPipelineOnly] = useState(false);
   const [scope, setScope] = useState<"all" | "mine">("all");
+  // 특정 작성자로 좁히기 — 설정되면 목록·검색·정렬이 모두 그 작성자 안으로.
+  const [authorFilter, setAuthorFilter] = useState<{ username: string; label: string } | null>(null);
   const [page, setPage] = useState(0); // flat 페이지
   const [expandedKey, setExpandedKey] = useState<string | null>(null); // 그룹 확장(1개)
   const [groupCount, setGroupCount] = useState(PAGE); // 확장 그룹 렌더 개수
@@ -124,14 +127,14 @@ export function AnalysisFeed() {
     setPage(0);
     setExpandedKey(null);
     setGroupCount(PAGE);
-  }, [view, agentFilter, pipelineOnly, scope, categoryAxis, debounced]);
+  }, [view, agentFilter, pipelineOnly, scope, categoryAxis, debounced, authorFilter]);
 
   const authorParam = agentFilter === "all" ? undefined : agentFilter;
   const sortParam: "recent" | "priority" | "epss" =
     view === "priority" ? "priority" : view === "epss" ? "epss" : "recent";
   const q = debounced || undefined;
-  // 검색 중에는 그룹핑 대신 평면 검색 결과를 보여준다(그룹+검색은 혼란).
-  const grouping = (view === "author" || view === "category") && !q;
+  // 작성자 고정·검색 중에는 그룹핑 대신 평면 목록으로(그 작성자/검색 결과를 정렬).
+  const grouping = (view === "author" || view === "category") && !q && !authorFilter;
 
   const toggleComments = (id: string) =>
     setOpenComments((prev) => {
@@ -194,6 +197,7 @@ export function AnalysisFeed() {
       scope,
       sortParam,
       authorParam ?? "all",
+      authorFilter?.username ?? "",
       pipelineOnly,
       q ?? "",
       page,
@@ -203,7 +207,8 @@ export function AnalysisFeed() {
         ? api.listMyAnalyses({ limit: 200, offset: 0 })
         : api.listCommunityAnalyses({
             sort: sortParam,
-            author: authorParam,
+            // 특정 작성자 고정 시엔 username 으로 좁히고 작성자유형 필터는 무시.
+            ...(authorFilter ? { username: authorFilter.username } : { author: authorParam }),
             pipelineOnly,
             q,
             limit: PAGE,
@@ -383,13 +388,34 @@ export function AnalysisFeed() {
           </button>
         )}
       </div>
+      {authorFilter && (
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+          <span className="inline-flex items-center gap-1 rounded-full border border-violet-400 bg-violet-100 px-2.5 py-1 font-medium text-violet-800 dark:border-violet-500/50 dark:bg-violet-500/20 dark:text-violet-200">
+            작성자: {authorFilter.label}
+            <button
+              type="button"
+              onClick={() => setAuthorFilter(null)}
+              aria-label="작성자 필터 해제"
+              className="ml-0.5 inline-flex items-center justify-center rounded-full hover:bg-violet-200/60 dark:hover:bg-violet-500/30"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+          <span className="text-neutral-500 dark:text-neutral-400">
+            이 작성자 안에서만 검색·정렬됩니다.
+          </span>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
         {([["all", "전체"], ["mine", "내 분석"]] as const).map(([v, l]) => (
           <button
             key={v}
             type="button"
             disabled={v === "mine" && !user}
-            onClick={() => setScope(v)}
+            onClick={() => {
+              setScope(v);
+              if (v === "mine") setAuthorFilter(null);
+            }}
             className={cn(
               "rounded-full border px-2.5 py-1 font-medium transition-colors disabled:opacity-40",
               scope === v
@@ -515,6 +541,34 @@ export function AnalysisFeed() {
               />
             </span>
             {a.author.isAgent && <AgentBadge persona={a.author.persona} id={a.author.id} />}
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                setScope("all");
+                setAuthorFilter({
+                  username: a.author.username,
+                  label: a.author.nickname || a.author.username,
+                });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setScope("all");
+                  setAuthorFilter({
+                    username: a.author.username,
+                    label: a.author.nickname || a.author.username,
+                  });
+                }
+              }}
+              aria-label={`${a.author.nickname || a.author.username} 작성자만 보기`}
+              title="이 작성자만 보기"
+              className="inline-flex cursor-pointer items-center rounded-full p-0.5 text-neutral-400 transition-colors hover:bg-violet-100 hover:text-violet-700 dark:hover:bg-violet-500/20 dark:hover:text-violet-200"
+            >
+              <Filter className="h-3 w-3" />
+            </span>
             <span className="text-neutral-500 dark:text-neutral-500">·</span>
             <span className="tabular-nums text-neutral-600 dark:text-neutral-500">
               {formatRelativeKo(a.createdAt)}
