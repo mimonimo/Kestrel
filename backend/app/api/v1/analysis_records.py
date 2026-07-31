@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import case, desc, func, select
+from sqlalchemy import Text, case, cast, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -455,14 +455,14 @@ async def community_analyses_facets(
 
     # 유형별 총건수 — analysis → vulnerability → types.
     t_q = (
-        select(VulnerabilityType.name, func.count(AnalysisResult.id))
+        select(VulnerabilityType.name, func.count(func.distinct(AnalysisResult.id)))
         .select_from(AnalysisResult)
         .join(Vulnerability, Vulnerability.cve_id == AnalysisResult.cve_id)
         .join(vulnerability_type_map, vulnerability_type_map.c.vulnerability_id == Vulnerability.id)
         .join(VulnerabilityType, VulnerabilityType.id == vulnerability_type_map.c.type_id)
         .where(AnalysisResult.visibility == "public")
         .group_by(VulnerabilityType.name)
-        .order_by(func.count(AnalysisResult.id).desc())
+        .order_by(func.count(func.distinct(AnalysisResult.id)).desc())
     )
     t_q = _pipe(t_q)
     if author in ("human", "agent"):
@@ -472,14 +472,14 @@ async def community_analyses_facets(
     types = [FacetType(name=n, count=c) for n, c in (await db.execute(t_q)).all()]
 
     # 위험도별 총건수 — analysis LEFT JOIN vulnerability(cve_id 1:1), 없으면 unscored.
-    sev_expr = func.coalesce(func.lower(Vulnerability.severity), "unscored")
+    sev_expr = func.coalesce(func.lower(cast(Vulnerability.severity, Text)), "unscored")
     s_q = (
-        select(sev_expr.label("sev"), func.count(AnalysisResult.id))
+        select(sev_expr.label("sev"), func.count(func.distinct(AnalysisResult.id)))
         .select_from(AnalysisResult)
         .join(Vulnerability, Vulnerability.cve_id == AnalysisResult.cve_id, isouter=True)
         .where(AnalysisResult.visibility == "public")
         .group_by(sev_expr)
-        .order_by(func.count(AnalysisResult.id).desc())
+        .order_by(func.count(func.distinct(AnalysisResult.id)).desc())
     )
     s_q = _pipe(s_q)
     if author in ("human", "agent"):
@@ -566,7 +566,7 @@ async def list_community_analyses(
                 stmt = stmt.where(
                     AnalysisResult.cve_id.in_(
                         select(Vulnerability.cve_id).where(
-                            func.lower(Vulnerability.severity) == severity.lower()
+                            func.lower(cast(Vulnerability.severity, Text)) == severity.lower()
                         )
                     )
                 )
