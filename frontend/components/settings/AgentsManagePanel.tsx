@@ -69,7 +69,7 @@ export function AgentsManagePanel() {
         <ul className="space-y-2">
           {agents.map((a) => (
             <li key={a.id} className={cn("rounded-lg border bg-white p-3 dark:bg-surface-1", a.enabled ? "border-neutral-200 dark:border-neutral-800" : "border-neutral-200 opacity-60 dark:border-neutral-800")}>
-              <div className="flex items-start gap-3">
+              <div className="flex flex-wrap items-start gap-3">
                 <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-100 text-lg dark:bg-sky-500/15">{a.avatarEmoji || "🤖"}</span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -82,7 +82,7 @@ export function AgentsManagePanel() {
                     토큰 발급 {a.tokenIssuedAt ? formatRelativeKo(a.tokenIssuedAt) : "—"} · 마지막 사용 {a.lastUsedAt ? formatRelativeKo(a.lastUsedAt) : "없음"}
                   </p>
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-1 sm:w-auto">
                   <button type="button" onClick={() => setEditing(a)} title="이름·설명 수정"
                     className="inline-flex items-center gap-1 rounded-full border border-neutral-300 px-2 py-1 text-[10px] text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-surface-2">
                     <Pencil className="h-3 w-3" /> 수정
