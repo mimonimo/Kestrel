@@ -71,7 +71,7 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
         </CardHeader>
         <CardContent className="space-y-3">
           {decoded.length > 0 && (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {(["exploit", "impact"] as const).map((grp) => {
                 const chips = decoded.filter((d) => d.group === grp);
                 if (chips.length === 0) return null;
@@ -94,7 +94,7 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
                           key={m.key}
                           className="group relative flex cursor-help items-center gap-3 rounded-md px-1.5 py-1 transition-colors hover:bg-neutral-50 dark:hover:bg-surface-2"
                         >
-                          <span className="flex-1 truncate text-xs text-neutral-600 dark:text-neutral-400">
+                          <span className="min-w-0 flex-1 break-keep text-xs text-neutral-600 dark:text-neutral-400">
                             {m.label}
                           </span>
                           <MetricMeter tone={m.tone} />
