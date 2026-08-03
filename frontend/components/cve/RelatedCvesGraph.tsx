@@ -371,11 +371,11 @@ export function RelatedCvesGraph({ centerId, items }: { centerId: string; items:
                 className="flex w-full items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-left dark:border-neutral-800 dark:bg-surface-1"
               >
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.hex }} />
-                <span className="font-mono text-[11px] font-semibold text-neutral-900 dark:text-neutral-100">{it.cveId}</span>
+                <span className="shrink-0 whitespace-nowrap font-mono text-[11px] font-semibold text-neutral-900 dark:text-neutral-100">{it.cveId}</span>
                 {it.cvssScore != null && (
-                  <span className="font-mono text-[10px] font-bold tabular-nums text-neutral-500">{it.cvssScore.toFixed(1)}</span>
+                  <span className="shrink-0 font-mono text-[10px] font-bold tabular-nums text-neutral-500">{it.cvssScore.toFixed(1)}</span>
                 )}
-                <span className="ml-auto rounded-full bg-surface-2 px-1.5 py-px text-[9px] text-neutral-500">{it.reason}</span>
+                <span className="ml-auto min-w-0 shrink truncate rounded-full bg-surface-2 px-1.5 py-px text-[9px] text-neutral-500">{it.reason}</span>
               </button>
             </li>
           );

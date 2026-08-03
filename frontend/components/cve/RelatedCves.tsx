@@ -25,19 +25,19 @@ export function RelatedCves({ cveId }: { cveId: string }) {
   return (
     <Card>
       <CardHeader className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <GitFork className="h-4 w-4 text-neutral-500" />
+        <div className="flex flex-wrap items-center gap-2">
+          <GitFork className="h-4 w-4 shrink-0 text-neutral-500" />
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
             연관 취약점 <span className="font-normal text-neutral-400">{items.length}</span>
           </h2>
-          <div className="ml-auto flex items-center gap-2">
-            <div className="inline-flex overflow-hidden rounded-full border border-neutral-300 text-[11px] dark:border-neutral-700">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <div className="inline-flex shrink-0 overflow-hidden rounded-full border border-neutral-300 text-[11px] dark:border-neutral-700">
               <button
                 type="button"
                 onClick={() => setView("graph")}
                 aria-pressed={view === "graph"}
                 className={
-                  "inline-flex items-center gap-1 px-2 py-1 transition-colors " +
+                  "inline-flex items-center gap-1 whitespace-nowrap px-2 py-1 transition-colors " +
                   (view === "graph"
                     ? "bg-sky-100 font-medium text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"
                     : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-surface-3")
@@ -50,7 +50,7 @@ export function RelatedCves({ cveId }: { cveId: string }) {
                 onClick={() => setView("list")}
                 aria-pressed={view === "list"}
                 className={
-                  "inline-flex items-center gap-1 px-2 py-1 transition-colors " +
+                  "inline-flex items-center gap-1 whitespace-nowrap px-2 py-1 transition-colors " +
                   (view === "list"
                     ? "bg-sky-100 font-medium text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"
                     : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-surface-3")
@@ -60,7 +60,7 @@ export function RelatedCves({ cveId }: { cveId: string }) {
               </button>
             </div>
             <span
-              className="inline-flex cursor-help items-center gap-1 text-[11px] text-neutral-400 dark:text-neutral-500"
+              className="inline-flex shrink-0 cursor-help items-center gap-1 whitespace-nowrap text-[11px] text-neutral-400 dark:text-neutral-500"
               title={
                 "선정 기준 — 같은 제품 > 같은 벤더 > 공통 약점(공격 유형) > 심각도(CVSS) 근접 > 최신 순으로 " +
                 "가중 점수를 매겨 상위 8건을 보여줍니다. 각 항목 오른쪽의 회색 배지가 그 항목이 선정된 근거입니다."
@@ -97,7 +97,7 @@ export function RelatedCves({ cveId }: { cveId: string }) {
                         KEV
                       </span>
                     )}
-                    <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[10px] text-neutral-500">
+                    <span className="max-w-full min-w-0 truncate rounded-full bg-surface-2 px-1.5 py-0.5 text-[10px] text-neutral-500">
                       {it.reason}
                     </span>
                   </div>

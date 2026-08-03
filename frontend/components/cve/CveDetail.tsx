@@ -220,7 +220,7 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
             <ul className="divide-y divide-neutral-800">
               {vuln.affectedProducts.map((p, i) => (
                 <li key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
-                  <div>
+                  <div className="min-w-0 [overflow-wrap:anywhere]">
                     <span className="font-medium text-neutral-100">
                       {p.vendor} {p.product}
                     </span>
@@ -228,7 +228,7 @@ export function CveDetail({ vuln }: { vuln: Vulnerability }) {
                       <span className="ml-2 font-mono text-neutral-500">{p.versionRange}</span>
                     )}
                   </div>
-                  <Badge variant="outline" className="uppercase">
+                  <Badge variant="outline" className="shrink-0 uppercase">
                     {p.osFamily}
                   </Badge>
                 </li>
