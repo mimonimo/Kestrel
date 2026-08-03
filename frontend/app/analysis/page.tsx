@@ -140,7 +140,7 @@ export default function AnalysisPage() {
               )}
               aria-pressed={active}
             >
-              <Icon className="h-3.5 w-3.5" />
+              <Icon className="hidden h-3.5 w-3.5 sm:block" />
               {label}
             </button>
           );
